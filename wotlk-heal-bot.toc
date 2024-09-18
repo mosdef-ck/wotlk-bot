@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: WOTLKAIBot
+## DefaultState: enabled
+## Notes: WOTLKAIBot
+## Version 1
+## Author: mosdefck
+Util.lua
+AIFunctions.lua
+AI.lua
+RestorationShamanAI.lua
