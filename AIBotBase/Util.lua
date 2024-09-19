@@ -74,7 +74,11 @@ end
 
 function MaloWUtils_StringStartsWith(fullString, startString)
     if string.sub(fullString, 1, string.len(startString)) == startString then
-        return true, string.sub(fullString, string.len(startString) + 2)
+        return true, string.sub(fullString, string.len(startString) + 1)
     end
     return false, nil
 end
+
+
+
+/run print(MaloWUtils_StringStartsWith("doOnLoad_Shaman", "doOnLoad_"))

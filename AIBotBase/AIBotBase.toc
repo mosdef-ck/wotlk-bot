@@ -1,0 +1,10 @@
+## Interface: 30300
+## Title: AIBotBase
+## DefaultState: enabled
+## Notes: AIBotBase
+## Version 1
+## Author: mosdefck
+Util.lua
+BaseFunctions.lua
+BotBase.lua
+SpellEffectCalculator.lua

@@ -1,4 +1,5 @@
 AI = AI or {}
+AI.CHAT_PREFIX  = AI.CHAT_PREFIX or 'AIBot'
 
 local function getGCDSpell(playerClass)
     if playerClass == "DEATHKNIGHT" then
@@ -18,7 +19,7 @@ local function getGCDSpell(playerClass)
 	elseif playerClass == "SHAMAN" then
 		return "Healing Wave"
 	elseif playerClass == "WARLOCK" then
-		return "Demon Skin"
+		return "life tap"
 	elseif playerClass == "WARRIOR" then
 		return "Hamstring"
 	else
@@ -55,6 +56,13 @@ end
 -- Player speaks the message in /s
 function AI.Say(message)
 	SendChatMessage(message, "SAY", "Common")
+end
+
+function AI.SendAddonMessage(messageType, msg)
+    if message == nil then
+        message = ""
+    end
+    SendAddonMessage(AI.CHAT_PREFIX, messageType .. " " .. tostring(message), "RAID")
 end
 
 function AI.IsCasting()
@@ -155,12 +163,20 @@ function AI.GetDebuffDuration(spell, unit)
     return expirationTime - GetTime()
 end
 
+function AI.HasDebuff(spell, unit)
+	return AI.GetDebuffDuration(spell, unit) > 0
+end 
+
 function AI.GetBuffDuration(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitAura(unit, spell, nil, "PLAYER|HELPFUL")
     if name == nil then
         return 0
     end
     return expirationTime - GetTime()
+end
+
+function AI.HasBuff(spell, unit)
+	return AI.GetBuffDuration(spell, unit) > 0
 end
 
 function AI.GetTargetStrength()
@@ -196,4 +212,79 @@ function AI.GetMySpecName()
 		end
 	end
 	return name
+end
+
+function AI.GetMissingHealth(unit)
+    return UnitHealthMax(unit) - UnitHealth(unit)
+end
+
+-- Returns the unit that has specified raidIndex
+function AI.GetUnitFromPartyOrRaidIndex(index)
+    if index ~= 0 then
+        if UnitInRaid("player") then
+            return "raid" .. index
+        else
+            return "party" .. index
+        end
+    end
+    return "player"
+end
+
+function AI.GetMostDamagedFriendly(spell)
+	local healTarget = 0
+	local missingHealthOfTarget = AI.GetMissingHealth("player")
+	local members = AI.GetNumPartyOrRaidMembers()
+	for i = 1, members do
+		local unit = AI.GetUnitFromPartyOrRaidIndex(i)
+		local missingHealth = AI.GetMissingHealth(unit)
+		if missingHealth > missingHealthOfTarget then
+			if AI.IsUnitValidFriendlyTarget(unit, spell) then
+                if mb_Paladin_Holy_beaconUnit == nil or mb_Paladin_Holy_beaconUnit ~= unit then
+                    -- Used for Holy paladins to make them never heal their beacon
+                    missingHealthOfTarget = missingHealth
+                    healTarget = i
+                end
+			end
+		end
+	end
+    if UnitExists("focus") then
+        local missingHealth = AI.GetMissingHealth("focus")
+        if missingHealth > missingHealthOfTarget and AI.IsUnitValidFriendlyTarget("focus", spell) then
+            return "focus", missingHealth
+        end
+    end
+	if healTarget == 0 then
+		return "player", missingHealthOfTarget
+	else
+		return AI.GetUnitFromPartyOrRaidIndex(healTarget), missingHealthOfTarget
+	end
+end
+
+--
+local function UnitHasDebuffOfType(unit, debuffType1, debuffType2, debuffType3)
+	for i = 1, 40 do
+		local name, _, _, _, type = UnitDebuff(unit, i)
+        if name then
+            if debuffType1 ~= nil and debuffType1 == type then
+                return true
+            end
+            if debuffType2 ~= nil and debuffType2 == type then
+                return true
+            end
+            if debuffType3 ~= nil and debuffType3 == type then
+                return true
+            end
+        end
+	end
+	return false
+end
+
+function AI.CleanseRaid(spell, debuffType1, debuffType2, debuffType3)
+    for i = 1, AI.GetNumPartyOrRaidMembers() do
+        local unit = AI.GetUnitFromPartyOrRaidIndex(i)
+        if UnitHasDebuffOfType(unit, debuffType1, debuffType2, debuffType3) and AI.IsUnitValidFriendlyTarget(unit, spell) then
+            return AI.CastSpell(spell, unit)
+        end
+    end
+    return false
 end
