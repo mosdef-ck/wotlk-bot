@@ -83,8 +83,8 @@ function AI.doOnLoad_Shaman()
 			primaryManaPot = HealBot.manaPotion or primaryManaPot
 			panicHpPct = HealBot.panicHpPct or panicHpPct
 			manaPctThreshold = HealBot.manaPctThreshold or manaPctThreshold
-			MB.Print("auto-configuration applied")
-			MB.Print({ 
+			AI.Print("auto-configuration applied")
+			AI.Print({ 
 				primaryTank = primaryTank, 
 				manaPot = primaryManaPot,
 				panicHpPct = panicHpPct,

@@ -14,6 +14,8 @@ local isInCombat = false
 -- whether the bot 'ticks' or takes any action
 local isAIEnabled = false
 
+local autoEnableIfInRaid = true
+
 
 local cachedOnUpdateCallbacks = nil
 local function onUpdate()
@@ -22,9 +24,9 @@ local function onUpdate()
     end
     if not cachedOnUpdateCallbacks then
         cachedOnUpdateCallbacks = {}
-        for i, func in ipairs(AI) do	
+        for func in pairs(AI) do	
             if MaloWUtils_StrStartsWith(func, "doOnUpdate") then
-                table.insert(cachedOnUpdateCallbacks, func)
+                table.insert(cachedOnUpdateCallbacks, AI[func])
             end
         end
     end
@@ -90,11 +92,15 @@ end
 
 local function onAddOnLoad()
     --- invokes any 'doOnLoad_' funcs that have been registered by any addon
-    for func in pairs(AI) do        
-        if MaloWUtils_StrStartsWith(func, "doOnLoad") then
-            AI[func]()
+    for i in pairs(AI) do
+        if MaloWUtils_StrStartsWith(i, "doOnLoad") then
+            AI[i]()
         end
     end
+	
+	if IsInRaid() and autoEnableIfInRaid then
+		isAIEnabled = true
+	end
 end
 
 local function onEvent(self, event, arg1, arg2, arg3, arg4, arg5, ...)
