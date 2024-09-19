@@ -4,6 +4,7 @@
 ## Notes: AIBotBase
 ## Version 1
 ## Author: mosdefck
+Config.lua
 Util.lua
 BaseFunctions.lua
 BotBase.lua

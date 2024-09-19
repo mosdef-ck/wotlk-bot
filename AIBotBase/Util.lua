@@ -78,7 +78,3 @@ function MaloWUtils_StringStartsWith(fullString, startString)
     end
     return false, nil
 end
-
-
-
-/run print(MaloWUtils_StringStartsWith("doOnLoad_Shaman", "doOnLoad_"))

@@ -22,10 +22,9 @@ local function onUpdate()
     end
     if not cachedOnUpdateCallbacks then
         cachedOnUpdateCallbacks = {}
-        for func in pairs(AI) do
-			print(func)		
+        for i, func in ipairs(AI) do	
             if MaloWUtils_StrStartsWith(func, "doOnUpdate") then
-                table.insert(cachedOnUpdateCallbacks, AI[func])
+                table.insert(cachedOnUpdateCallbacks, func)
             end
         end
     end

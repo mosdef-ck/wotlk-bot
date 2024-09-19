@@ -1,5 +1,8 @@
 local isAIEnabled = false
 local primaryTank = nil
+local primaryManaPot = "runic mana potion"
+local panicHpPct = 20
+local manaPctThreshold = 30
 
 local function ApplyWeaponEnchants(mainHandSpell, offHandSpell)
     local hasMainHandEnchant, mainHandExpiration, _, hasOffHandEnchant, offHandExpiration = GetWeaponEnchantInfo()
@@ -20,12 +23,8 @@ local function ApplyWeaponEnchants(mainHandSpell, offHandSpell)
 end
 
 local function doOnUpdate_Shaman()
---print("doOnUpdate_Shaman")
-	if not isAIEnabled then return end
 
-	if IsMounted() then return end
-
-	if not AI.CanCast() then return end
+	if not isAIEnabled or IsMounted() or not AI.CanCast() then return end
 
 	-- maintain water shield
 	if not AI.HasBuff("water shield", "player") and AI.CastSpell("water shield") then return end
@@ -33,8 +32,8 @@ local function doOnUpdate_Shaman()
 	--keep earthliving weapon up
 	if ApplyWeaponEnchants("Earthliving weapon") then return end
 	
-	if AI.GetUnitPowerPct("player") <= 30 then
-		if AI.CastSpell("runic mana potion") then return end
+	if AI.GetUnitPowerPct("player") <= manaPctThreshold then
+		if primaryManaPot and AI.CastSpell(primaryManaPot) then return end
 		if AI.CastSpell("mana tide totem") then return end
 	end
 	
@@ -42,7 +41,7 @@ local function doOnUpdate_Shaman()
 	if primaryTank then
 		local missingHealth = AI.GetMissingHealth(primaryTank)
 		local tankHpPct = AI.GetUnitHealthPct(primaryTank)
-		if tankHpPct <= 20 then
+		if tankHpPct <= panicHpPct then
 			AI.Print(primaryTank .. " is in danger. Using Nature's Swiftness/Tidal Force")
 			--tank is in danger use insta-cast CDS
 			AI.CastSpell("Nature's Swiftness")
@@ -77,6 +76,22 @@ function AI.doOnLoad_Shaman()
 		isAIEnabled = true
 		-- set the callback to be detected by AIBotBase and automatically invoked
 		AI.doOnUpdate_Shaman = doOnUpdate_Shaman
+
+		--
+		if HealBot then
+			primaryTank = HealBot.tank
+			primaryManaPot = HealBot.manaPotion or primaryManaPot
+			panicHpPct = HealBot.panicHpPct or panicHpPct
+			manaPctThreshold = HealBot.manaPctThreshold or manaPctThreshold
+			MB.Print("auto-configuration applied")
+			MB.Print({ 
+				primaryTank = primaryTank, 
+				manaPot = primaryManaPot,
+				panicHpPct = panicHpPct,
+				manaPctThreshold = manaPctThreshold
+			})
+		end
+
     else
         AI.Print(spec.. " is not a supported spec")
 	end
