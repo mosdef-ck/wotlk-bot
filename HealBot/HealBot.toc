@@ -1,9 +1,0 @@
-## Interface: 30300
-## Title: HealBot
-## DefaultState: enabled
-## Notes: HealBot
-## Version 1
-## Author: mosdefck
-## Dependencies: AIBotBase
-Config.lua
-RestorationShamanAI.lua

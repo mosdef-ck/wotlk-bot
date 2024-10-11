@@ -1,12 +1,19 @@
-HealBot = HealBot or {}
 
+AI = AI or {}
+AI.Config = AI.Config or {}
+
+setfenv(1, AI.Config)
 -- the main tank to pay close attention to
-HealBot.tank = "mosdefptank"
+tank = "mosdefptank"
 
 -- the mana potion to use first before popping mana cd like mana tide or innervate
-HealBot.manaPotion = "Runic Mana Potion"
+manaPotion = "Runic Mana Potion"
 
 -- the pct of our mana to reach before we deploy mana cds like mana pots and mana tide
-HealBot.manaPctThreshold = 30
+manaPctThreshold = 30
 
-HealBot.panicHpPct = 20
+--
+panicHpPct = 20
+
+--
+dpsPotion = "poition of wild magic"

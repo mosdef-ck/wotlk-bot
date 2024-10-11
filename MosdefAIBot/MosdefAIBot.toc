@@ -1,0 +1,19 @@
+## Interface: 30300
+## Title: MosdefAIBot
+## DefaultState: enabled
+## Notes: MosdefAIBot
+## Version 1
+## Author: mosdefck
+Config.lua
+Util.lua
+BaseFunctions.lua
+BotBase.lua
+SpellEffectCalculator.lua
+classes\ShamanAI.lua
+classes\WarlockAI.lua
+classes\MageAI.lua
+classes\PriestAI.lua
+classes\PaladinAI.lua
+zones\ZoneModule.lua
+bosses\BossModule.lua
+bosses\Naxxramas.lua
