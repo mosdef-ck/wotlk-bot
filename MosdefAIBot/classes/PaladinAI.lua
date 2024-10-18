@@ -100,7 +100,7 @@ local function doDps(isAoE)
     if AI.CanCastSpell("hammer of wrath", "target") and AI.CastSpell("hammer of wrath", "target") then
         return
     end
-    if AI.CastSpell("Consecration") then
+    if CheckInteractDistance("target", 3) and AI.CastSpell("Consecration") then
         return
     end
     if AI.CastSpell("Hammer of the Righteous") then

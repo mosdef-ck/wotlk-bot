@@ -74,7 +74,8 @@ function AI.IsChanneling(unit)
 end
 
 function AI.IsOnGCD()
-    return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
+    -- return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
+    return false
 end
 
 function AI.CanCast()
@@ -549,10 +550,10 @@ function AI.HasPossessionSpellCooldown(spellName)
     return nil
 end
 
-function AI.UsePossessionSpell(spellName)
+function AI.UsePossessionSpell(spellName, unit)
     local hasCd = AI.HasPossessionSpellCooldown(spellName)
     if hasCd ~= nil and hasCd == true then
-        UseAction(slot)
+        UseAction(AI.FindPossessionSpellSlot(spellName), unit or "target")
         return true
     end
     return false
@@ -567,11 +568,15 @@ function AI.GetPosition(unit)
     return x, y
 end
 
-function AI.GetDistanceTo(x, y)
-    local mX, mY = AI.GetPosition()
-    local dX, dY = x - mX, y - mY
+function AI.CalcDistance(x1, y1, x2, y2)
+    local dX, dY = x1 - x2, y1 - y2
     local distance = math.sqrt(dX * dX + dY * dY)
     return distance
+end
+
+function AI.GetDistanceTo(x, y)
+    local mX, mY = AI.GetPosition()
+    return AI.CalcDistance(mX, mY, x, y)
 end
 
 function AI.IsMoving()
@@ -579,11 +584,11 @@ function AI.IsMoving()
 end
 
 function AI.GetUnitCreatureId(unit)
-	local guid = UnitGUID(unit)
-	return (guid and tonumber(guid:sub(9, 12), 16)) or 0
+    local guid = UnitGUID(unit)
+    return (guid and tonumber(guid:sub(9, 12), 16)) or 0
 end
 
 function AI.StopCasting()
-     SpellStopCasting()
-     AI.StopMoving()
+    SpellStopCasting()
+    AI.StopMoving()
 end

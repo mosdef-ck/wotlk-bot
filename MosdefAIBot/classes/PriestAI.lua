@@ -12,7 +12,7 @@ local function upkeepShadowForm()
         return true
     end
 
-    if not AI.HasBuff("vampiric embrace") and AI.CastSpell("vampiric embrace") then
+    if not AI.IsInCombat() and not AI.HasBuff("vampiric embrace") and AI.CastSpell("vampiric embrace") then
         return true
     end
     return false
@@ -67,37 +67,67 @@ local function doAutoDps()
 
     useHealthStone()
 
+    if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") <= 40 and AI.CastSpell("shadowfiend", "target") then
+        return
+    end
+
+    if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") < 20 and AI.CastSpell("Hymn of Hope") then
+        return
+    end
+
     if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 20 and AI.CastSpell("Dispersion") then
         return
     end
-    if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") <= 50 and AI.CastSpell("shadowfiend", "target") then
-        return
-    end
-    if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("devouring plague", "target") <= 1 and
-        AI.CastSpell("devouring plague", "target") then
-        return
-    end
-    if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 1 and
-        AI.CastSpell("Vampiric Touch", "target") then
-        return
-    end
-    if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Shadow Word: Pain", "target") <= 1 and
-        AI.CastSpell("Shadow Word: Pain", "target") then
-        return
-    end
-    AI.CastSpell("inner focus")
+
+    -- AI.CastSpell("inner focus")
+
     if AI.CastSpell("mind blast", "target") then
         return
     end
-    if AI.CastSpell("shadow word: death", "target") then
+    -- if AI.CastSpell("shadow word: death", "target") then
+    --     return
+    -- end
+
+    if not AI.AUTO_AOE then        
+        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 1 and
+            AI.CastSpell("Vampiric Touch", "target") then
+            return
+        end
+        if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("devouring plague", "target") <= 1 and
+            AI.CastSpell("devouring plague", "target") then
+            return
+        end
+
+        if AI.GetTargetStrength() >= 2 and
+            (not AI.HasDebuff("Shadow Word: Pain", "target") or AI.GetBuffDuration("potion of wild magic") >= 12 or AI.GetBuffDuration("now is the time!") >= 8) and
+            AI.CastSpell("Shadow Word: Pain", "target") then
+            return
+        end
+        if AI.CastSpell("mind flay", "target") then
+            return
+        end
+    elseif AI.CastSpell("mind sear", "target") then
         return
     end
-    AI.CastSpell("mind flay", "target")
 end
 
 local function autoPurge()
     if AI.IsInCombat() and AI.HasPurgeableBuff("target") and AI.CastSpell("dispel magic", "target") then
         return true
+    end
+    return false
+end
+
+local function manageThreat()
+    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") then
+        local threat = AI.GetThreatPct("target")
+        if AI.GetUnitHealthPct("target") < 95 and threat > 90 and AI.CastSpell("fade") then
+            -- AI.Print("Exceeded 90% of threat on " .. GetUnitName("target"))
+            -- if primaryTank then
+            --     AI.SayWhisper("Exceeded 90% of threat on " .. GetUnitName("target"), primaryTank)
+            -- end
+            return true
+        end
     end
     return false
 end
@@ -116,11 +146,15 @@ local function doOnUpdate_ShadowPriest()
         return
     end
 
-    if AI.AUTO_PURGE and autoPurge() then
+    if upkeepShadowForm() then
         return
     end
 
-    if upkeepShadowForm() then
+    if manageThreat() then
+        return
+    end
+
+    if AI.AUTO_PURGE and autoPurge() then
         return
     end
 
@@ -161,19 +195,9 @@ local function doDps(isAoE)
         return
     end
 
-    if not isAoE and AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 1 and
-        AI.CastSpell("Vampiric Touch", "target") then
-        return
-    end
-
-    if not isAoE and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("devouring plague", "target") <= 1 and
-        AI.CastSpell("devouring plague", "target") then
-        return
-    end
-
-    if AI.GetTargetStrength() >= 2 then
-        AI.CastSpell("inner focus")
-    end
+    -- if AI.GetTargetStrength() >= 2 then
+    --     AI.CastSpell("inner focus")
+    -- end
 
     if AI.CastSpell("Mind Blast") then
         return
@@ -185,8 +209,19 @@ local function doDps(isAoE)
     if isAoE and AI.CastSpell("mind sear", "target") then
         return
     else
-        if AI.GetTargetStrength() >= 2 and AI.GetMyBuffCount("shadow weaving") >= 5 and
-            not AI.HasDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
+        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 1 and
+            AI.CastSpell("Vampiric Touch", "target") then
+            return
+        end
+
+        if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("devouring plague", "target") <= 1 and
+            AI.CastSpell("devouring plague", "target") then
+            return
+        end
+
+        if AI.GetTargetStrength() >= 2 and
+            (not AI.HasDebuff("Shadow Word: Pain", "target") or AI.GetBuffDuration("potion of wild magic") >= 12) and
+            AI.CastSpell("Shadow Word: Pain", "target") then
             return
         end
         if AI.CastSpell("mind flay", "target") then

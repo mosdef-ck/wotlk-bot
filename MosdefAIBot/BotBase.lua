@@ -12,6 +12,7 @@ AI.ALLOW_AUTO_REFACE = true
 AI.DISABLE_CDS = false
 AI.AUTO_PURGE = true
 AI.IS_DOING_ONUPDATE = false
+AI.AUTO_AOE = false
 
 AI.BossModules = {}
 AI.ZoneModules = {}
@@ -71,6 +72,11 @@ local function onUpdate()
         f()
     end
     AI.IS_DOING_ONUPDATE = false
+
+    -- do auto-dps towards the end
+    if AI.AUTO_DPS and AI.doAutoDps then
+        AI.doAutoDps()
+    end
 end
 
 local function onAddOnLoad()
@@ -121,8 +127,8 @@ local function loadBossModule(bossName, creatureId)
 
     for i, mod in ipairs(AI.BossModules) do
         local foundMod = nil
-        if creatureId ~= nil and  type(mod.creatureId) == "table" then
-            for i,id in ipairs(mod.creatureId) do
+        if creatureId ~= nil and type(mod.creatureId) == "table" then
+            for i, id in ipairs(mod.creatureId) do
                 if id == creatureId then
                     foundMod = mod
                     break
@@ -130,12 +136,12 @@ local function loadBossModule(bossName, creatureId)
             end
         end
         if bossName ~= nil and mod.name:lower() == bossName:lower() then
-            foundMod = mod            
+            foundMod = mod
         end
         if foundMod ~= nil and not foundMod.enabled then
             AI.Print(bossName .. " module enabled, good luck!")
             foundMod.enabled = true
-            foundMod:onStart()        
+            foundMod:onStart()
         end
     end
 end
@@ -143,7 +149,7 @@ end
 findEnabledBossModule = function()
     for i, mod in ipairs(AI.BossModules) do
         if mod.enabled == true then
-			--print("Found enabled bos mod "..mod.name)
+            -- print("Found enabled bos mod "..mod.name)
             return mod
         end
     end
@@ -154,7 +160,7 @@ local function unloadBossModules()
     -- print ("Disabling boss modules")
     for i, mod in ipairs(AI.BossModules) do
         if mod.enabled == true then
-            --AI.Print("stopping boss mod " .. mod.name)
+            -- AI.Print("stopping boss mod " .. mod.name)
             mod:onStop()
             mod.enabled = false
         end
@@ -245,16 +251,16 @@ end
 
 local cachedUnitCastCb = nil
 local function onEvent(self, event, ...)
-	local arg1 = select(1, ...)
-	local arg2 = select(2, ...)
-	local arg3 = select(3, ...)
-	local arg4 = select(4, ...)
-	local arg5 = select(5, ...)
-	local arg6 = select(6, ...)
-	local arg7 = select(7, ...)
-	local arg8 = select(8, ...)
+    local arg1 = select(1, ...)
+    local arg2 = select(2, ...)
+    local arg3 = select(3, ...)
+    local arg4 = select(4, ...)
+    local arg5 = select(5, ...)
+    local arg6 = select(6, ...)
+    local arg7 = select(7, ...)
+    local arg8 = select(8, ...)
 
-	local bossMod = findEnabledBossModule()
+    local bossMod = findEnabledBossModule()
 
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         isAddonLoaded = true
@@ -270,10 +276,10 @@ local function onEvent(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         AI.isInCombat = false
         unloadBossModules()
-		AI.ResetMoveToPosition()
+        AI.ResetMoveToPosition()
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastPlayerEnterWorld = GetTime()
-		AI.ResetMoveToPosition()
+        AI.ResetMoveToPosition()
     elseif event == "UI_ERROR_MESSAGE" then
         if arg1 == "You are facing the wrong way!" or arg1 == "Target needs to be in front of you." then
             if not AI.IsTank() then
@@ -312,55 +318,55 @@ local function onEvent(self, event, ...)
                 AI.ZoneModules[i]:onLeave()
             end
         end
-	elseif event == "RAID_BOSS_EMOTE" then
-		print("RAID_BOSS_EMOTE"..arg1..arg2..arg3)
-	elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-		--event out unit deaths
-		if arg2 == "UNIT_DIED" or arg2 == "UNIT_DESTROYED" then
-			local unitName = arg7
-			if unitName:lower() == UnitName("player"):lower() then
-				unloadBossModules()
-				AI.ResetMoveToPosition()			
-			end
-			--print("unit died/destroyed "..arg6.. " ".. arg7)
-			if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
-				bossMod[arg2](bossMod, unitName)
-			end
-			return
-		--event out spell  events
-		elseif arg2:sub(1,5) == "SPELL" then
-			local spellId, spellName, spellSchool, extraArg1, extraArg2, extraArg3 = select(9, ...)
-			local caster, target = arg4 or "n/a", arg7 or "n/a"
-			local unitName = UnitName("player"):lower()
-			if unitName == caster:lower() or unitName == target:lower() then  
-				--print(arg2 .. " spell "..spellName.. " caster "..caster .. " target "..target or "")
-			end
-			local args = {
-				spellName = spellName,
-				caster = caster,
-				target = target,
-				spellId = spellId,
-				arg1 = extraArg1 or "n/a",
-				arg2 = extraArg2 or "n/a",
-				arg3 = extraArg3 or "n/a"
-			}
-			if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
-				bossMod[arg2](bossMod, args)
-			end
-			return
-		end
+    elseif event == "RAID_BOSS_EMOTE" then
+        print("RAID_BOSS_EMOTE" .. arg1 .. arg2 .. arg3)
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        -- event out unit deaths
+        if arg2 == "UNIT_DIED" or arg2 == "UNIT_DESTROYED" then
+            local unitName = arg7
+            if unitName:lower() == UnitName("player"):lower() then
+                unloadBossModules()
+                AI.ResetMoveToPosition()
+            end
+            -- print("unit died/destroyed "..arg6.. " ".. arg7)
+            if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
+                bossMod[arg2](bossMod, unitName)
+            end
+            return
+            -- event out spell  events
+        elseif arg2:sub(1, 5) == "SPELL" then
+            local spellId, spellName, spellSchool, extraArg1, extraArg2, extraArg3 = select(9, ...)
+            local caster, target = arg4 or "n/a", arg7 or "n/a"
+            local unitName = UnitName("player"):lower()
+            if unitName == caster:lower() or unitName == target:lower() then
+                -- print(arg2 .. " spell "..spellName.. " caster "..caster .. " target "..target or "")
+            end
+            local args = {
+                spellName = spellName,
+                caster = caster,
+                target = target,
+                spellId = spellId,
+                arg1 = extraArg1 or "n/a",
+                arg2 = extraArg2 or "n/a",
+                arg3 = extraArg3 or "n/a"
+            }
+            if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
+                bossMod[arg2](bossMod, args)
+            end
+            return
+        end
     end
 
-	if bossMod and bossMod[event] and type(bossMod[event]) == "function" then
-		--print("invoking "..event .. " on boss mod ".. bossMod.name)
-		bossMod[event](bossMod, ...)
-	end
+    if bossMod and bossMod[event] and type(bossMod[event]) == "function" then
+        -- print("invoking "..event .. " on boss mod ".. bossMod.name)
+        bossMod[event](bossMod, ...)
+    end
 end
 
 -- #auto movement
 
 function AI.SetMoveToPosition(x, y, minDist)
-	AI.StopMoving()
+    AI.StopMoving()
     goToPositionDestination = {
         x = x,
         y = y,
@@ -457,12 +463,7 @@ function AI.doOnUpdate_BotBase()
     --
     if AI.ALLOW_AUTO_MOVEMENT then
         doAutoMovementUpdate()
-    end
-
-    -- auto trigger
-    if AI.AUTO_DPS and AI.doAutoDps then
-        AI.doAutoDps()
-    end
+    end    
 end
 
 -- stub, overridden
@@ -470,9 +471,8 @@ function AI.do_PriorityTarget()
     return false
 end
 
-
 function AI.ExecuteDpsMethod(isAoE)
-    if not AI.IS_DOING_ONUPDATE then
+    if not AI.IS_DOING_ONUPDATE and not AI.AUTO_DPS then
         AI.DO_DPS(isAoE)
     end
 end
@@ -493,25 +493,35 @@ function AI.toggleAutoDps(on)
     end
 end
 
+function AI.toggleAoEMode()
+    if AI.AUTO_AOE then
+        AI.AUTO_AOE = false
+        --AI.Print("auto-AOE OFF")
+    else
+        AI.AUTO_AOE = true
+        --AI.Print("auto-AOE ON")
+    end
+end
+
 function AI.RegisterBossModule(mod)
     AI.Print("registering boss module " .. mod.name)
     table.insert(AI.BossModules, mod)
-	if mod.events then
-		for i,e in ipairs(mod.events) do
-			--print(mod.name .. " registered event " .. e)
-			f:RegisterEvent(e)
-		end
-	end
+    if mod.events then
+        for i, e in ipairs(mod.events) do
+            -- print(mod.name .. " registered event " .. e)
+            f:RegisterEvent(e)
+        end
+    end
 end
 
 function AI.RegisterZoneModule(mod)
     AI.Print("registering zone module " .. mod.zoneName)
     table.insert(AI.ZoneModules, mod)
-	if mod.events then
-		for i,e in ipairs(mod.events) do
-			f:RegisterEvent(e)
-		end
-	end
+    if mod.events then
+        for i, e in ipairs(mod.events) do
+            f:RegisterEvent(e)
+        end
+    end
 end
 
 f:RegisterEvent("ADDON_LOADED")

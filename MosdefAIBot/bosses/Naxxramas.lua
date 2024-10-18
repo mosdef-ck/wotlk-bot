@@ -22,20 +22,21 @@ local grobbulusBossMod = MosDefBossModule:new({
 function grobbulusBossMod:SPELL_AURA_APPLIED(args)
     if (args.spellName:lower() == "mutating injection" or args.spellId == 28169) and args.target:lower() ==
         UnitName("player"):lower() then
-            if not AI.IsHealer() then
-                AI.SayRaid("I have mutating injection moving towards tank")
-                local tX, tY = AI.GetPosition(AI.Config.tank)
-            end
+        if not AI.IsHealer() then
+            AI.SayRaid("I have mutating injection moving towards tank")
+            local tX, tY = AI.GetPosition(AI.Config.tank)
+            AI.SetMoveToPosition(tX, tY, 0.006)
+        end
     end
 end
 
 function grobbulusBossMod:SPELL_AURA_REMOVED(args)
     if (args.spellName:lower() == "mutating injection" or args.spellId == 28169) and args.target:lower() ==
         UnitName("player"):lower() then
-            if not AI.IsHealer() then
-                AI.SayRaid("mutating injection has expired")
-                AI.SetMoveToPosition(centerX, centerY, 0.003)
-            end            
+        if not AI.IsHealer() then
+            AI.SayRaid("mutating injection has expired")
+            AI.SetMoveToPosition(self.centerX, self.centerY, 0.003)
+        end
     end
 end
 
@@ -54,7 +55,7 @@ local maexxna = MosDefBossModule:new({
                     return true
                 end
             end
-            TargetUnit("maexxna")
+            TargetUnit("maexxna", 1)
 
             if AI.IsValidOffensiveUnit("target") then
                 return true
@@ -69,6 +70,14 @@ local maexxna = MosDefBossModule:new({
         end
     end,
     onUpdate = function()
+        local class = AI.GetClass()
+        if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "web wrap" then
+            if class == "warlock" and AI.CastSpell("searing pain", "target") then
+                return true
+            end
+            if class == "priest" and AI.CastSpell("mind flay", "target") then return true end
+            if class == "mage" and AI.CastSpell("arcane missiles", "target") then return true end
+        end
         return AI.IsHealer() and AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease")
     end
 })
@@ -129,17 +138,30 @@ AI.RegisterBossModule(razuvious)
 local gluth = MosDefBossModule:new({
     name = "Gluth",
     previousDpsFunc = nil,
+    tankX = 0.4274979531765,
+    tankY = 0.37671720981598,
+    healerX = 0.42541840672493,
+    healerY = 0.41028228402138,
+    dpsX = 0.44792032241821,
+    dpsY = 0.44553908705711,
+    -- decimateTime = nil,
     onStart = function(self)
-        AI.Print("Engaging Gluth")
+        FocusUnit("Gluth")
         local class = AI.GetClass():lower()
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if class ~= "mage" then
                 if not AI.IsTank() then
-                    TargetNearestEnemy()
                     if AI.IsValidOffensiveUnit("target") and UnitName("target") ~= "Gluth" and
-                        CheckInteractDistance("target", 3) then
+                        AI.GetUnitHealthPct("target") <= 10 then
                         return true
+                    end
+                    for i = 1, 10 do
+                        TargetUnit("zombie chow")
+                        if AI.IsValidOffensiveUnit("target") and UnitName("target") ~= "Gluth" and
+                            AI.GetUnitHealthPct("target") <= 10 then
+                            return true
+                        end
                     end
                 end
                 TargetUnit("Gluth")
@@ -148,37 +170,44 @@ local gluth = MosDefBossModule:new({
                     TargetUnit("zombie chow")
                 end
             end
-            if AI.IsValidOffensiveUnit("target") then
-                return true
-            end
-            return false
+            return AI.IsValidOffensiveUnit("target")
         end
 
         AI.AUTO_TAUNT = false
+
         if class == "mage" then
-            local kiteX, kiteY = 0.47161412239075, 0.46050518751144
+            local kiteX, kiteY = 0.46507576107979, 0.47602570056915
+            -- AI.SayRaid("kiter headed to kiting position..")
+            AI.SetMoveToPosition(kiteX, kiteY)
+            AI.ALLOW_AUTO_REFACE = false
             self.previousDpsFunc = AI.DO_DPS
             AI.DO_DPS = function()
+                PetAttack()
                 if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "zombie chow" and
                     AI.CastSpell("ice lance", "target") then
                     return
                 end
             end
-            AI.SayRaid("kiter headed to kiting position..")
-            AI.SetMoveToPosition(kiteX, kiteY)
-            AI.ALLOW_AUTO_REFACE = false
-        elseif not AI.IsTank() then
-            local dpsX, dpsY = 0.44864216446877, 0.42136773467064
-            AI.SayRaid("dps and healer headed to position")
-            AI.SetMoveToPosition(dpsX, dpsY)
+        elseif not AI.IsTank() and not AI.IsHealer() then
+            -- AI.SayRaid("dps headed to position")
+            AI.SetMoveToPosition(self.dpsX, self.dpsY)
+            if class == "priest" then
+                CancelUnitBuff("player", "vampiric embrace")
+                AI.CastSpell("power word: shield", AI.Config.tank)
+            end
+        elseif AI.IsHealer() then
+            -- AI.SayRaid("healer headed to position")
+            AI.SetMoveToPosition(self.healerX, self.healerY)
         end
-        if AI.IsTank() then
-            local tankX, tankY = 0.4274979531765, 0.37671720981598
-            AI.SayRaid("tank headed to tanking position")
-            AI.SetMoveToPosition(tankX, tankY)
-        end
+
+        -- if AI.IsTank() then
+        --     local tankX, tankY = 0.4274979531765, 0.37671720981598
+        --     AI.SayRaid("tank headed to tanking position")
+        --     AI.SetMoveToPosition(tankX, tankY)
+        -- end
     end,
     onStop = function(self)
+        ClearFocus()
         local class = AI.GetClass():lower()
         if oldPriorityTargetFn ~= nil then
             AI.do_PriorityTarget = oldPriorityTargetFn
@@ -190,6 +219,10 @@ local gluth = MosDefBossModule:new({
         AI.AUTO_TAUNT = true
     end,
     onUpdate = function(self)
+        local class = AI.GetClass():lower()
+        if class ~= "mage" and not AI.IsHealer() and not AI.HasMoveToPosition() and not AI.AUTO_DPS then
+            AI.toggleAutoDps(true)
+        end
         return false
     end
 })
@@ -199,10 +232,10 @@ AI.RegisterBossModule(gluth)
 -- heigan the unclean
 local heigan = MosDefBossModule:new({
     name = "Heigan The Unclean",
-    platformX = 0.517210966236496,
-    platformY = 0.41791427135468,
-    danceStartX = 0.49928018450737,
-    danceStartY = 0.40855741500854,
+    platformX = 0.51658093929291,
+    platformY = 0.41808542609215,
+    danceStartX = 0.48749935626984,
+    danceStartY = 0.42669451236725,
     onStart = function(self)
         if not AI.IsTank() then
             AI.SetMoveToPosition(self.platformX, self.platformY, 0.001)
@@ -244,13 +277,14 @@ local loatheb = MosDefBossModule:new({
     onStop = function()
     end,
     onUpdate = function()
-        if AI.IsHealer() then
+        if AI.IsHealer() and AI.HasDebuff("Necrotic Aura") then
             local alphaTar, _, betaTar, _ = AI.GetMostDamagedFriendly("chain heal")
             local neuroticDuration = AI.GetDebuffDuration("Necrotic Aura")
             if alphaTar then
-                if neuroticDuration <= 4 and AI.CastSpell("riptide", alphaTar) then
+                if neuroticDuration <= 4 and AI.CastSpell("riptide", AI.Config.tank) then
                     return true
                 end
+                local tankPct = AI.GetUnitHealthPct(AI.Config.tank)
                 if neuroticDuration <= 2 and UnitName(alphaTar):lower() == UnitName(AI.Config.tank):lower() and betaTar and
                     AI.CastSpell("chain heal", betaTar) then
                     return true
@@ -266,13 +300,12 @@ AI.RegisterBossModule(loatheb)
 local fourHorsemen = MosDefBossModule:new({
     name = "Baron Rivendare",
     onStart = function(self)
-        AI.Print("Four Horsemen Engaged")
         AI.ResetMoveToPosition()
         if AI.IsTank() then
-            AI.SayRaid("Tank moving to tanking position")
+            -- AI.SayRaid("Tank moving to tanking position")
             AI.SetMoveToPosition(self.tankX, self.tankY)
         elseif AI.IsHealer() then
-            AI.SayRaid("Healer moving to starting position")
+            -- AI.SayRaid("Healer moving to starting position")
             AI.SetMoveToPosition(self.healerStartX, self.healerStartY)
         else
             local class = AI.GetClass():lower()
@@ -307,16 +340,6 @@ local fourHorsemen = MosDefBossModule:new({
                         TargetUnit("Thane")
                     end
                 end
-                -- TargetUnit("Lady Blaumeux")
-                -- if not AI.IsValidOffensiveUnit("target") or self.ladyDead then
-                --     TargetUnit("Baron")
-                -- end
-                -- if not AI.IsValidOffensiveUnit("target") or self.baronDead then
-                --     TargetUnit("Sir Zeliek")
-                -- end
-                -- if not AI.IsValidOffensiveUnit("target") or self.sirDead then
-                --     TargetUnit("Thane")
-                -- end
             end
             return AI.IsValidOffensiveUnit("target")
         end
@@ -383,10 +406,9 @@ local fourHorsemen = MosDefBossModule:new({
 
 function fourHorsemen:UNIT_DIED(unit)
     local deadUnitName = unit:lower()
-    print("Unit DIED ", deadUnitName)
+    -- print("Unit DIED ", deadUnitName)
     if MaloWUtils_StrContains(deadUnitName, "lady") then
         self.ladyDead = true
-        AI.SayRaid(unit .. " has died moving dps to Baron's location")
         AI.DISABLE_CDS = false
         if not AI.IsTank() and not AI.IsHealer() then
             AI.SetMoveToPosition(self.healerStartX, self.healerStartY)
@@ -408,9 +430,6 @@ function fourHorsemen:SPELL_DAMAGE(args)
     if AI.IsTank() or AI.IsHealer() then
         return
     end
-    if args.target:lower() == UnitName("player"):lower() then
-        print("I'm taking " .. args.spellName .. " spell dmg from " .. args.caster)
-    end
 
     local class = AI.GetClass():lower()
     local diff = GetTime() - self.lastMoveTime
@@ -418,7 +437,7 @@ function fourHorsemen:SPELL_DAMAGE(args)
         (args.spellName:lower() == "consumption" or args.caster:lower() == "void zone") and diff > 10 then
 
         self.lastMoveTime = GetTime()
-        AI.SayRaid(UnitName("player") .. " is in Void Zone. Moving to spot " .. self.nextDpsSpot)
+        -- AI.SayRaid(UnitName("player") .. " is in Void Zone. Moving to spot " .. self.nextDpsSpot)
         if self.nextDpsSpot == 2 then
             if class == "warlock" then
                 AI.SetMoveToPosition(self.ws2X, self.ws2Y)
@@ -466,10 +485,10 @@ function fourHorsemen:SPELL_AURA_REMOVED(args)
     if args.target:lower() ~= UnitName("player"):lower() then
         return
     end
-    print("i'm no longer afflicted with " .. args.spellName)
+    -- print("i'm no longer afflicted with " .. args.spellName)
     if args.spellId == 28835 and not self.sirDead and not AI.HasMoveToPosition() then
         if not AI.IsHealer() and not AI.IsTank() then
-            AI.SayRaid("recovered from marks of Zeliek, moving back to dps him")
+            -- AI.SayRaid("recovered from marks of Zeliek, moving back to dps him")
             AI.SetMoveToPosition(self.dpsSharedSpotX, self.dpsSharedSpotY)
         end
     end
@@ -481,14 +500,172 @@ function fourHorsemen:SPELL_AURA_APPLIED_DOSE(args)
         return
     end
     if args.spellId == 28832 or args.spellId == 28833 or args.spellId == 28834 or args.spellId == 28835 then
-        print("i'm afflicted with " .. amount .. " doses of " .. args.spellName)
+        -- print("i'm afflicted with " .. amount .. " doses of " .. args.spellName)
     end
     if args.spellId == 28835 and amount >= 4 and not AI.HasMoveToPosition() then -- mark of zeliek
         if not AI.IsHealer() and not AI.IsTank() then
-            AI.SayRaid("Too much stacks of Mark of Zeliek, moving away for a moment")
+            -- AI.SayRaid("Too much stacks of Mark of Zeliek, moving away for a moment")
             AI.SetMoveToPosition(self.healerStartX, self.healerStartY)
         end
     end
 end
 
 AI.RegisterBossModule(fourHorsemen)
+
+-- THADDIUS
+local thaddius = MosDefBossModule:new({
+    name = "Thaddius",
+    onStart = function(self)
+        local class = AI.GetClass()
+        if AI.IsHealer() then
+            AI.SetMoveToPosition(self.healerX, self.healerY)
+        elseif class == "warlock" then
+            AI.SetMoveToPosition(self.lockX, self.lockY)
+        elseif class == "priest" then
+            AI.SetMoveToPosition(self.spriestX, self.spriestY)
+        elseif class == "mage" then
+            AI.SetMoveToPosition(self.mageX, self.mageY)
+        end
+    end,
+    onStop = function(self)
+    end,
+    lockX = 0.27281373739243,
+    lockY = 0.10839419811964,
+    healerX = 0.2879327237606,
+    healerY = 0.13413137197495,
+    spriestX = 0.29793554544449,
+    spriestY = 0.12010706961155,
+    mageX = 0.28832644224167,
+    mageY = 0.094801776111126
+})
+
+AI.RegisterBossModule(thaddius)
+
+-- SAPPHIRON
+
+local sapphiron = MosDefBossModule:new({
+    name = "Sapphiron",
+    onStart = function(self)
+        local class = AI.GetClass()
+        if class == "priest" then
+            AI.CastSpell("power word: shield", AI.Config.tank)
+        end
+    end,
+    onStop = function(self)
+    end
+})
+
+function sapphiron:SPELL_AURA_APPLIED(args)
+    if args.spellId == 28522 then
+        local target = args.target
+        if UnitName("player") ~= target then
+            local tX, tY = AI.GetPosition(target)
+            AI.SetMoveToPosition(tX, tY, 0.006)
+        end
+    end
+end
+
+AI.RegisterBossModule(sapphiron)
+
+---
+local kelthuzad = MosDefBossModule:new({
+    name = "Kel'Thuzad",
+    creatureId = {15990},
+    warlockX = 0.36869874596596,
+    warlockY = 0.21998670697212,
+    spriestX = 0.35231751203537,
+    spriestY = 0.18740244209766,
+    mageX = 0.39841964840889,
+    mageY = 0.19535994529724,
+    healerX = 0.38290336728096,
+    healerY = 0.16442823410034,
+    frozenTarget = nil,
+    onStart = function(self)
+        AI.AUTO_TAUNT = false
+        oldPriorityTargetFn = AI.do_PriorityTarget
+        AI.do_PriorityTarget = function()
+            if not AI.IsTank() then
+                TargetUnit("Soul Weaver")
+                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 4) then
+                    return true
+                end
+                TargetUnit("soldier of the frozen wastes")
+                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 4) then
+                    return true
+                end
+                TargetUnit("Unstoppable Abomination")
+                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 4) then
+                    return true
+                end
+            end
+            TargetUnit("Kel'Thuzad")
+            return AI.IsValidOffensiveUnit("target")
+        end
+    end,
+    onStop = function(self)
+        AI.AUTO_TAUNT = true
+        if oldPriorityTargetFn ~= nil then
+            AI.do_PriorityTarget = oldPriorityTargetFn
+        end
+    end,
+    onUpdate = function(self)
+        local class = AI.GetClass():lower()
+        if self.frozenTarget ~= nil and not AI.HasDebuff("frost blast", self.frozenTarget) then
+            self.frozenTarget = nil
+        end
+        if self.frozenTarget ~= nil and (class == "priest" or class == "shaman") and self.frozenTarget ~=
+            UnitName("player") and AI.GetUnitHealthPct(self.frozenTarget) <= 80 then
+            -- if class == "priest" and AI.CanCast() and AI.CastSpell("power word: shield", self.frozenTarget) then
+            --     return true
+            -- end
+            if class == "shaman" and AI.CanCast() and AI.CastSpell("lesser healing wave", self.frozenTarget) then
+                return true
+            end
+        end
+
+        if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "soldier of the frozen wastes" then
+            if class == "warlock" and AI.CastSpell("searing pain", "target") then
+                return true
+            end
+            if class == "mage" and AI.CastSpell("ice lance", "target") then
+                return true
+            end
+            if class == "priest" and AI.CastSpell("mind flay", "target") then
+                return true
+            end
+        end
+        return false
+    end
+})
+
+function kelthuzad:SPELL_AURA_APPLIED(args)
+    if (args.spellId == 27808 or args.spellName == "Frost Blast") and args.target ~= nil then
+        self.frozenTarget = args.target
+        --AI.SayRaid(args.target.. " has been frozen!")
+    end
+end
+
+function kelthuzad:SPELL_CAST_SUCCESS(args)
+    if args.spellName == "Frost Blast" and args.target ~= nil then
+        self.frozenTarget = args.target
+        --AI.SayRaid(args.target.. " has been frozen!")
+    end
+end
+
+function kelthuzad:CHAT_MSG_RAID_BOSS_EMOTE(arg1, arg2)
+    --print("CHAT_MSG_RAID_BOSS_EMOTE" .. arg2 .. " says " .. arg1)
+    if MaloWUtils_StrContains(arg1, "strikes!") then
+        local class = AI.GetClass():lower()
+        if class == "warlock" then
+            AI.SetMoveToPosition(self.warlockX, self.warlockY)
+        elseif class == "priest" then
+            AI.SetMoveToPosition(self.spriestX, self.spriestY)
+        elseif class == "mage" then
+            AI.SetMoveToPosition(self.mageX, self.mageY)
+        elseif class == "shaman" then
+            AI.SetMoveToPosition(self.healerX, self.healerY)
+        end
+    end
+end
+
+AI.RegisterBossModule(kelthuzad)

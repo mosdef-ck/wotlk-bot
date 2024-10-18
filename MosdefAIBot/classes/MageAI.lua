@@ -3,7 +3,7 @@ local primaryTank = nil
 local panicPct = 20
 
 local function doSpellSteal()
-    if AI.IsInCombat() and AI.HasStealableBuff("target") and AI.GetTargetStrength() > 3 and AI.CastSpell("spellsteal") then
+    if AI.IsInCombat() and AI.HasStealableBuff("target") and AI.CastSpell("spellsteal") then
         AI.Print("I've stolen a buff from " .. UnitName("target"))
         return true
     end
@@ -14,14 +14,14 @@ local function doManaSapphire()
     if not AI.IsInCombat() and not AI.HasContainerItem("mana sapphire") and AI.CastSpell("Conjure Mana Gem") then
         return true
     end
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 50 then
+    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 20 then
         AI.UseContainerItem("mana sapphire")
     end
     return false
 end
 
 local function doManaShield()
-    if AI.IsInCombat() and AI.GetUnitHealthPct() <= 10 and not AI.HasBuff("mana shield") and AI.CastSpell("mana shield") then
+    if AI.IsInCombat() and AI.GetUnitHealthPct() <= 20 and not AI.HasBuff("mana shield") and AI.CastSpell("mana shield") then
         return true
     end
     return false
@@ -55,9 +55,9 @@ local function doAutoDps()
         return
     end
 
-    if doManaShield() then
-        return
-    end
+    -- if doManaShield() then
+    --     return
+    -- end
 
     if doSpellSteal() then
         return
@@ -90,8 +90,11 @@ local function doOnUpdate_MageAI()
         return
     end
 
-    if not AI.IsInCombat() and not AI.HasMyBuff("molten armor") and AI.CastSpell("molten armor") then return end
-
+    if not AI.IsInCombat() then 
+        local spec = AI.GetMySpecName() or ""
+        if not AI.HasMyBuff("molten armor") and AI.CastSpell("molten armor") then return end
+        -- if spec == "Frost" and not AI.HasMyBuff("mage armor") and AI.CastSpell("mage armor") then return end
+    end
     if doSpellSteal() then
         return
     end
@@ -100,9 +103,9 @@ local function doOnUpdate_MageAI()
         return
     end
 
-    if doManaShield() then
-        return
-    end
+    -- if doManaShield() then
+    --     return
+    -- end
 
     if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 10 and AI.CastSpell("Evocation") then
         return
@@ -116,8 +119,8 @@ local function doOnUpdate_MageAI()
             return
         end
         if AI.HasBuff("Bloodlust") then
-            if AI.HasContainerItem(AI.Config.dpsPotion) and AI.UseContainerItem(AI.Config.dpsPotion) then
-                return
+            if AI.HasContainerItem(AI.Config.dpsPotion)then
+                AI.UseContainerItem(AI.Config.dpsPotion)                
             end
             AI.CastSpell("presence of mind")
             AI.CastSpell("arcane power")
@@ -150,7 +153,7 @@ local function doDpsArcane(isAoE)
         return
     end
 
-    if AI.GetDebuffCount("arcane blast") > 3 and AI.CastSpell("arcane missiles", "target") then
+    if AI.GetDebuffCount("arcane blast") > 2 and AI.CastSpell("arcane missiles", "target") then
         return
     end
 

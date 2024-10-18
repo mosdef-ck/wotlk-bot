@@ -16,4 +16,4 @@ manaPctThreshold = 30
 panicHpPct = 20
 
 --
-dpsPotion = "poition of wild magic"
+dpsPotion = "potion of wild magic"

@@ -85,7 +85,7 @@ local function manageHealthstone()
     useHealthStone()
 end
 
-local function doAutoDps()
+local function doAutoDpsDestro()
     if not AI.AUTO_DPS then
         return
     end
@@ -95,15 +95,57 @@ local function doAutoDps()
         return
     end
 
-    if doLifeTap() then
+    useHealthStone()
+
+    if not AI.do_PriorityTarget() then
+        AssistUnit(primaryTank)
+    end
+    
+    if not AI.IsValidOffensiveUnit("target") then
         return
     end
 
-    if manageThreat() then
+    if AI.GetTargetStrength() < 3 and AI.GetUnitHealthPct("target") <= 10 and AI.CastSpell("drain soul", "target") then
         return
     end
 
-    if manageHealthstone() then
+    if AI.AUTO_AOE then
+        if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
+            return
+        end
+    end
+
+    if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("curse of the elements", "target") and
+        AI.CastSpell("curse of the elements", "target") then
+        return
+    end
+
+    if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
+        AI.CastSpell("shadow bolt", "target") then
+        return
+    end
+
+    if not AI.HasMyBuff("backdraft", "player") and not AI.HasDebuff("immolate", "target") and
+        AI.CastSpell("immolate", "target") then
+        return
+    end
+    if AI.HasDebuff("immolate", "target") and not AI.HasMyBuff("backdraft", "player") and
+        AI.CastSpell("Conflagrate", "target") then
+        return
+    end
+    if AI.CastSpell("chaos bolt", "target") then
+        return
+    end
+    AI.CastSpell("Incinerate", "target")
+end
+
+local function doAutoDpsAffliction()
+    if not AI.AUTO_DPS then
+        return
+    end
+
+    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+        AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
 
@@ -116,32 +158,45 @@ local function doAutoDps()
         return
     end
 
-    if AI.GetUnitHealthPct("target") <= 2 and AI.CastSpell("drain soul", "target") then
-        return
-    end
     if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("curse of the elements", "target") and
         AI.CastSpell("curse of the elements", "target") then
         return
     end
 
-    if AI.HasBuff("backdraft") then
-        if AI.CastSpell("chaos bolt", "target") then
-            return
-        end
-        if not AI.HasDebuff("shadow mastery", "target") and AI.CastSpell("shadow bolt", "target") then
-            return
-        end
-    end
-    if not AI.HasDebuff("immolate", "target") and AI.CastSpell("immolate", "target") then
+    if AI.GetTargetStrength() < 3 and AI.GetUnitHealthPct("target") <= 10 and AI.CastSpell("drain soul", "target") then
         return
     end
-    if AI.HasDebuff("immolate", "target") and AI.CastSpell("Conflagrate", "target") then
+
+    -- if AI.AUTO_AOE then
+    --     if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
+    --         return
+    --     end
+    -- else
+
+    if AI.GetTargetStrength() >= 3 and AI.GetMyDebuffDuration("haunt", "target") <= 2 and
+        AI.CastSpell("haunt", "target") then
         return
     end
-    if AI.CastSpell("chaos bolt", "target") then
+
+    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("unstable affliction", "target") <= 2 and
+        AI.CastSpell("unstable affliction", "target") then
         return
     end
-    AI.CastSpell("Incinerate", "target")
+
+    if ((AI.HasMyDebuff("shadow mastery", "target") and AI.GetDebuffCount("shadow embrace", "target") >= 3 and
+        not AI.HasMyDebuff("corruption", "target")) or AI.GetBuffDuration("now is the time!") >= 8) and
+        AI.CastSpell("corruption", "target") then
+        return
+    end
+
+    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 and
+        AI.HasMyDebuff("shadow mastery", "target") and AI.GetDebuffCount("shadow embrace", "target") >= 3 and
+        AI.CastSpell("drain soul", "target") then
+        return
+    end
+    -- end
+
+    AI.CastSpell("shadow bolt", "target")
 end
 
 local function doBuffs()
@@ -221,35 +276,36 @@ local function doDpsDestro(isAoE)
     -- end
 
     if isAoE then
-        if CheckInteractDistance("target", 3) and AI.CastSpell("shadowflame") then
-            return
-        end
+        -- if CheckInteractDistance("target", 3) and AI.CastSpell("shadowflame") then
+        --     return
+        -- end
         if not AI.HasDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
             return
         end
-    else
-
-        if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
-            AI.CastSpell("shadow bolt", "target") then
-            return
-        end
-
-        if not AI.HasDebuff("immolate", "target") and AI.CastSpell("immolate", "target") then
-            return
-        end
-        if AI.HasDebuff("immolate", "target") and AI.CastSpell("Conflagrate", "target") then
-            return
-        end
-        if AI.CastSpell("chaos bolt", "target") then
-            return
-        end
-        AI.CastSpell("Incinerate", "target")
     end
+
+    if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
+        AI.CastSpell("shadow bolt", "target") then
+        return
+    end
+
+    if not AI.HasMyBuff("backdraft", "player") and not AI.HasDebuff("immolate", "target") and
+        AI.CastSpell("immolate", "target") then
+        return
+    end
+    if AI.HasDebuff("immolate", "target") and not AI.HasMyBuff("backdraft", "player") and
+        AI.CastSpell("Conflagrate", "target") then
+        return
+    end
+    if AI.CastSpell("chaos bolt", "target") then
+        return
+    end
+    AI.CastSpell("Incinerate", "target")
 end
 
 local function doDpsAffliction(isAoE)
-    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() or AI.AUTO_DPS then
+    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() or
+        AI.AUTO_DPS then
         return
     end
 
@@ -259,7 +315,9 @@ local function doDpsAffliction(isAoE)
     --     AI.StopCasting()
     -- end
 
-    if not AI.CanCast() then return end
+    if not AI.CanCast() then
+        return
+    end
 
     if AI.GetTargetStrength() < 3 and AI.GetUnitHealthPct("target") <= 10 and AI.CastSpell("drain soul", "target") then
         return
@@ -271,30 +329,36 @@ local function doDpsAffliction(isAoE)
     end
 
     if isAoE then
-        if CheckInteractDistance("target", 3) and AI.CastSpell("shadowflame") then
-            return
-        end
         if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
             return
         end
     end
 
-    if AI.GetTargetStrength() >= 3 and AI.GetMyDebuffDuration("haunt", "target") <= 2 and AI.CastSpell("haunt", "target") then
+    if AI.GetTargetStrength() >= 3 and
+        ((AI.HasMyDebuff("shadow mastery", "target") and not AI.HasMyDebuff("corruption", "target")) or
+            AI.GetBuffDuration("potion of wild magic") >= 12 or AI.GetBuffDuration("now is the time!") >= 8) and
+        AI.CastSpell("corruption", "target") then
         return
     end
 
-    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("unstable affliction", "target") <= 2 and AI.CastSpell("unstable affliction", "target") then
+    if not AI.HasMyDebuff("shadow mastery", "target") and AI.CastSpell("shadow bolt", "target") then
         return
     end
 
-    if ((AI.HasMyDebuff("shadow mastery", "target") and AI.GetDebuffCount("shadow embrace", "target") >= 3 and not AI.HasMyDebuff("corruption", "target")) or
-        AI.GetBuffDuration("now is the time!") >= 8) and AI.CastSpell("corruption", "target") then
+    if AI.GetTargetStrength() >= 3 and AI.GetMyDebuffDuration("haunt", "target") <= 2 and
+        AI.CastSpell("haunt", "target") then
         return
     end
 
-    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 and AI.HasMyDebuff("shadow mastery", "target") and AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.CastSpell("drain soul", "target") then
+    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("unstable affliction", "target") <= 2 and
+        AI.CastSpell("unstable affliction", "target") then
         return
-    end    
+    end
+
+    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 and
+        AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.CastSpell("drain soul", "target") then
+        return
+    end
 
     AI.CastSpell("shadow bolt", "target")
 
@@ -312,12 +376,13 @@ function AI.doOnLoad_Warlock()
         isAIEnabled = true
         -- set the callback to be detected by AIBotBase and automatically invoked
         AI.doOnUpdate_Warlock = doUpdate_Warlock
-        AI.doAutoDps = doAutoDps
 
         if spec == "Destruction" then
             AI.DO_DPS = doDpsDestro
+            AI.doAutoDps = doAutoDpsDestro
         else
             AI.DO_DPS = doDpsAffliction
+            AI.doAutoDps = doAutoDpsAffliction
         end
 
         --
