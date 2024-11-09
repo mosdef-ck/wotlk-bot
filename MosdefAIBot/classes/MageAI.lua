@@ -14,7 +14,7 @@ local function doManaSapphire()
     if not AI.IsInCombat() and not AI.HasContainerItem("mana sapphire") and AI.CastSpell("Conjure Mana Gem") then
         return true
     end
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 20 then
+    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 50 then
         AI.UseContainerItem("mana sapphire")
     end
     return false
@@ -30,10 +30,10 @@ end
 local function useHealthStone()
     if AI.IsInCombat() and AI.GetUnitHealthPct() <= panicPct and not AI.HasDebuff('Necrotic Aura') and
         AI.UseContainerItem("Fel Healthstone") then
-        AI.Print("I am critical, using fel healthstone")
-        if primaryTank and UnitName("player") ~= primaryTank then
-            AI.SayWhisper("I am critical, using fel healthstone", primaryTank)
-        end
+        -- AI.Print("I am critical, using fel healthstone")
+        -- if primaryTank and UnitName("player") ~= primaryTank then
+        --     AI.SayWhisper("I am critical, using fel healthstone", primaryTank)
+        -- end
     end
 end
 
@@ -90,16 +90,23 @@ local function doOnUpdate_MageAI()
         return
     end
 
-    if not AI.IsInCombat() then 
+    if AI.IsInDungeonOrRaid() then
         local spec = AI.GetMySpecName() or ""
-        if not AI.HasMyBuff("molten armor") and AI.CastSpell("molten armor") then return end
+        if not AI.HasMyBuff("molten armor") and AI.CastSpell("molten armor") then
+            return
+        end
         -- if spec == "Frost" and not AI.HasMyBuff("mage armor") and AI.CastSpell("mage armor") then return end
     end
+    
     if doSpellSteal() then
         return
     end
 
     if doManaSapphire() then
+        return
+    end
+
+    if AI.AUTO_CLEANSE and AI.CleanseRaid("Remove Curse", "Curse") then
         return
     end
 
@@ -111,23 +118,26 @@ local function doOnUpdate_MageAI()
         return
     end
 
-    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") < 95 then
+    -- cast mirror image IF we're not lusting(slows dps)
+    if AI.IsInCombat() and AI.GetTargetStrength() >= 3 and not AI.HasBuff("bloodlust") and AI.CastSpell("mirror image") then
+        return
+    end
+
+    if AI.HasBuff("Bloodlust") then
+        if AI.HasContainerItem(AI.Config.dpsPotion) then
+            AI.UseContainerItem(AI.Config.dpsPotion)
+        end
+        AI.CastSpell("Icy Veins")
+    end
+
+    if AI.HasBuff("now is the time!") then
+        AI.CastSpell("presence of mind")
+        AI.CastSpell("arcane power")
         AI.UseInventorySlot(10)
         AI.UseInventorySlot(13)
         AI.UseInventorySlot(14)
-        if AI.CastSpell("mirror image") then
-            return
-        end
-        if AI.HasBuff("Bloodlust") then
-            if AI.HasContainerItem(AI.Config.dpsPotion)then
-                AI.UseContainerItem(AI.Config.dpsPotion)                
-            end
-            AI.CastSpell("presence of mind")
-            AI.CastSpell("arcane power")
-            AI.CastSpell("Icy Veins")
-
-        end
     end
+
     useHealthStone()
 end
 
@@ -153,7 +163,7 @@ local function doDpsArcane(isAoE)
         return
     end
 
-    if AI.GetDebuffCount("arcane blast") > 2 and AI.CastSpell("arcane missiles", "target") then
+    if AI.GetDebuffCount("arcane blast") > 3 and AI.CastSpell("arcane missiles", "target") then
         return
     end
 
@@ -161,6 +171,7 @@ local function doDpsArcane(isAoE)
 end
 
 local function doDpsFireMage()
+
     if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return

@@ -6,6 +6,8 @@ setfenv(1, AI.Config)
 -- the main tank to pay close attention to
 tank = "mosdefptank"
 
+healer = "mosdefrsham"
+
 -- the mana potion to use first before popping mana cd like mana tide or innervate
 manaPotion = "Runic Mana Potion"
 

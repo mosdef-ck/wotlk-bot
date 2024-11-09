@@ -4,10 +4,8 @@ MosDefBossModule = {
     creatureId = {},
     enabled = false,
     onStart = function()
-        AI.Print("onStart filler")
     end,
     onStop = function()
-        AI.Print("onStop filler")
     end,
     onUpdate = function()
     end,
@@ -80,6 +78,11 @@ local heraldVolazjModule = MosDefBossModule:new({
     end,
     onUpdate = function()
         -- return not AI.IsHealer()
+        local class = AI.GetClass():lower()
+        if class == "shaman" and AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() ~= "Herald Volazj" and
+            AI.CastSpell("fire elemental totem") then
+            return true
+        end
         return false
     end
 })
@@ -99,14 +102,8 @@ local ichoron = MosDefBossModule:new({
                     return true
                 end
             end
-
             TargetUnit("ichoron")
-
-            if AI.IsValidOffensiveUnit("target") then
-                return true
-            end
-
-            return false
+            return AI.IsValidOffensiveUnit("target")
         end
     end,
     onStop = function()
@@ -121,29 +118,10 @@ local ichoron = MosDefBossModule:new({
 
 AI.RegisterBossModule(ichoron)
 
--- Keristrasza
-local Keristrasza = MosDefBossModule:new({
-    name = "Keristrasza",
-    onStart = function()
-        AI.Print("Engaging Keristrasza")
-    end,
-    onStop = function()
-    end,
-    onUpdate = function()
-        -- jump when we have more than 2 stacks of intense cold
-        if AI.GetDebuffCount("intense cold") >= 2 then
-            JumpOrAscendStart()
-        end
-        return false
-    end
-})
-
-AI.RegisterBossModule(Keristrasza)
-
 ---- Sartharion
 local sartharionBossMod = MosDefBossModule:new({
     name = "Sartharion",
-    safeX = 0.50792020559311, 
+    safeX = 0.50792020559311,
     safeY = 0.50132244825363,
     onStart = function()
         AI.Print("Engaging Sartharion")
@@ -155,17 +133,10 @@ local sartharionBossMod = MosDefBossModule:new({
                     return true
                 end
             end
-            TargetUnit("Sartharion")
-
-            if AI.IsValidOffensiveUnit("target") then
-                return true
-            end
-
             return false
         end
     end,
     onStop = function()
-        -- AI.Print("Sartharion done")
         if oldPriorityTargetFn ~= nil then
             AI.do_PriorityTarget = oldPriorityTargetFn
         end
@@ -180,9 +151,10 @@ local obsidianSanctum = MosDefBossModule:new({
     creatureId = {30449, 30452, 30451},
     vespPortalX = 0.53218305110931,
     vespPortalY = 0.60250127315521,
-    shadronPortalX = 0.52992987632751, 
+    shadronPortalX = 0.52992987632751,
     shadronPortalY = 0.33822014927864,
     onStart = function(self)
+        -- AI.Print("Engaged OS boss")
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if AI.HasDebuff("twilight shift") then
@@ -194,19 +166,8 @@ local obsidianSanctum = MosDefBossModule:new({
                 if AI.IsValidOffensiveUnit("target") then
                     return true
                 end
-            else
-                return false
             end
             return false
-        end
-
-        if not AI.IsTank() then
-            if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "vesperon" then
-                AI.SetMoveToPosition(self.vespPortalX, self.vespPortalY)
-            end
-            if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "shadron" then
-                AI.SetMoveToPosition(self.shadronPortalX, self.shadronPortalY)
-            end
         end
     end,
     onStop = function(self)
@@ -219,3 +180,151 @@ local obsidianSanctum = MosDefBossModule:new({
 })
 AI.RegisterBossModule(obsidianSanctum)
 
+-- grand magus
+local grandMagus = MosDefBossModule:new({
+    name = "Grand Magus Telestra",
+    creatureId = {26731},
+    onStart = function(self)
+    end,
+    onEnd = function(self)
+    end,
+    onUpdate = function(self)
+    end
+})
+
+function grandMagus:UNIT_SPELLCAST_START(caster, spellName)
+    local class = AI.GetClass():lower()
+    if class == "warlock" and spellName == "Critter" then
+        if AI.IsCasting() then
+            AI.StopCasting()
+            AI.StopMoving()
+        end
+        if not AI.HasMyDebuff("Fear", "target") and AI.CastSpell("fear", caster) then
+            AI.SayRaid("Fearing " .. caster)
+        end
+    end
+end
+
+AI.RegisterBossModule(grandMagus)
+
+--
+local anomalous = MosDefBossModule:new({
+    name = "Anomalus",
+    creatureId = {26763},
+    onStart = function(self)
+        oldPriorityTargetFn = AI.do_PriorityTarget
+        AI.do_PriorityTarget = function()
+            TargetUnit("chaotic rift")
+            return AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 4)
+        end
+    end,
+    onStop = function(self)
+        if oldPriorityTargetFn ~= nil then
+            AI.do_PriorityTarget = oldPriorityTargetFn
+        end
+    end
+})
+
+AI.RegisterBossModule(anomalous)
+
+-- Keristrasza
+local Keristrasza = MosDefBossModule:new({
+    name = "Keristrasza",
+    creatureId = {26723},
+    onStart = function()
+        AI.Print("Engaging Keristrasza")
+    end,
+    onStop = function()
+    end,
+    onUpdate = function()
+        -- jump when we have more than 2 stacks of intense cold
+        if AI.GetDebuffCount("intense cold") >= 3 and not AI.HasDebuff("crystallize") then
+            JumpOrAscendStart()
+        end
+        return false
+    end
+})
+
+AI.RegisterBossModule(Keristrasza)
+
+-- Oculus
+local leyguardian = MosDefBossModule:new({
+    name = "Ley-Guardian Eregos",
+    creatureId = {27656},
+    onStart = function(self)
+        self.oldDpsMethod = AI.DO_DPS
+        AI.DO_DPS = function(isAoe)
+            if AI.IsPossessing() then
+                local pet = UnitName("playerpet"):lower()
+                if pet == "ruby drake" and AI.UsePossessionSpell("searing wrath", "target") then
+                    return
+                elseif pet == "amber drake" then
+                    if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "Ley") then
+                        if AI.IsCasting() or AI.IsCasting("playerpet") then
+                            return true
+                        end
+                        if AI.GetMyDebuffCount("shock charge", "target") < 10 and
+                            AI.UsePossessionSpell("temporal rift", "target") then
+                            return true
+                        elseif AI.GetMyDebuffCount("shock charge", "target") >= 10 then
+                            if AI.IsCasting("playerpet") then
+                                AI.StopCasting()
+                            end
+                            if AI.UsePossessionSpell("shock lance", "target") then
+                                return true
+                            end
+                        end
+                    elseif AI.UsePossessionSpell("shock lance", "target") then
+                        return true
+                    end
+                elseif pet == "emerald drake" and AI.UsePossessionSpell("leeching poison", "target") then
+                    return
+                end
+            else
+                self.oldDpsMethod(isAoe)
+            end
+        end
+    end,
+    onStop = function(self)
+        if self.oldDpsMethod ~= nil then
+            AI.DO_DPS = self.oldDpsMethod
+        end
+    end,
+    onUpdate = function()
+        if not AI.IsPossessing() then
+            return false
+        end
+        if AI.IsValidOffensiveUnit("target") and MaloWUtils_StrContains(UnitName("target"), "Ley") then
+            local pet = UnitName("playerpet"):lower()
+            if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "target") > 2 then
+                local mostHurt = AI.GetMostDamagedFriendlyPet()
+                if mostHurt and AI.GetUnitHealthPct(mostHurt) < 50 then
+                    TargetUnit(mostHurt)
+                    FocusUnit("target")
+                    if AI.UsePossessionSpell("dream funnel", "focus") then
+                        return true
+                    end
+                end
+            end
+            if pet == "amber drake" and AI.HasBuff("enraged assault", "target") then
+                local delay = 0
+                if AI.IsPriest() then
+                    delay = 0
+                elseif AI.IsWarlock() then
+                    delay = 3
+                else
+                    delay = 6
+                end
+                AI.RegisterPendingAction(function()
+                    if AI.IsValidOffensiveUnit("target") and not AI.HasDebuff("stop time", "target") then
+                        return AI.HasPossessionSpellCooldown("stop time") or
+                                   AI.UsePossessionSpell("stop time", "target")
+                    end
+                    return false
+                end, delay, "TIME_STOP")
+            end
+        end
+    end
+})
+
+AI.RegisterBossModule(leyguardian)

@@ -13,6 +13,8 @@ AI.DISABLE_CDS = false
 AI.AUTO_PURGE = true
 AI.IS_DOING_ONUPDATE = false
 AI.AUTO_AOE = false
+AI.DISABLE_DRAIN = false
+AI.DISABLE_THREAT_MANAGEMENT = false
 
 AI.BossModules = {}
 AI.ZoneModules = {}
@@ -33,8 +35,8 @@ local autoEnableIfInRaid = true
 local tickTime = 0
 
 local lastIwtTime = 0
-
 local wrongFacingIwtTime = 0
+local lastRefaceLeaderTime = 0
 
 local lastPlayerEnterWorld = nil
 
@@ -46,6 +48,9 @@ local findEnabledBossModule
 
 local goToPositionDestination = nil
 local hasReachedGoToPosition = nil
+
+local registeredClassEventHandlers = {}
+local registeredPendingActions = {}
 
 local function onUpdate()
     if not isAIEnabled or not isGreenlit then
@@ -59,23 +64,44 @@ local function onUpdate()
             end
         end
     end
-
+    ---        
+    AI.IS_DOING_ONUPDATE = true
     local bossMod = findEnabledBossModule()
     -- if we have a boss module
-    if bossMod and bossMod.onUpdate and bossMod:onUpdate() then
+    if bossMod and type(bossMod.onUpdate) == "function" and bossMod:onUpdate() then
         -- execute the base on update method but skip all the class specific ones
         AI.doOnUpdate_BotBase()
+        AI.IS_DOING_ONUPDATE = false
         return
     end
-    AI.IS_DOING_ONUPDATE = true
     for i, f in ipairs(cachedOnUpdateCallbacks) do
         f()
     end
     AI.IS_DOING_ONUPDATE = false
-
     -- do auto-dps towards the end
     if AI.AUTO_DPS and AI.doAutoDps then
         AI.doAutoDps()
+    end
+
+    local now = GetTime()
+    -- execute pending action before boss updates
+    for i, action in ipairs(registeredPendingActions) do
+        if now >= action.when and action.executed == false and action.f() then
+            action.executed = true
+        end
+    end
+
+    -- clean up executed actions
+    local done = false
+    while not done do
+        done = true
+        for i, action in ipairs(registeredPendingActions) do
+            if action.executed == true then
+                table.remove(registeredPendingActions, i)
+                done = false
+                break
+            end
+        end
     end
 end
 
@@ -139,9 +165,9 @@ local function loadBossModule(bossName, creatureId)
             foundMod = mod
         end
         if foundMod ~= nil and not foundMod.enabled then
-            AI.Print(bossName .. " module enabled, good luck!")
             foundMod.enabled = true
             foundMod:onStart()
+            AI.Print(bossName .. " module enabled, good luck!")
         end
     end
 end
@@ -242,7 +268,9 @@ end
 
 local function handleFacingWrongWay()
     if AI.ALLOW_AUTO_REFACE then
-        SetCVar("autoInteract", 1)
+        if GetCVar("autoInteract") ~= 1 then
+            SetCVar("autoInteract", 1)
+        end
         InteractUnit("target")
         SetCVar("autoInteract", 0)
         wrongFacingIwtTime = tickTime
@@ -282,11 +310,11 @@ local function onEvent(self, event, ...)
         AI.ResetMoveToPosition()
     elseif event == "UI_ERROR_MESSAGE" then
         if arg1 == "You are facing the wrong way!" or arg1 == "Target needs to be in front of you." then
-            if not AI.IsTank() then
-                handleFacingWrongWay()
-            end
+            handleFacingWrongWay()
         end
     elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
+        local caster, spellName, rank = arg1, arg2, arg3
+        -- print("UNIT_SPELLCAST_START arg1 "..arg1.. " arg2 "..arg2 .. " arg3 "..arg3 .. " arg4 "..arg4)
         if cachedUnitCastCb == nil then
             cachedUnitCastCb = {}
             for f in pairs(AI) do
@@ -318,6 +346,8 @@ local function onEvent(self, event, ...)
                 AI.ZoneModules[i]:onLeave()
             end
         end
+    elseif event == "UNIT_AURA" then
+        -- print("UNIT_AURA "..arg1)
     elseif event == "RAID_BOSS_EMOTE" then
         print("RAID_BOSS_EMOTE" .. arg1 .. arg2 .. arg3)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
@@ -350,8 +380,15 @@ local function onEvent(self, event, ...)
                 arg2 = extraArg2 or "n/a",
                 arg3 = extraArg3 or "n/a"
             }
+            --print(arg2 .. " ".. MaloWUtils_ConvertTableToString(args))
             if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
                 bossMod[arg2](bossMod, args)
+            end
+            for i in pairs(registeredClassEventHandlers) do
+                if registeredClassEventHandlers[i].event == arg2 and type(registeredClassEventHandlers[i].f) ==
+                    "function" then
+                    registeredClassEventHandlers[i].f(f, args)
+                end
             end
             return
         end
@@ -360,6 +397,12 @@ local function onEvent(self, event, ...)
     if bossMod and bossMod[event] and type(bossMod[event]) == "function" then
         -- print("invoking "..event .. " on boss mod ".. bossMod.name)
         bossMod[event](bossMod, ...)
+    end
+
+    for i in pairs(registeredClassEventHandlers) do
+        if registeredClassEventHandlers[i].event == event and type(registeredClassEventHandlers[i].f) == "function" then
+            registeredClassEventHandlers[i].f(f, ...)
+        end
     end
 end
 
@@ -454,16 +497,22 @@ end
 function AI.doOnUpdate_BotBase()
     if wrongFacingIwtTime > 0 then
         local diff = tickTime - wrongFacingIwtTime
-        if diff > 0.2 then
+        if diff > 0.15 then
             wrongFacingIwtTime = 0
             AI.StopMoving()
         end
     end
-
+    if lastRefaceLeaderTime > 0 then
+        local diff = tickTime - lastRefaceLeaderTime
+        if diff > 0.15 then
+            lastRefaceLeaderTime = 0
+            AI.StopMoving()
+        end
+    end
     --
     if AI.ALLOW_AUTO_MOVEMENT then
         doAutoMovementUpdate()
-    end    
+    end
 end
 
 -- stub, overridden
@@ -471,14 +520,34 @@ function AI.do_PriorityTarget()
     return false
 end
 
-function AI.ExecuteDpsMethod(isAoE)
-    if not AI.IS_DOING_ONUPDATE and not AI.AUTO_DPS then
-        AI.DO_DPS(isAoE)
+--stub
+function AI.FollowCrawl(unit)
+    if unit ~= nil and UnitExists(unit) then
+        FollowUnit(unit)
+        lastRefaceLeaderTime = tickTime
     end
 end
 
 -- stub overridden by class AIs
 function AI.DO_DPS(isAoE)
+end
+
+function AI.ExecuteDpsMethod(isAoE)
+    AI.RegisterPendingAction(function()
+        if not AI.AUTO_DPS then
+            AI.DO_DPS(isAoE)
+        end
+        return true
+    end, null, "DO_DPS")
+end
+
+-- generic mount function, customizable
+function AI.DO_MOUNT(flyMount)
+    if flyMount then
+        RunMacroText("/use blue wind rider")
+    else
+        RunMacroText("/use amani war bear")
+    end
 end
 
 function AI.toggleAutoDps(on)
@@ -496,10 +565,10 @@ end
 function AI.toggleAoEMode()
     if AI.AUTO_AOE then
         AI.AUTO_AOE = false
-        --AI.Print("auto-AOE OFF")
+        -- AI.Print("auto-AOE OFF")
     else
         AI.AUTO_AOE = true
-        --AI.Print("auto-AOE ON")
+        -- AI.Print("auto-AOE ON")
     end
 end
 
@@ -524,6 +593,34 @@ function AI.RegisterZoneModule(mod)
     end
 end
 
+function AI.RegisterClassEvent(event, f)
+    table.insert(registeredClassEventHandlers, {
+        event = event,
+        f = f
+    })
+end
+
+function AI.RegisterPendingAction(f, delay, id)
+    local now = GetTime()
+    local actionId = id or now
+    for i, v in ipairs(registeredPendingActions) do
+        if v.id == actionId then
+            return
+        end
+    end
+    local action = {
+        id = actionId,
+        f = f,
+        when = now,
+        executed = false
+    }
+    if type(delay) == "number" then
+        action.when = now + delay
+    end
+
+    table.insert(registeredPendingActions, action)
+end
+
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("CHAT_MSG_ADDON")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -531,15 +628,14 @@ f:RegisterEvent("UI_ERROR_MESSAGE")
 f:RegisterEvent("UNIT_SPELLCAST_START")
 f:RegisterEvent("UNIT_SPELLCAST_STOP")
 f:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
--- f:RegisterEvent("UNIT_TARGET")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
--- f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("CHAT_MSG_RAID_BOSS_EMOTE")
 f:RegisterEvent("RAID_BOSS_EMOTE")
 f:RegisterEvent("UNIT_DIED")
+f:RegisterEvent("UNIT_AURA")
 f:RegisterEvent("UNIT_DESTROYED")
 f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:SetScript("OnEvent", onEvent)

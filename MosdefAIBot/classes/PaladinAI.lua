@@ -16,10 +16,10 @@ end
 
 local function useHealthStone()
     if AI.IsInCombat() and AI.GetUnitHealthPct() <= panicPct and not AI.HasDebuff('Necrotic Aura') and AI.UseContainerItem("Fel Healthstone") then
-        AI.Print("I am critical, using fel healthstone")
-        if primaryTank and UnitName("player") ~= primaryTank then
-            AI.SayWhisper("I am critical, using fel healthstone", primaryTank)
-        end
+        -- AI.Print("I am critical, using fel healthstone")
+        -- if primaryTank and UnitName("player") ~= primaryTank then
+        --     AI.SayWhisper("I am critical, using fel healthstone", primaryTank)
+        -- end
     end
 end
 
@@ -85,18 +85,14 @@ local function doDps(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() > 3 and not AI.HasBuff("avenging wrath", "player") then
-        AI.CastSpell("avenging wrath")
-    end
+   
     if AI.GetTargetStrength() > 3 and not AI.HasBuff("holy shield", "player") and AI.CastSpell("holy shield") then
         return
     end
     if AI.GetTargetStrength() >= 3 and not AI.HasBuff("sacred shield", "player") and AI.CastSpell("sacred shield") then
         return
     end
-    if AI.GetTargetStrength() >= 3 and not AI.HasBuff("divine plea", "player") and AI.CastSpell("divine plea") then
-        return
-    end
+    
     if AI.CanCastSpell("hammer of wrath", "target") and AI.CastSpell("hammer of wrath", "target") then
         return
     end
@@ -109,7 +105,17 @@ local function doDps(isAoE)
     if AI.CastSpell("Shield of Righteousness") then
         return
     end
-    if AI.CastSpell("judgement of wisdom") then
+    -- if AI.CastSpell("judgement of wisdom") then
+    --     return
+    -- end
+    if AI.CastSpell("judgement of light") then
+        return
+    end
+
+    if AI.GetTargetStrength() > 3 and not AI.HasBuff("avenging wrath", "player") then
+        AI.CastSpell("avenging wrath")
+    end
+    if AI.GetTargetStrength() >= 3 and not AI.HasBuff("divine plea", "player") and AI.CastSpell("divine plea") then
         return
     end
 end
@@ -120,20 +126,20 @@ local function doOnUpdate_ProtPaladin()
         return
     end
 
-	if not AI.IsInCombat() then
+	if not AI.IsInCombat() and AI.IsInDungeonOrRaid() then
 		if not AI.HasBuff("righteous fury") and AI.CastSpell("righteous fury") then return end
 		if not AI.HasBuff("greater blessing of sanctuary") and AI.CastSpell('greater blessing of sanctuary', "player") then return end
 	end
 
-    if AI.IsInCombat() and AI.GetUnitHealthPct() <= panicPct then
-        AI.UseInventorySlot(13)
-        AI.UseInventorySlot(14)
-    end
+    -- if AI.IsInCombat() and AI.GetUnitHealthPct() <= panicPct then
+    --     AI.UseInventorySlot(13)
+    --     AI.UseInventorySlot(14)
+    -- end
     if AI.IsInCombat() then
         local criticalTarget, missingHp = AI.GetMostDamagedFriendly("hand of sacrifice")
         if criticalTarget ~= nil and  UnitName(criticalTarget) ~= UnitName("player") and AI.GetUnitHealthPct(criticalTarget) <= panicPct and
             AI.CastSpell("hand of sacrifice", criticalTarget) then
-            AI.Print("casting hand of sacrifice on " .. UnitName(criticalTarget))
+            --AI.Print("casting hand of sacrifice on " .. UnitName(criticalTarget))
             return
         end
     end

@@ -1,7 +1,12 @@
 local isAIEnabled = false
 local doAutoDps = false
 local primaryTank = nil
+local primaryHealer = nil
+
 local panicPct = 20
+local primaryManaPot = "runic mana potion"
+
+local procTierForSwp = 0
 
 local function upkeepShadowForm()
     if GetShapeshiftForm() ~= 1 and AI.CastSpell("Shadowform") then
@@ -27,10 +32,10 @@ local function doPowerWordShield()
                 SpellStopCasting()
             end
             if AI.CastSpell("power word: shield", criticalTarget) then
-                AI.Print("pw:shielded " .. UnitName(criticalTarget))
-                if primaryTank then
-                    AI.SayWhisper("pw:shielded " .. UnitName(criticalTarget), primaryTank)
-                end
+                -- AI.Print("pw:shielded " .. UnitName(criticalTarget))
+                -- if primaryTank then
+                --     AI.SayWhisper("pw:shielded " .. UnitName(criticalTarget), primaryTank)
+                -- end
                 return true
             end
         end
@@ -41,11 +46,24 @@ end
 local function useHealthStone()
     if AI.IsInCombat() and AI.GetUnitHealthPct() <= panicPct and not AI.HasDebuff('Necrotic Aura') and
         AI.UseContainerItem("Fel Healthstone") then
-        AI.Print("I am critical, using fel healthstone")
-        if primaryTank and UnitName("player") ~= primaryTank then
-            AI.SayWhisper("I am critical, using fel healthstone", primaryTank)
-        end
+        -- AI.Print("I am critical, using fel healthstone")
+        -- if primaryTank and UnitName("player") ~= primaryTank then
+        --     AI.SayWhisper("I am critical, using fel healthstone", primaryTank)
+        -- end
     end
+end
+
+local function getProcTier()    
+    if AI.HasBuff("bloodlust") or AI.HasBuff("embrace of the spider") then
+        return 1
+    end
+    if AI.HasBuff("bloodlust") and AI.HasBuff("embrace of the spider") then
+        return 2
+    end
+    if AI.HasBuff("bloodlust") and AI.HasBuff("embrace of the spider") and AI.HasBuff("black magic") then
+        return 3
+    end
+    return 0
 end
 
 local function doAutoDps()
@@ -61,48 +79,54 @@ local function doAutoDps()
     if not AI.do_PriorityTarget() then
         AssistUnit(primaryTank)
     end
+
     if not AI.IsValidOffensiveUnit("target") then
         return
     end
 
     useHealthStone()
 
-    if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") <= 40 and AI.CastSpell("shadowfiend", "target") then
-        return
-    end
-
-    if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") < 20 and AI.CastSpell("Hymn of Hope") then
-        return
-    end
-
-    if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 20 and AI.CastSpell("Dispersion") then
-        return
-    end
-
     -- AI.CastSpell("inner focus")
+    if not AI.AUTO_AOE then
+        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 2 and
+            AI.CastSpell("Vampiric Touch", "target") then
+            return
+        end
+    end
 
     if AI.CastSpell("mind blast", "target") then
         return
     end
-    -- if AI.CastSpell("shadow word: death", "target") then
-    --     return
-    -- end
+    if AI.GetUnitHealthPct("player") > 20 and AI.CastSpell("shadow word: death", "target") then
+        return
+    end
 
-    if not AI.AUTO_AOE then        
-        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 1 and
+    if not AI.AUTO_AOE then
+        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 2 and
             AI.CastSpell("Vampiric Touch", "target") then
             return
         end
-        if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("devouring plague", "target") <= 1 and
-            AI.CastSpell("devouring plague", "target") then
+
+        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 and
+            AI.GetDebuffDuration("devouring plague", "target") <= 1 and AI.CastSpell("devouring plague", "target") then
             return
         end
 
-        if AI.GetTargetStrength() >= 2 and
-            (not AI.HasDebuff("Shadow Word: Pain", "target") or AI.GetBuffDuration("potion of wild magic") >= 12 or AI.GetBuffDuration("now is the time!") >= 8) and
-            AI.CastSpell("Shadow Word: Pain", "target") then
-            return
+        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 then
+            if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
+                return
+            end
+
+            if AI.GetTargetStrength() > 3 then
+                local procTier = getProcTier()
+                if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
+                    procTierForSwp = procTier
+                    -- AI.SayRaid("SWP under procTier " .. procTier)
+                    return
+                end
+            end
         end
+
         if AI.CastSpell("mind flay", "target") then
             return
         end
@@ -119,7 +143,7 @@ local function autoPurge()
 end
 
 local function manageThreat()
-    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") then
+    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") and not AI.DISABLE_THREAT_MANAGEMENT then
         local threat = AI.GetThreatPct("target")
         if AI.GetUnitHealthPct("target") < 95 and threat > 90 and AI.CastSpell("fade") then
             -- AI.Print("Exceeded 90% of threat on " .. GetUnitName("target"))
@@ -158,15 +182,37 @@ local function doOnUpdate_ShadowPriest()
         return
     end
 
-    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") < 95 then
-        if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
-            if AI.UseContainerItem(AI.Config.dpsPotion) then
-                return
-            end
+    if AI.IsInCombat() then
+        if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") <= 50 and AI.HasContainerItem(primaryManaPot) and
+            AI.UseContainerItem(primaryManaPot) then
+            return
         end
+
+        if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") < 10 and AI.CastSpell("Hymn of Hope") then
+            return
+        end
+        if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") < 40 and AI.CastSpell("shadowfiend", "target") then
+            return
+        end
+        if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 40 and AI.CastSpell("Dispersion") then
+            return
+        end
+    end
+
+    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") < 95 then
+        -- if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
+        --     -- if AI.UseContainerItem(AI.Config.dpsPotion) then
+        --     --     return
+        --     -- end
+        -- end
         AI.UseInventorySlot(10)
         AI.UseInventorySlot(13)
         AI.UseInventorySlot(14)
+    end
+
+    if AI.GetTargetStrength() > 3 and not AI.HasMyDebuff("Shadow Word: Pain", "target") then
+        -- if swp somehow expires, we want to reset the flags to we can re-apply given favorable conditions
+        procTierForSwp = 0
     end
 
     useHealthStone()
@@ -183,51 +229,54 @@ local function doDps(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") <= 50 and AI.CastSpell("shadowfiend", "target") then
-        return
-    end
-
-    if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 20 and AI.CastSpell("Dispersion") then
-        return
-    end
-
-    if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") < 10 and AI.CastSpell("Hymn of Hope") then
-        return
-    end
-
     -- if AI.GetTargetStrength() >= 2 then
     --     AI.CastSpell("inner focus")
     -- end
 
+    if not isAoE then
+        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 2 and
+            AI.CastSpell("Vampiric Touch", "target") then
+            return
+        end
+    end
+
     if AI.CastSpell("Mind Blast") then
         return
-    end
-    if AI.CastSpell("Shadow Word: Death", "target") then
-        return
-    end
+    end    
 
     if isAoE and AI.CastSpell("mind sear", "target") then
         return
     else
-        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 1 and
-            AI.CastSpell("Vampiric Touch", "target") then
+        if AI.CastSpell("Shadow Word: Death", "target") then
+            return
+        end
+        
+        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 and
+            AI.GetDebuffDuration("devouring plague", "target") <= 1 and AI.CastSpell("devouring plague", "target") then
             return
         end
 
-        if AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("devouring plague", "target") <= 1 and
-            AI.CastSpell("devouring plague", "target") then
-            return
+        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 then
+            if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
+                return
+            end
+
+            if AI.GetTargetStrength() > 3 then
+                local procTier = getProcTier()
+                if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
+                    procTierForSwp = procTier
+                    -- AI.SayRaid("SWP under procTier " .. procTier)
+                    return
+                end
+            end
         end
 
-        if AI.GetTargetStrength() >= 2 and
-            (not AI.HasDebuff("Shadow Word: Pain", "target") or AI.GetBuffDuration("potion of wild magic") >= 12) and
-            AI.CastSpell("Shadow Word: Pain", "target") then
-            return
-        end
-        if AI.CastSpell("mind flay", "target") then
-            return
-        end
+        AI.CastSpell("mind flay", "target")
     end
+end
+
+function AI.doOnCombatStart_ShadowPriest()
+    procTierForSwp = 0
 end
 
 function AI.doOnLoad_ShadowPriest()
@@ -249,6 +298,7 @@ function AI.doOnLoad_ShadowPriest()
         if AI.Config then
             AI.Print("auto-configuration applied")
             primaryTank = AI.Config.tank
+            primaryHealer = AI.Config.healer
             -- panicPct = AI.Config.panicHpPct
             AI.Print({
                 primaryTank = primaryTank,

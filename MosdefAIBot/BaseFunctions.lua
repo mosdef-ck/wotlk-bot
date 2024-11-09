@@ -26,6 +26,22 @@ local function getGCDSpell(playerClass)
     end
 end
 
+local function getInSpellRangeHarm(class)
+    local lClass = class:lower()
+    if lClass == "shaman" then
+        return "lightning bolt"
+    elseif lClass == "priest" then
+        return "mind flay"
+    elseif lClass == "warlock" then
+        return "shadow bolt"
+    elseif lClass == "mage" then
+        return "arcane blast"
+    elseif lClass == "paladin" then
+        return "Hand of Reckoning"
+    end
+    return nil
+end
+
 function AI.Print(msg)
     if type(msg) == "table" then
         msg = MaloWUtils_ConvertTableToString(msg)
@@ -74,8 +90,8 @@ function AI.IsChanneling(unit)
 end
 
 function AI.IsOnGCD()
-    -- return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
-    return false
+    return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
+    -- return false
 end
 
 function AI.CanCast()
@@ -90,7 +106,12 @@ function AI.IsSpellInRange(spell, unit)
     return IsSpellInRange(spell, unit) == 1
 end
 
-function AI.IsValidOffensiveUnit(unit, requireCombat)
+function AI.CanHitTarget(unit)
+    return IsSpellInRange(getInSpellRangeHarm(AI.GetClass()), unit or "target") == 1
+end
+
+function AI.IsValidOffensiveUnit(nunit, requireCombat)
+    local unit = nunit or "target"
     if not UnitExists(unit) then
         return false
     end
@@ -109,6 +130,9 @@ function AI.IsValidOffensiveUnit(unit, requireCombat)
 end
 
 function AI.IsUnitValidFriendlyTarget(unit, spell)
+    if unit == nil or not UnitExists(unit) then
+        return false
+    end
     if UnitIsDeadOrGhost(unit) then
         return false
     end
@@ -141,12 +165,12 @@ function AI.IsUsableSpell(spell, unit)
 end
 
 function AI.CanCastSpell(spell, unit)
-    local name, r, i, manaCost = GetSpellInfo(spell)
+    local name, r, i, manaCost, _, _, castTime = GetSpellInfo(spell)
     if name == nil then
         return false
     end
     return AI.CanCast() and AI.IsUsableSpell(spell, unit) and GetSpellCooldown(spell) == 0 and UnitPower("player") >=
-               manaCost
+               manaCost and (not AI.IsMoving() or castTime == 0)
 end
 
 function AI.CastSpell(spell, target)
@@ -254,7 +278,7 @@ end
 function AI.GetTargetStrength()
     local members = AI.GetNumPartyOrRaidMembers()
     -- 4 for bosses
-    if UnitHealthMax("target") > 400000 then
+    if UnitHealthMax("target") > 300000 then
         return 4
     end
 
@@ -339,6 +363,60 @@ function AI.GetMostDamagedFriendly(spell)
     return mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp
 end
 
+function AI.GetRaidOrPartyMemberUnits()
+    local members = {}
+    local memberCount = AI.GetNumPartyOrRaidMembers()
+    for i = 1, memberCount do
+        local unit = AI.GetUnitFromPartyOrRaidIndex(i)
+        table.insert(members, unit)
+    end
+    return members
+end
+
+function AI.GetRaidOrPartyPetMemberUnits()
+    local members = {}
+    local memberCount = AI.GetNumPartyOrRaidMembers()
+    for i = 1, memberCount do
+        local unit = AI.GetUnitFromPartyOrRaidIndex(i)
+        local unitPet = unit .. "-pet"
+        table.insert(members, unitPet)
+    end
+    return members
+end
+
+function AI.GetMostDamagedFriendlyPet()
+    local healCandidates = {}
+    local members = AI.GetNumPartyOrRaidMembers()
+    for i = 1, members do
+        local unit = AI.GetUnitFromPartyOrRaidIndex(i)
+        local unitPet = unit .. "-pet"
+        if UnitExists(unitPet) then
+            local missingHealth = AI.GetMissingHealth(unitPet)
+            if missingHealth >= 0 then
+                table.insert(healCandidates, {
+                    unit = unitPet,
+                    missingHealth = missingHealth
+                })
+            end
+        end
+    end
+    table.sort(healCandidates, function(a, b)
+        return a.missingHealth > b.missingHealth
+    end)
+
+    local mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp = nil, nil, nil, nil
+    local tsize = table.getn(healCandidates)
+    if tsize > 0 then
+        mostHurt = healCandidates[1].unit
+        mostHurtMissingHp = healCandidates[1].missingHealth
+    end
+    if tsize > 1 then
+        secondMostHurt = healCandidates[2].unit
+        secondMostHurtHp = healCandidates[1].missingHealth
+    end
+    return mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp
+end
+
 --
 local function UnitHasDebuffOfType(unit, debuffType1, debuffType2, debuffType3)
     for i = 1, 40 do
@@ -369,12 +447,13 @@ function AI.CleanseRaid(spell, debuffType1, debuffType2, debuffType3)
     return false
 end
 
-local function FindContainerItem(itemName)
+function AI.FindContainerItem(itemName)
     for bag = 0, 4 do
         for slot = 1, GetContainerNumSlots(bag) do
             local item = GetContainerItemLink(bag, slot)
+            local _, itemCount = GetContainerItemInfo(bag, slot)
             if item and string.lower(item):find(itemName:lower()) then
-                return bag, slot
+                return bag, slot, itemCount
             end
         end
     end
@@ -382,12 +461,12 @@ local function FindContainerItem(itemName)
 end
 
 function AI.HasContainerItem(itemName)
-    local bag, slot = FindContainerItem(itemName)
+    local bag, slot = AI.FindContainerItem(itemName)
     return bag ~= nil and slot ~= nil
 end
 
 function AI.UseContainerItem(itemName)
-    local bag, slot = FindContainerItem(itemName)
+    local bag, slot = AI.FindContainerItem(itemName)
     if bag ~= nil then
         local s, d, cd = GetContainerItemCooldown(bag, slot)
         if s and s == 0 then
@@ -515,11 +594,18 @@ function AI.IsTank()
     return spec:lower() == "protection"
 end
 
+function AI.IsDps()
+    local spec = AI.GetMySpecName() or ""
+    return spec:lower() ~= "protection" and spec:lower() ~= "restoration" and spec:lower() ~= "holy"
+end
+
 function AI.IsPossessing()
-    for i = 1, 12 do
-        local slot = 120 + i
-        if HasAction(slot) then
-            return true
+    if not HasPetUI() then
+        for i = 1, 12 do
+            local slot = 120 + i
+            if HasAction(slot) then
+                return true
+            end
         end
     end
     return false
@@ -545,15 +631,15 @@ end
 function AI.HasPossessionSpellCooldown(spellName)
     local slot = AI.FindPossessionSpellSlot(spellName)
     if slot ~= nil then
-        return GetActionCooldown(slot) == 0
+        return GetActionCooldown(slot) > 0
     end
     return nil
 end
 
 function AI.UsePossessionSpell(spellName, unit)
     local hasCd = AI.HasPossessionSpellCooldown(spellName)
-    if hasCd ~= nil and hasCd == true then
-        UseAction(AI.FindPossessionSpellSlot(spellName), unit or "target")
+    if hasCd ~= nil and hasCd == false then
+        UseAction(AI.FindPossessionSpellSlot(spellName), unit)
         return true
     end
     return false
@@ -584,11 +670,59 @@ function AI.IsMoving()
 end
 
 function AI.GetUnitCreatureId(unit)
-    local guid = UnitGUID(unit)
+    local guid = UnitGUID(unit or "target")
     return (guid and tonumber(guid:sub(9, 12), 16)) or 0
 end
 
 function AI.StopCasting()
     SpellStopCasting()
     AI.StopMoving()
+end
+
+function AI.IsInDungeonOrRaid()
+    local _, instanceType = GetInstanceInfo()
+    return instanceType == "party" or instanceType == "raid"
+end
+
+function AI.GetMapDifficulty()
+    local _, instanceType, difficulty, _, _, playerDifficulty, isDynamicInstance = GetInstanceInfo()
+    if instanceType == "raid" then -- "new" instance (ICC)
+        if difficulty == 1 then -- 10 men
+            return playerDifficulty == 0 and "normal10" or playerDifficulty == 1 and "heroic10" or "unknown"
+        elseif difficulty == 2 then -- 25 men
+            return playerDifficulty == 0 and "normal25" or playerDifficulty == 1 and "heroic25" or "unknown"
+        end
+    elseif instanceType == "party" then -- support for "old" instances
+        local instanceDiff = GetInstanceDifficulty()
+        if instanceDiff == 1 then
+            return "normal5"
+        elseif instanceDiff == 2 then
+            return "heroic5"
+        end
+    end
+end
+
+function AI.IsHeroicRaidOrDungeon()
+    local diff = AI.GetMapDifficulty()
+    return diff ~= nil and (MaloWUtils_StrContains(diff, "heroic") or MaloWUtils_StrContains(diff, "25"))
+end
+
+function AI.IsPriest()
+    local class = AI.GetClass():lower()
+    return class == "priest"
+end
+
+function AI.IsShaman()
+    local class = AI.GetClass():lower()
+    return class == "shaman"
+end
+
+function AI.IsMage()
+    local class = AI.GetClass():lower()
+    return class == "mage"
+end
+
+function AI.IsWarlock()
+    local class = AI.GetClass():lower()
+    return class == "warlock"
 end

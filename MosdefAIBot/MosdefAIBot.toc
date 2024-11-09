@@ -17,3 +17,5 @@ classes\PaladinAI.lua
 zones\ZoneModule.lua
 bosses\BossModule.lua
 bosses\Naxxramas.lua
+bosses\VoA.lua
+bosses\EoE.lua
