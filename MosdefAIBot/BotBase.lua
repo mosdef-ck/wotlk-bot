@@ -52,6 +52,11 @@ local hasReachedGoToPosition = nil
 local registeredClassEventHandlers = {}
 local registeredPendingActions = {}
 
+--
+local desiredPlayerFacing = nil
+local desiredVehicleAimAngle = nil
+local desiredFollowTarget = nil
+
 local function onUpdate()
     if not isAIEnabled or not isGreenlit then
         return
@@ -237,6 +242,35 @@ SlashCmdList["AIBotCOMMAND"] = function(msg)
         end
     end
 
+    if MaloWUtils_StrStartsWith(msg, 'come-to-me') then
+        AI.SendAddonMessage("come-to-me")
+        return true
+    end
+
+    if MaloWUtils_StrStartsWith(msg, 'follow-me') then
+        AI.SendAddonMessage("follow-me")
+        return true
+    end
+
+    if MaloWUtils_StrStartsWith(msg, 'stop-follow') then
+        AI.SendAddonMessage("stop-follow")
+        return true
+    end
+
+    if MaloWUtils_StrStartsWith(msg, 'same-facing') then
+        AI.SendAddonMessage('set-facing', GetPlayerFacing())
+        return true
+    end
+
+    if MaloWUtils_StrStartsWith(msg, 'same-vehicle-aim') then
+        if AI.IsPossessing() and IsVehicleAimAngleAdjustable() then
+            AI.SendAddonMessage('set-vehicle-aim-angle', VehicleAimGetAngle())
+        else
+            AI.Print("You must be in a vehicle with adjustable aim")
+        end
+        return true
+    end
+
     AI.Print("unrecognized command: " .. msg)
 end
 SLASH_AIBotCOMMAND1 = "/aibot"
@@ -263,6 +297,30 @@ local function onAddOnChatMessage(from, message)
         else
             AI.toggleAutoDps(false)
         end
+    elseif cmd == "come-to-me" then
+        if from ~= UnitName("player") then
+            -- print("Moving to "..from)
+            local x, y = AI.GetPosition(from)
+            AI.SetMoveToPosition(x, y, 0.001)
+        end
+    elseif cmd == "set-facing" then
+        if from ~= UnitName("player") then
+            -- print("set-facing from " .. from .. " params: " .. params)
+            desiredPlayerFacing = params
+        end
+    elseif cmd == 'set-vehicle-aim-angle' then
+        -- print('set-vehicle-aim-angle to ' .. params)
+        if AI.IsPossessing() and IsVehicleAimAngleAdjustable() then
+            desiredVehicleAimAngle = params
+        end
+    elseif cmd == 'follow-me' then
+        if from ~= UnitName("player") then
+            AI.Print("setting follow to "..from)
+            desiredFollowTarget = from
+        end
+    elseif cmd == 'stop-follow' then
+        AI.Print("Clearing follow")
+        desiredFollowTarget = nil        
     end
 end
 
@@ -323,11 +381,15 @@ local function onEvent(self, event, ...)
                 end
             end
         end
-        if arg1 == "target" then
-            for i, f in ipairs(cachedUnitCastCb) do
-                f()
-            end
+        -- if arg1 == "target" then
+        --     for i, f in ipairs(cachedUnitCastCb) do
+        --         f()
+        --     end
+        -- end
+        if bossMod ~= nil and type(bossMod[event]) == "function" then
+            bossMod[event](bossMod, caster, spellName)
         end
+
     elseif event == "PLAYER_TARGET_CHANGED" then
         if AI.IsInCombat() and AI.IsValidOffensiveUnit("target") then
             loadBossModule(UnitName("target"), AI.GetUnitCreatureId("target"))
@@ -380,7 +442,7 @@ local function onEvent(self, event, ...)
                 arg2 = extraArg2 or "n/a",
                 arg3 = extraArg3 or "n/a"
             }
-            --print(arg2 .. " ".. MaloWUtils_ConvertTableToString(args))
+            -- print(arg2 .. " ".. MaloWUtils_ConvertTableToString(args))
             if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
                 bossMod[arg2](bossMod, args)
             end
@@ -409,7 +471,7 @@ end
 -- #auto movement
 
 function AI.SetMoveToPosition(x, y, minDist)
-    AI.StopMoving()
+    --AI.StopMoving()
     goToPositionDestination = {
         x = x,
         y = y,
@@ -497,14 +559,14 @@ end
 function AI.doOnUpdate_BotBase()
     if wrongFacingIwtTime > 0 then
         local diff = tickTime - wrongFacingIwtTime
-        if diff > 0.15 then
+        if diff > 0.2 then
             wrongFacingIwtTime = 0
             AI.StopMoving()
         end
     end
     if lastRefaceLeaderTime > 0 then
         local diff = tickTime - lastRefaceLeaderTime
-        if diff > 0.15 then
+        if diff > 0.2 then
             lastRefaceLeaderTime = 0
             AI.StopMoving()
         end
@@ -513,6 +575,63 @@ function AI.doOnUpdate_BotBase()
     if AI.ALLOW_AUTO_MOVEMENT then
         doAutoMovementUpdate()
     end
+
+    if desiredPlayerFacing ~= nil then
+        local currentFacing = GetPlayerFacing()
+        local diff = desiredPlayerFacing - currentFacing
+        if math.abs(diff) > 0.1745329252 then
+            if diff > 0 then
+                if (currentFacing + 2 * math.pi) - desiredPlayerFacing < diff then
+                    diff = (currentFacing + 2 * math.pi) - desiredPlayerFacing
+                    TurnLeftStop()
+                    TurnRightStop()
+                    TurnRightStart()
+                else
+                    TurnRightStop()
+                    TurnLeftStop()
+                    TurnLeftStart()
+                end
+            elseif diff < 0 then
+                if (currentFacing - 2 * math.pi) - desiredPlayerFacing > diff then
+                    diff = (currentFacing - 2 * math.pi) - desiredPlayerFacing
+                    TurnRightStop()
+                    TurnLeftStop()
+                    TurnLeftStart()
+                else
+                    TurnLeftStop()
+                    TurnRightStop()
+                    TurnRightStart()
+                end
+            end
+        else
+            desiredPlayerFacing = nil
+            TurnRightStop()
+            TurnLeftStop()
+        end
+    end
+
+    if desiredVehicleAimAngle ~= nil and AI.IsPossessing() and IsVehicleAimAngleAdjustable() then
+        local currentAimAngle = VehicleAimGetAngle()
+        local diff = desiredVehicleAimAngle - currentAimAngle
+        if math.abs(diff) > 0.1745329252 then
+            if diff > 0 then
+                VehicleAimUpStart()
+            else
+                VehicleAimDownStart()
+            end
+        else
+            VehicleAimUpStop()
+            VehicleAimDownStop()
+            desiredVehicleAimAngle = nil
+        end
+    end
+
+    if desiredFollowTarget ~= nil and desiredFollowTarget ~= UnitName("player") then
+        local calcDist = AI.GetDistanceTo(AI.GetPosition(desiredFollowTarget))
+        if AI.GetDistanceTo(AI.GetPosition(desiredFollowTarget)) > 0.003 then
+            AI.SetMoveToPosition(AI.GetPosition(desiredFollowTarget))
+        end
+    end
 end
 
 -- stub, overridden
@@ -520,7 +639,7 @@ function AI.do_PriorityTarget()
     return false
 end
 
---stub
+-- stub
 function AI.FollowCrawl(unit)
     if unit ~= nil and UnitExists(unit) then
         FollowUnit(unit)
@@ -535,7 +654,9 @@ end
 function AI.ExecuteDpsMethod(isAoE)
     AI.RegisterPendingAction(function()
         if not AI.AUTO_DPS then
-            AI.DO_DPS(isAoE)
+            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
+                AI.DO_DPS(isAoE)
+            end
         end
         return true
     end, null, "DO_DPS")

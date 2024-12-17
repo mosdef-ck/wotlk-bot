@@ -8,7 +8,7 @@ local stoneWarder = MosDefBossModule:new({
 function stoneWarder:SPELL_AURA_APPLIED(args)
     if not AI.IsTank() and args.target == UnitName("player") and args.spellName:lower() == "rock shower" then
         for i, unit in ipairs(AI.GetRaidOrPartyMemberUnits()) do
-            if not AI.HasDebuff("rock shower", unit) then
+            if UnitIsPlayer(unit) and not AI.HasDebuff("rock shower", unit) and not AI.IsTanking(unit, "target") then
                 AI.SetMoveToPosition(AI.GetPosition(unit))
                 break
             end
@@ -72,40 +72,29 @@ local emalon = MosDefBossModule:new({
     name = "Emalon the Storm Watcher",
     creatureId = {33993},
     onStart = function(self)
-        oldPriorityTargetFn = AI.do_PriorityTarget
-        AI.DISABLE_DRAIN = true
-        AI.do_PriorityTarget = function()
-            if AI.IsTank() then
-                if UnitName("focus") ~= "Tempest Minion" or not AI.IsValidOffensiveUnit("focus") or not AI.HasBuff("overcharged", "focus") then
-                    for i = 1, 10 do
-                        TargetUnit("tempest minion")
-                        if AI.IsValidOffensiveUnit() and UnitName("target") == "Tempest Minion" and
-                            AI.HasBuff("overcharged", "target") then
-                            FocusUnit("target")
-                            return true
-                        end
-                        TargetUnit("emalon")
-                    end
-                else
-                end
-            end
-            return false
-        end
+        AI.DISABLE_DRAIN = true        
     end,
     onEnd = function(self)
         AI.DISABLE_DRAIN = false
     end,
     onUpdate = function(self)
-        if AI.IsTank() and AI.GetUnitHealthPct() < 50 then
+        if AI.IsTank() and AI.GetUnitHealthPct() < 80 then
             AI.UseInventorySlot(13)
-            AI.UseInventorySlot(14)
+            --AI.UseInventorySlot(14)
         end
 
-        if AI.IsShaman() and AI.IsValidOffensiveUnit() and AI.GetUnitHealthPct("target") < 90 and
+        if AI.IsShaman() and AI.IsValidOffensiveUnit() and AI.GetUnitHealthPct("target") < 80 and
             AI.CastSpell("fire elemental totem") then
             return true
         end
     end
 })
+
+function emalon:SPELL_AURA_APPLIED(args)
+    if args.spellName:lower() == "Overcharged" then
+        TargetUnit(args.target)
+        FocusUnit("target")
+    end
+end
 
 AI.RegisterBossModule(emalon)

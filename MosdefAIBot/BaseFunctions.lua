@@ -4,7 +4,7 @@ local function getGCDSpell(playerClass)
     if playerClass == "DEATHKNIGHT" then
         return "Death Coil"
     elseif playerClass == "DRUID" then
-        return "life bloom"
+        return "lifebloom"
     elseif playerClass == "HUNTER" then
         return "Serpent Sting"
     elseif playerClass == "MAGE" then
@@ -38,6 +38,8 @@ local function getInSpellRangeHarm(class)
         return "arcane blast"
     elseif lClass == "paladin" then
         return "Hand of Reckoning"
+    elseif lClass == "druid" then
+        return "Wrath"
     end
     return nil
 end
@@ -278,7 +280,7 @@ end
 function AI.GetTargetStrength()
     local members = AI.GetNumPartyOrRaidMembers()
     -- 4 for bosses
-    if UnitHealthMax("target") > 300000 then
+    if UnitHealthMax("target") >= 500000 then
         return 4
     end
 
@@ -518,14 +520,22 @@ function AI.IsInVehicle(unit)
 end
 
 function AI.StopMoving()
-    MoveForwardStart()
     MoveBackwardStart()
+    MoveBackwardStop()    
+    MoveForwardStart()
     MoveForwardStop()
-    MoveBackwardStop()
+    StrafeLeftStart()
     StrafeLeftStop()
+    StrafeRightStart()
     StrafeRightStop()
     TurnLeftStop()
     TurnRightStop()
+        
+    -- AI.RegisterPendingAction(function()
+    --     MoveBackwardStop()
+    --     MoveForwardStop()
+    --     return true
+    -- end, 0.1, "STOP_MOVING")
 end
 
 function AI.CanInterrupt()
@@ -725,4 +735,62 @@ end
 function AI.IsWarlock()
     local class = AI.GetClass():lower()
     return class == "warlock"
+end
+
+function AI.IsDruid()
+    local class = AI.GetClass():lower()
+    return class == "druid"
+end
+
+function AI.GetPrimaryTank()
+    AI.GetPosition()
+
+    if type(AI.Config.tank) == "string" then
+        return AI.Config.tank
+    elseif type(AI.Config.tank) == "table" then
+        for i, unit in ipairs(AI.Config.tank) do
+            if UnitExists(unit) and UnitIsPlayer(unit) and GetPlayerMapPosition(unit) ~= 0 then
+                return unit
+            end
+        end
+    end
+    return nil
+end
+
+function AI.GetPrimaryHealer()
+    AI.GetPosition()
+
+    if type(AI.Config.healers) == "string" then
+        return AI.Config.healers
+    elseif type(AI.Config.healers) == "table" then
+        for i, unit in ipairs(AI.Config.healers) do
+            if UnitExists(unit) and UnitIsPlayer(unit) and GetPlayerMapPosition(unit) ~= 0 then
+                return unit
+            end
+        end
+    end
+    return nil
+end
+
+function AI.GetDps(i)
+    if i == 1 then
+        return AI.Config.dps1
+    elseif i == 2 then
+        return AI.Config.dps2
+    else
+        return AI.Config.dps3
+    end
+    return nil
+end
+
+function AI.IsDpsPosition(i)
+    local unit
+    if i == 1 then
+        unit = AI.Config.dps1
+    elseif i == 2 then
+        unit = AI.Config.dps2
+    else
+        unit = AI.Config.dps3
+    end
+    return UnitName("player"):lower() == unit:lower()
 end

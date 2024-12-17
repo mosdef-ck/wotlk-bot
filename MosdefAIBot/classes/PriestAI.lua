@@ -53,7 +53,7 @@ local function useHealthStone()
     end
 end
 
-local function getProcTier()    
+local function getProcTier()
     if AI.HasBuff("bloodlust") or AI.HasBuff("embrace of the spider") then
         return 1
     end
@@ -143,7 +143,8 @@ local function autoPurge()
 end
 
 local function manageThreat()
-    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") and not AI.DISABLE_THREAT_MANAGEMENT then
+    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") and
+        not AI.DISABLE_THREAT_MANAGEMENT then
         local threat = AI.GetThreatPct("target")
         if AI.GetUnitHealthPct("target") < 95 and threat > 90 and AI.CastSpell("fade") then
             -- AI.Print("Exceeded 90% of threat on " .. GetUnitName("target"))
@@ -182,6 +183,10 @@ local function doOnUpdate_ShadowPriest()
         return
     end
 
+    if AI.AUTO_CLEANSE and AI.CleanseRaid("Dispel Magic", "Magic") then
+        return
+    end
+
     if AI.IsInCombat() then
         if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") <= 50 and AI.HasContainerItem(primaryManaPot) and
             AI.UseContainerItem(primaryManaPot) then
@@ -199,15 +204,14 @@ local function doOnUpdate_ShadowPriest()
         end
     end
 
-    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") < 95 then
-        -- if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
-        --     -- if AI.UseContainerItem(AI.Config.dpsPotion) then
-        --     --     return
-        --     -- end
-        -- end
+    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 95 then
         AI.UseInventorySlot(10)
         AI.UseInventorySlot(13)
         AI.UseInventorySlot(14)
+    end
+
+    if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
+        AI.UseContainerItem(AI.Config.dpsPotion)
     end
 
     if AI.GetTargetStrength() > 3 and not AI.HasMyDebuff("Shadow Word: Pain", "target") then
@@ -242,7 +246,7 @@ local function doDps(isAoE)
 
     if AI.CastSpell("Mind Blast") then
         return
-    end    
+    end
 
     if isAoE and AI.CastSpell("mind sear", "target") then
         return
@@ -250,7 +254,7 @@ local function doDps(isAoE)
         if AI.CastSpell("Shadow Word: Death", "target") then
             return
         end
-        
+
         if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 and
             AI.GetDebuffDuration("devouring plague", "target") <= 1 and AI.CastSpell("devouring plague", "target") then
             return

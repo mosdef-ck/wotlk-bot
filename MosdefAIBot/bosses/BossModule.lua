@@ -102,8 +102,7 @@ local ichoron = MosDefBossModule:new({
                     return true
                 end
             end
-            TargetUnit("ichoron")
-            return AI.IsValidOffensiveUnit("target")
+            return false
         end
     end,
     onStop = function()
@@ -189,19 +188,18 @@ local grandMagus = MosDefBossModule:new({
     onEnd = function(self)
     end,
     onUpdate = function(self)
+        if AI.IsWarlock() and UnitExists("focus") and AI.IsValidOffensiveUnit("focus") and not AI.HasMyDebuff("Fear", "focus") and AI.CastSpell("fear", "focus") then
+            --AI.SayRaid("Fearing " .. UnitName("focus"))
+            return true
+        end
+        return false
     end
 })
 
 function grandMagus:UNIT_SPELLCAST_START(caster, spellName)
-    local class = AI.GetClass():lower()
-    if class == "warlock" and spellName == "Critter" then
-        if AI.IsCasting() then
-            AI.StopCasting()
-            AI.StopMoving()
-        end
-        if not AI.HasMyDebuff("Fear", "target") and AI.CastSpell("fear", caster) then
-            AI.SayRaid("Fearing " .. caster)
-        end
+    if AI.IsWarlock() and spellName == "Critter" then
+        TargetUnit(caster)
+        FocusUnit("target")        
     end
 end
 
@@ -298,7 +296,7 @@ local leyguardian = MosDefBossModule:new({
             local pet = UnitName("playerpet"):lower()
             if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "target") > 2 then
                 local mostHurt = AI.GetMostDamagedFriendlyPet()
-                if mostHurt and AI.GetUnitHealthPct(mostHurt) < 50 then
+                if mostHurt and AI.GetUnitHealthPct(mostHurt) < 70 then
                     TargetUnit(mostHurt)
                     FocusUnit("target")
                     if AI.UsePossessionSpell("dream funnel", "focus") then
@@ -307,10 +305,10 @@ local leyguardian = MosDefBossModule:new({
                 end
             end
             if pet == "amber drake" and AI.HasBuff("enraged assault", "target") then
-                local delay = 0
-                if AI.IsPriest() then
+                local delay = 0                
+                if AI.IsDpsPosition(1) then
                     delay = 0
-                elseif AI.IsWarlock() then
+                elseif AI.IsDpsPosition(2) then
                     delay = 3
                 else
                     delay = 6
@@ -320,7 +318,7 @@ local leyguardian = MosDefBossModule:new({
                         return AI.HasPossessionSpellCooldown("stop time") or
                                    AI.UsePossessionSpell("stop time", "target")
                     end
-                    return false
+                    return true
                 end, delay, "TIME_STOP")
             end
         end

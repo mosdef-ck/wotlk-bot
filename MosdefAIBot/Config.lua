@@ -6,7 +6,9 @@ setfenv(1, AI.Config)
 -- the main tank to pay close attention to
 tank = "mosdefptank"
 
-healer = "mosdefrsham"
+healers = { "mosdefrsham", "mosdefrdruid" }
+
+dpsers = { "mosdefswp", "mosdeflocka", "mosdefelsham", "mosdeffmage" }
 
 -- the mana potion to use first before popping mana cd like mana tide or innervate
 manaPotion = "Runic Mana Potion"
@@ -19,3 +21,10 @@ panicHpPct = 20
 
 --
 dpsPotion = "potion of wild magic"
+
+
+dps1 = "mosdefswp"
+
+dps2 = "mosdeflocka"
+
+dps3 = "mosdefelsham"

@@ -2,8 +2,8 @@ local isAIEnabled = false
 local primaryTank = nil
 local primaryManaPot = "runic mana potion"
 local panicPct = 10
-local manaPctThreshold = 30
-local manaTideTreshold = 40
+local manaPctThreshold = 10
+local manaTideTreshold = 50
 
 local function ApplyWeaponEnchants(mainHandSpell, offHandSpell)
     local hasMainHandEnchant, mainHandExpiration, _, hasOffHandEnchant, offHandExpiration = GetWeaponEnchantInfo()
@@ -85,12 +85,12 @@ local function doOnUpdate_RestorationShaman()
             AI.CastSpell("Tidal Force")
         end
 
-        if missingHealth >= AI.GetSpellEffect("riptide") and not AI.HasBuff("riptide", primaryTank) and
+        if missingHealth >= AI.GetSpellEffect("riptide") and not AI.HasMyBuff("riptide", primaryTank) and
             AI.CastSpell("riptide", primaryTank) then
             return
         end
         if AI.HasBuff("tidal waves", "player") then
-            if missingHealth >= AI.GetSpellEffect("healing wave") and AI.CastSpell("healing wave", primaryTank) then
+            if missingHealth >= AI.GetSpellEffect("healing wave") * 1.5 and AI.CastSpell("healing wave", primaryTank) then
                 return
             end
             -- if missingHealth >= AI.GetSpellEffect("lesser healing wave") and
@@ -106,7 +106,7 @@ local function doOnUpdate_RestorationShaman()
     end
 
     -- activate bloodlust
-    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.GetUnitHealthPct("target") < 95 then
+    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.GetUnitHealthPct("target") <= 95 then
         AI.CastSpell("berserking")
         AI.UseInventorySlot(13)
         AI.UseInventorySlot(14)
@@ -155,11 +155,13 @@ local function doOnUpdate_RestorationShaman()
 end
 
 local function doOnTargetStartCasting_Shaman()
-    if AI.CanCast() and AI.CanInterrupt() and AI.CastSpell("wind shear") then
-        -- AI.Print("just interrupted ".. UnitName("target"))
-        -- if primaryTank then
-        --	AI.SayWhisper("just interrupted ".. UnitName("target"), primaryTank)
-        -- end
+    if AI.CanInterrupt() then
+        AI.RegisterPendingAction(function()
+            if AI.CanCast() and AI.CastSpell("wind shear") then
+                return true
+            end
+            return false
+        end, nil, "DO_INTERRUPT")
     end
 end
 
@@ -184,7 +186,7 @@ local function doOnUpdate_ElementalShaman()
         AI.UseContainerItem(AI.Config.dpsPotion)
     end
 
-    if AI.HasBuff("now is the time!") then
+    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 95 then
         AI.CastSpell("berserking")
         AI.UseInventorySlot(10)
         AI.UseInventorySlot(13)

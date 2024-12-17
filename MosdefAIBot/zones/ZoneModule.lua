@@ -30,56 +30,50 @@ local azjobNerub = MosdefZoneModule:new({
             return AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "web wrap"
         end
     end,
-	onLeave = function(self)
-		AI.do_PriorityTarget = oldPriorityTarget
-	end
+    onLeave = function(self)
+        AI.do_PriorityTarget = oldPriorityTarget
+    end
 })
 
 AI.RegisterZoneModule(azjobNerub)
 
-
-
 local oculus = MosdefZoneModule:new({
-	zoneName = "Oculus",
-	zoneId = 529,
-	oldDpsMethod = nil,
-	oldMountMethod = nil,
-	onEnter = function(self)
-		self.oldDpsMethod = AI.DO_DPS
-		self.oldMountMethod = AI.DO_MOUNT	
-		AI.DO_DPS = function(isAoe)
-			if AI.IsPossessing() then
-				local pet = UnitName("playerpet"):lower()
-				if pet == "ruby drake" and AI.UsePossessionSpell("searing wrath", "target") then
-					return
-				elseif pet == "amber drake" and AI.UsePossessionSpell("shock lance", "target") then
-					return
-				elseif pet == "emerald drake" and AI.UsePossessionSpell("leeching poison", "target") then
-					return
-				end
-			else
-				self.oldDpsMethod(isAoe)
-			end
-		end
+    zoneName = "Oculus",
+    zoneId = 529,
+    oldMountMethod = nil,
+    onEnter = function(self)
+        self.oldMountMethod = AI.DO_MOUNT
+		AI.PRE_DO_DPS = function(isAoE)
+            if AI.IsPossessing() then
+                local pet = UnitName("playerpet"):lower()
+                if pet == "ruby drake" and AI.UsePossessionSpell("searing wrath", "target") then
+                    return
+                elseif pet == "amber drake" and AI.UsePossessionSpell("shock lance", "target") then
+                    return
+                elseif pet == "emerald drake" and AI.UsePossessionSpell("leeching poison", "target") then
+                    return
+                end
+				return true            
+            end
+			return false
+        end
 
-		AI.DO_MOUNT = function()
-			if not AI.IsPossessing() then				
-				RunMacroText("/use amber essence")
-				RunMacroText("/use ruby essence")
-				RunMacroText("/use emerald essence")
-			else
-				VehicleExit()
-			end
-		end
-	end,
-	onLeave = function(self)
-		if self.oldDpsMethod ~= nil then
-			AI.DO_DPS = self.oldDpsMethod
-		end
-		if self.oldMountMethod ~= nil then
-			AI.DO_MOUNT = self.oldMountMethod
-		end
-	end
+        AI.DO_MOUNT = function()
+            if not AI.IsPossessing() then
+                RunMacroText("/use amber essence")
+                RunMacroText("/use ruby essence")
+                RunMacroText("/use emerald essence")
+            else
+                VehicleExit()
+            end
+        end
+    end,
+    onLeave = function(self)
+        AI.PRE_DO_DPS = nil
+        if self.oldMountMethod ~= nil then
+            AI.DO_MOUNT = self.oldMountMethod
+        end
+    end
 })
 AI.RegisterZoneModule(oculus)
 

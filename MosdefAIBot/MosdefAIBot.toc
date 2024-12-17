@@ -14,8 +14,10 @@ classes\WarlockAI.lua
 classes\MageAI.lua
 classes\PriestAI.lua
 classes\PaladinAI.lua
+classes\DruidAI.lua
 zones\ZoneModule.lua
 bosses\BossModule.lua
 bosses\Naxxramas.lua
 bosses\VoA.lua
 bosses\EoE.lua
+bosses\Ulduar.l1ua

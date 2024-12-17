@@ -17,9 +17,9 @@ local corruptionProcTier = 0
 
 local SoCFn = coroutine.create(function()
     while true do
-        if UnitName("focus") == nil or not AI.IsValidOffensiveUnit("focus") or not AI.CanHitTarget("focus") then                
+        if UnitName("focus") == nil or not AI.IsValidOffensiveUnit("focus") or not AI.CanHitTarget("focus") then
             FocusUnit("target")
-        end        
+        end
         if AI.CastSpell("seed of corruption", "focus") then
             TargetNearestEnemy()
             FocusUnit("target")
@@ -49,13 +49,14 @@ local function applyWeaponEnchant()
 end
 
 local function manageThreat()
-    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") and not AI.DISABLE_THREAT_MANAGEMENT then
+    if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.IsValidOffensiveUnit("target") and
+        not AI.DISABLE_THREAT_MANAGEMENT then
         local threat = AI.GetThreatPct("target")
         if AI.GetUnitHealthPct("target") < 95 and threat > 90 and AI.CastSpell("soulshatter") then
-            --AI.Print("Exceeded 90% of threat on " .. GetUnitName("target"))
-            if primaryTank then
-                AI.SayWhisper("Exceeded 90% of threat on " .. GetUnitName("target"), primaryTank)
-            end
+            -- AI.Print("Exceeded 90% of threat on " .. GetUnitName("target"))
+            -- if primaryTank then
+            --     AI.SayWhisper("Exceeded 90% of threat on " .. GetUnitName("target"), primaryTank)
+            -- end
             return true
         end
     end
@@ -110,10 +111,10 @@ local function getProcTier()
     if AI.HasBuff("bloodlust") or AI.HasBuff("eradication") or AI.HasBuff("embrace of the spider") then
         return 1
     end
-    if AI.HasBuff("bloodlust") and (AI.HasBuff("eradication") or AI.HasBuff("embrace of the spider") ) then
+    if AI.HasBuff("bloodlust") and (AI.HasBuff("eradication") or AI.HasBuff("embrace of the spider")) then
         return 2
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("eradication") and AI.HasBuff("embrace of the spider")  then
+    if AI.HasBuff("bloodlust") and AI.HasBuff("eradication") and AI.HasBuff("embrace of the spider") then
         return 3
     end
     return 0
@@ -130,7 +131,7 @@ local function doAutoDpsDestro()
     end
 
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() then
+        AI.HasBuff("drink") then
         return
     end
 
@@ -160,11 +161,11 @@ local function doAutoDpsDestro()
         return
     end
 
-    -- if GetTime() > lastSbTime and AI.GetTargetStrength() > 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
-    --     AI.CastSpell("shadow bolt", "target") then
-    --     lastSbTime = GetTime() + 3 -- wait 3 sec before we try to cast again, prevents dbl casting of SB since it has a travel time
-    --     return
-    -- end
+    if GetTime() > lastSbTime and AI.GetTargetStrength() > 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
+        AI.CastSpell("shadow bolt", "target") then
+        lastSbTime = GetTime() + 3 -- wait 3 sec before we try to cast again, prevents dbl casting of SB since it has a travel time
+        return
+    end
 
     if not AI.HasMyBuff("backdraft", "player") and not AI.HasDebuff("immolate", "target") and
         AI.CastSpell("immolate", "target") then
@@ -186,7 +187,7 @@ local function doAutoDpsAffliction()
     end
 
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() then
+        AI.HasBuff("drink") then
         return
     end
 
@@ -273,7 +274,7 @@ end
 local function doUpdate_Warlock()
 
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() then
+        AI.HasBuff("drink") then
         return
     end
 
@@ -297,17 +298,6 @@ local function doUpdate_Warlock()
         AI.UseInventorySlot(10)
         AI.UseInventorySlot(13)
         AI.UseInventorySlot(14)
-    end
-
-    -- when trink procs activate cds if we can
-    if AI.HasBuff("dying curse") then
-        AI.CastSpell("blood fury")
-        AI.UseInventorySlot(10)
-        AI.UseInventorySlot(13)
-        AI.UseInventorySlot(14)
-        -- if not AI.HasBuff("spirits of the damned") and AI.CastSpell("life tap(rank 1)") then
-        --     return
-        -- end
     end
 
     if manageHealthstone() then
@@ -343,11 +333,11 @@ local function doDpsDestro(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("curse of the elements", "target") and
+    if AI.GetTargetStrength() > 3 and not AI.HasDebuff("curse of the elements", "target") and
         AI.CastSpell("curse of the elements", "target") then
         return
     end
-    -- if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("curse of doom", "target") and
+    -- if AI.GetTargetStrength() > 3 and not AI.HasDebuff("curse of doom", "target") and
     --     AI.CastSpell("curse of doom", "target") then
     --     return
     -- end
@@ -357,16 +347,19 @@ local function doDpsDestro(isAoE)
             return
         end
 
-        if coroutine.resume(SoCFn) then
+        if AI.CastSpell("seed of corruption", "target") then
             return
         end
+        -- if coroutine.resume(SoCFn) then
+        --     return
+        -- end
     end
 
-    -- if GetTime() > lastSbTime and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
-    --     AI.CastSpell("shadow bolt", "target") then
-    --     lastSbTime = GetTime() + 3
-    --     return
-    -- end
+    if GetTime() > lastSbTime and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
+        AI.CastSpell("shadow bolt", "target") then
+        lastSbTime = GetTime() + 3
+        return
+    end
 
     if not AI.HasMyBuff("backdraft", "player") and not AI.HasDebuff("immolate", "target") and
         AI.CastSpell("immolate", "target") then

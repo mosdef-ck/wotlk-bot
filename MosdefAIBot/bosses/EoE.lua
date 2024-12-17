@@ -122,7 +122,7 @@ local malygos = MosDefBossModule:new({
                     TargetUnit("Malygos")
                 end
 
-                if self:CanCast("Engulf in Flames") and GetComboPoints("playerpet", "target") >= 3 and
+                if self:CanCast("Engulf in Flames") and GetComboPoints("playerpet", "target") > 4 and
                     AI.UsePossessionSpell("Engulf in Flames", "target") then
                     return true
                 end
