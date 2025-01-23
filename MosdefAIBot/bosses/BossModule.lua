@@ -117,67 +117,6 @@ local ichoron = MosDefBossModule:new({
 
 AI.RegisterBossModule(ichoron)
 
----- Sartharion
-local sartharionBossMod = MosDefBossModule:new({
-    name = "Sartharion",
-    safeX = 0.50792020559311,
-    safeY = 0.50132244825363,
-    onStart = function()
-        AI.Print("Engaging Sartharion")
-        oldPriorityTargetFn = AI.do_PriorityTarget
-        AI.do_PriorityTarget = function()
-            if not AI.IsTank() then
-                TargetUnit("lava blaze")
-                if AI.IsValidOffensiveUnit("target") then
-                    return true
-                end
-            end
-            return false
-        end
-    end,
-    onStop = function()
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
-    end
-})
-
-AI.RegisterBossModule(sartharionBossMod)
-
--- OS
-local obsidianSanctum = MosDefBossModule:new({
-    name = "Shadron/Tenebron/Vesperon",
-    creatureId = {30449, 30452, 30451},
-    vespPortalX = 0.53218305110931,
-    vespPortalY = 0.60250127315521,
-    shadronPortalX = 0.52992987632751,
-    shadronPortalY = 0.33822014927864,
-    onStart = function(self)
-        -- AI.Print("Engaged OS boss")
-        oldPriorityTargetFn = AI.do_PriorityTarget
-        AI.do_PriorityTarget = function()
-            if AI.HasDebuff("twilight shift") then
-                TargetUnit("disciple")
-                if AI.IsValidOffensiveUnit("target") then
-                    return true
-                end
-                TargetUnit("twilight egg")
-                if AI.IsValidOffensiveUnit("target") then
-                    return true
-                end
-            end
-            return false
-        end
-    end,
-    onStop = function(self)
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
-    end,
-    onUpdate = function(self)
-    end
-})
-AI.RegisterBossModule(obsidianSanctum)
 
 -- grand magus
 local grandMagus = MosDefBossModule:new({
@@ -196,10 +135,40 @@ local grandMagus = MosDefBossModule:new({
     end
 })
 
+function grandMagus:SPELL_CAST_START(args)
+    if args.spellName == "Critter" then
+        TargetUnit(args.caster)
+        FocusUnit("target") 
+        if AI.IsWarlock() and not AI.HasMyDebuff("fear", "focus") then
+            AI.RegisterPendingAction( function() 
+                if UnitName("focus") ~= "Grand Magus Telestra" then
+                    TargetUnit("Grand Magus Telestra")
+                    FocusUnit("target")
+                end
+                if AI.CanCastSpell("fear", "focus") then
+                    AI.StopCasting()
+                end
+                return AI.CastSpell("fear", "focus")
+            end, null, "CC_THE_CCER")
+        end       
+    end
+end
 function grandMagus:UNIT_SPELLCAST_START(caster, spellName)
-    if AI.IsWarlock() and spellName == "Critter" then
+    if spellName == "Critter" then
         TargetUnit(caster)
-        FocusUnit("target")        
+        FocusUnit("target") 
+        if AI.IsWarlock() and not AI.HasMyDebuff("fear", "focus") then
+            AI.RegisterPendingAction( function() 
+                if UnitName("focus") ~= "Grand Magus Telestra" then
+                    TargetUnit("Grand Magus Telestra")
+                    FocusUnit("target")
+                end
+                if AI.CanCastSpell("fear", "focus") then
+                    AI.StopCasting()
+                end
+                return AI.CastSpell("fear", "focus")
+            end, null, "CC_THE_CCER")
+        end       
     end
 end
 
@@ -250,15 +219,14 @@ local leyguardian = MosDefBossModule:new({
     name = "Ley-Guardian Eregos",
     creatureId = {27656},
     onStart = function(self)
-        self.oldDpsMethod = AI.DO_DPS
-        AI.DO_DPS = function(isAoe)
+        AI.PRE_DO_DPS = function(isAoe)
             if AI.IsPossessing() then
                 local pet = UnitName("playerpet"):lower()
-                if pet == "ruby drake" and AI.UsePossessionSpell("searing wrath", "target") then
-                    return
+                if pet == "ruby drake" and AI.IsValidOffensiveUnit() and AI.UsePossessionSpell("searing wrath", "target") then
+                    return true
                 elseif pet == "amber drake" then
                     if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "Ley") then
-                        if AI.IsCasting() or AI.IsCasting("playerpet") then
+                        if AI.IsCasting("playerpet") then
                             return true
                         end
                         if AI.GetMyDebuffCount("shock charge", "target") < 10 and
@@ -275,18 +243,14 @@ local leyguardian = MosDefBossModule:new({
                     elseif AI.UsePossessionSpell("shock lance", "target") then
                         return true
                     end
-                elseif pet == "emerald drake" and AI.UsePossessionSpell("leeching poison", "target") then
-                    return
+                elseif pet == "emerald drake" and AI.IsValidOffensiveUnit() and not AI.IsCasting("playerpet") and AI.UsePossessionSpell("leeching poison", "target") then
+                    return true
                 end
-            else
-                self.oldDpsMethod(isAoe)
             end
         end
+        return true
     end,
     onStop = function(self)
-        if self.oldDpsMethod ~= nil then
-            AI.DO_DPS = self.oldDpsMethod
-        end
     end,
     onUpdate = function()
         if not AI.IsPossessing() then
@@ -297,9 +261,11 @@ local leyguardian = MosDefBossModule:new({
             if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "target") > 2 then
                 local mostHurt = AI.GetMostDamagedFriendlyPet()
                 if mostHurt and AI.GetUnitHealthPct(mostHurt) < 70 then
-                    TargetUnit(mostHurt)
-                    FocusUnit("target")
-                    if AI.UsePossessionSpell("dream funnel", "focus") then
+                    if UnitName("target") ~= mostHurt then
+                        TargetUnit(mostHurt)
+                    end
+                    if AI.UsePossessionSpell("dream funnel", "target") then
+                        TargetUnit("Ley")
                         return true
                     end
                 end

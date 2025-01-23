@@ -92,8 +92,8 @@ function AI.IsChanneling(unit)
 end
 
 function AI.IsOnGCD()
-    return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
-    -- return false
+    -- return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
+    return false
 end
 
 function AI.CanCast()
@@ -280,7 +280,7 @@ end
 function AI.GetTargetStrength()
     local members = AI.GetNumPartyOrRaidMembers()
     -- 4 for bosses
-    if UnitHealthMax("target") >= 500000 then
+    if UnitHealthMax("target") >= 700000 then
         return 4
     end
 
@@ -521,21 +521,43 @@ end
 
 function AI.StopMoving()
     MoveBackwardStart()
-    MoveBackwardStop()    
     MoveForwardStart()
-    MoveForwardStop()
     StrafeLeftStart()
-    StrafeLeftStop()
     StrafeRightStart()
+
+    MoveBackwardStop()    
+    MoveForwardStop()
+    StrafeLeftStop()
+    StrafeRightStop()    
+    TurnRightStop()
+    
+    
+    MoveBackwardStop()    
+    MoveForwardStop()
+    StrafeLeftStop()
+    StrafeRightStop()
+    TurnRightStop()
+
+    MoveBackwardStop()    
+    MoveForwardStop()
+    StrafeLeftStop()
+    StrafeRightStop()
+    TurnRightStop()
+
+    MoveBackwardStop()    
+    MoveForwardStop()
+    StrafeLeftStop()
     StrafeRightStop()
     TurnLeftStop()
     TurnRightStop()
         
     -- AI.RegisterPendingAction(function()
-    --     MoveBackwardStop()
+    --     MoveBackwardStop()    
     --     MoveForwardStop()
+    --     StrafeLeftStop()
+    --     StrafeRightStop()
     --     return true
-    -- end, 0.1, "STOP_MOVING")
+    -- end, null, "STOP_MOVING")
 end
 
 function AI.CanInterrupt()
@@ -686,7 +708,7 @@ end
 
 function AI.StopCasting()
     SpellStopCasting()
-    AI.StopMoving()
+    -- AI.StopMoving()
 end
 
 function AI.IsInDungeonOrRaid()

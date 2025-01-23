@@ -592,8 +592,8 @@ local loatheb = MosDefBossModule:new({
                         return true
                     end
                     local tankPct = AI.GetUnitHealthPct(AI.Config.tank)
-                    if neuroticDuration <= 2 and neuroticDuration > 0 and UnitName(alphaTar):lower() == UnitName(AI.Config.tank):lower() and
-                        betaTar and AI.CastSpell("chain heal", betaTar) then
+                    if neuroticDuration <= 2 and neuroticDuration > 0 and UnitName(alphaTar):lower() ==
+                        UnitName(AI.Config.tank):lower() and betaTar and AI.CastSpell("chain heal", betaTar) then
                         return true
                     end
                     if neuroticDuration == 0 and AI.CastSpell("healing wave", AI.Config.tank) then
@@ -609,7 +609,8 @@ local loatheb = MosDefBossModule:new({
                         return true
                     end
                     local tankPct = AI.GetUnitHealthPct(AI.Config.tank)
-                    if neuroticDuration <= 1.5 and not AI.HasMyBuff("regrowth", AI.Config.tank) and  AI.CastSpell("regrowth", AI.Config.tank) then
+                    if neuroticDuration <= 1.5 and not AI.HasMyBuff("regrowth", AI.Config.tank) and
+                        AI.CastSpell("regrowth", AI.Config.tank) then
                         return true
                     end
                     if neuroticDuration == 0 then
@@ -629,7 +630,8 @@ local loatheb = MosDefBossModule:new({
                 AI.CastSpell("mind flay", "target") then
                 return true
             end
-            if AI.GetUnitHealthPct(AI.Config.tank) <= 50 and not AI.HasDebuff("weakened soul", AI.Config.tank) and AI.CastSpell("power word: shield", AI.Config.tank) then
+            if AI.GetUnitHealthPct(AI.Config.tank) <= 50 and not AI.HasDebuff("weakened soul", AI.Config.tank) and
+                AI.CastSpell("power word: shield", AI.Config.tank) then
                 return true
             end
         end
@@ -941,12 +943,20 @@ AI.RegisterBossModule(thaddius)
 local sapphiron = MosDefBossModule:new({
     name = "Sapphiron",
     onStart = function(self)
+        if AI.IsTank() then
+            AI.ALLOW_AUTO_REFACE = false
+        end
         local class = AI.GetClass()
         if class == "priest" then
             AI.CastSpell("power word: shield", AI.Config.tank)
         end
     end,
     onStop = function(self)
+    end,
+    onUpdate = function(self)
+        if AI.IsHealer() and AI.IsShaman() and AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease") then
+            return true
+        end
     end
 })
 
@@ -954,8 +964,9 @@ function sapphiron:SPELL_AURA_APPLIED(args)
     if args.spellId == 28522 then
         local target = args.target
         if UnitName("player") ~= target then
-            local tX, tY = AI.GetPosition(target)
-            AI.SetMoveToPosition(tX, tY, 0.006)
+            -- local tX, tY = AI.GetPosition(target)
+            -- AI.SetMoveToPosition(tX, tY, 0.009)
+            -- FollowUnit(target)
         end
     end
 end
@@ -975,30 +986,62 @@ local kelthuzad = MosDefBossModule:new({
     healerX = 0.38045877218246,
     healerY = 0.16219447553158,
     frozenTarget = nil,
+    mcUnit = nil,
     onStart = function(self)
         AI.AUTO_TAUNT = false
+        if AI.IsTank() then
+            AI.ALLOW_AUTO_REFACE = false
+        end
         oldPriorityTargetFn = AI.do_PriorityTarget
+
+        if UnitName("focus") ~= "Kel'Thuzad" then
+            TargetUnit("Kel'thuzad")
+            FocusUnit("target")
+        end
+
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
                 TargetUnit("Soul Weaver")
-                if AI.IsValidOffensiveUnit("target") and AI.CanHitTarget() then
+                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 1) then
                     return true
                 end
                 TargetUnit("soldier of the frozen wastes")
-                if AI.IsValidOffensiveUnit("target") and AI.CanHitTarget() then
+                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 1) then
                     return true
                 end
                 TargetUnit("Unstoppable Abomination")
-                if AI.IsValidOffensiveUnit("target") and AI.CanHitTarget() then
+                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 1) then
                     return true
                 end
             end
-            TargetUnit("Kel'Thuzad")
-            return AI.IsValidOffensiveUnit("target")
+            -- TargetUnit("Kel'Thuzad")
+            -- return AI.IsValidOffensiveUnit("target")
+            return false
+        end
+
+        AI.PRE_DO_DPS = function(isAoE)
+            if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "soldier of the frozen wastes" and
+                AI.IsDps() then
+                if AI.IsWarlock() and AI.CastSpell("searing pain", "target") then
+                    return true
+                end
+                if AI.IsMage() and AI.CastSpell("ice lance", "target") then
+                    return true
+                end
+                if AI.IsPriest() and AI.CastSpell("mind flay", "target") then
+                    return true
+                end
+                if AI.IsShaman() and AI.CastSpell("lightning bolt", "target") then
+                    return true
+                end
+            end
+            return false
         end
     end,
     onStop = function(self)
         AI.AUTO_TAUNT = true
+        AI.ALLOW_AUTO_REFACE = true
+        AI.PRE_DO_DPS = nil
         if oldPriorityTargetFn ~= nil then
             AI.do_PriorityTarget = oldPriorityTargetFn
         end
@@ -1030,41 +1073,79 @@ local kelthuzad = MosDefBossModule:new({
             end
         end
 
-        if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "soldier of the frozen wastes" and
-            AI.IsDps() then
-            if AI.IsWarlock() and AI.CastSpell("searing pain", "target") then
-                return true
-            end
-            if AI.IsMage() and AI.CastSpell("ice lance", "target") then
-                return true
-            end
-            if AI.IsPriest() and AI.CastSpell("mind flay", "target") then
-                return true
-            end
-            if AI.IsShaman() and AI.CastSpell("lightning bolt", "target") then
-                return true
-            end
-        end
+        -- check for MC
+        if self.mcUnit ~= nil then
+            local mod = self
+            if UnitName("player") ~= self.mcUnit and AI.IsDps() then
+                if AI.IsWarlock() then
+                    AI.RegisterPendingAction(function()
+                        if not AI.HasMyDebuff("fear", mod.mcUnit) and not AI.HasDebuff("hex", mod.mcUnit) then
+                            return AI.CastSpell("fear", mod.mcUnit)
+                        end
+                        return false
+                    end, null, "CC_MC_UNIT")
+                end
 
-        if class == "shaman" and AI.IsValidOffensiveUnit("target") and UnitName("target") == "Kel'Thuzad" and
-            AI.GetUnitHealthPct("target") <= 90 then
-            if AI.CastSpell("fire elemental totem") then
-                return true
+                AI.RegisterPendingAction(function()
+                    if not AI.HasMyDebuff("hex", mod.mcUnit) and not AI.HasDebuff("fear", mod.mcUnit) then
+                        return AI.CastSpell("hex", mod.mcUnit)
+                    end
+                    return false
+                end, 3, "CC_MC_UNIT")
             end
         end
         return false
     end
 })
 
+function kelthuzad:SPELL_CAST_START(args)
+    if args.spellName:lower() == "frostbolt" then
+        -- AI.Print("KTZ casting Frostbolt")        
+        if AI.IsShaman() then
+            local delay = 0
+            if AI.IsHealer() and self.frozenTarget ~= nil then
+                delay = nil
+            end
+            if not AI.IsDps() then
+                delay = 0.5
+            end
+            if delay ~= nil then
+                AI.RegisterPendingAction(function()
+                    if UnitName("focus") ~= "Kel'Thuzad" then
+                        TargetUnit("Kel'Thuzad")
+                        FocusUnit("target")
+                    end
+
+                    if not AI.IsCasting("focus") then
+                        return true
+                    end
+                
+                    if AI.CanCastSpell("wind shear", "focus") then
+                        AI.StopCasting()
+                    end
+                    return AI.CastSpell("wind shear", "focus")
+                end, delay, "INTERRUPT_FROST_BOLT")
+            end
+        end
+    end
+end
+
 function kelthuzad:SPELL_AURA_APPLIED(args)
     if (args.spellId == 27808 or args.spellName == "Frost Blast") and args.target ~= nil then
         self.frozenTarget = args.target
+    end
+    if args.spellName:lower() == "chains of kel'thuzad" then
+        AI.SayRaid("MC on " .. args.target)
+        self.mcUnit = args.target
     end
 end
 
 function kelthuzad:SPELL_AURA_REMOVED(args)
     if (args.spellId == 27808 or args.spellName == "Frost Blast") then
         self.frozenTarget = nil
+    end
+    if args.spellName:lower() == "chains of kel'thuzad" then
+        self.mcUnit = nil
     end
 end
 
@@ -1082,6 +1163,10 @@ function kelthuzad:CHAT_MSG_RAID_BOSS_EMOTE(arg1, arg2)
             end
         elseif AI.IsHealer() then
             AI.SetMoveToPosition(self.healerX, self.healerY)
+        end
+        if AI.IsTank() then
+            TargetUnit("kel'thuzad")
+            AI.CastSpell("Hand of Reckoning", "target")
         end
     end
 end

@@ -54,13 +54,13 @@ local function useHealthStone()
 end
 
 local function getProcTier()
-    if AI.HasBuff("bloodlust") or AI.HasBuff("embrace of the spider") then
+    if AI.HasBuff("bloodlust") or AI.HasBuff("hyperspeed acceleration") then
         return 1
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("embrace of the spider") then
+    if AI.HasBuff("bloodlust") and AI.HasBuff("hyperspeed acceleration") then
         return 2
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("embrace of the spider") and AI.HasBuff("black magic") then
+    if AI.HasBuff("bloodlust") and AI.HasBuff("hyperspeed acceleration") and AI.HasBuff("devious mind") then
         return 3
     end
     return 0
@@ -88,7 +88,7 @@ local function doAutoDps()
 
     -- AI.CastSpell("inner focus")
     if not AI.AUTO_AOE then
-        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 2 and
+        if AI.GetTargetStrength() >= 2 and not AI.HasMyDebuff("Vampiric Touch", "target") and
             AI.CastSpell("Vampiric Touch", "target") then
             return
         end
@@ -102,13 +102,13 @@ local function doAutoDps()
     end
 
     if not AI.AUTO_AOE then
-        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 2 and
+        if AI.GetTargetStrength() >= 2 and not AI.HasMyDebuff("Vampiric Touch", "target") and
             AI.CastSpell("Vampiric Touch", "target") then
             return
         end
 
         if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 and
-            AI.GetDebuffDuration("devouring plague", "target") <= 1 and AI.CastSpell("devouring plague", "target") then
+            not AI.HasMyDebuff("devouring plague", "target") and AI.CastSpell("devouring plague", "target") then
             return
         end
 
@@ -187,7 +187,7 @@ local function doOnUpdate_ShadowPriest()
         return
     end
 
-    if AI.IsInCombat() then
+    if AI.IsInCombat() and AI.USE_MANA_REGEN then
         if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") <= 50 and AI.HasContainerItem(primaryManaPot) and
             AI.UseContainerItem(primaryManaPot) then
             return
@@ -238,7 +238,7 @@ local function doDps(isAoE)
     -- end
 
     if not isAoE then
-        if AI.GetTargetStrength() >= 2 and AI.GetDebuffDuration("Vampiric Touch", "target") <= 2 and
+        if AI.GetTargetStrength() >= 1 and not AI.HasMyDebuff("Vampiric Touch", "target") and
             AI.CastSpell("Vampiric Touch", "target") then
             return
         end
@@ -255,12 +255,12 @@ local function doDps(isAoE)
             return
         end
 
-        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 and
-            AI.GetDebuffDuration("devouring plague", "target") <= 1 and AI.CastSpell("devouring plague", "target") then
+        if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 and
+            not AI.HasMyDebuff("devouring plague", "target") and AI.CastSpell("devouring plague", "target") then
             return
         end
 
-        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 then
+        if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 then
             if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
                 return
             end

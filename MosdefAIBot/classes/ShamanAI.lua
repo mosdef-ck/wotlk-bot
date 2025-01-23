@@ -90,7 +90,7 @@ local function doOnUpdate_RestorationShaman()
             return
         end
         if AI.HasBuff("tidal waves", "player") then
-            if missingHealth >= AI.GetSpellEffect("healing wave") * 1.5 and AI.CastSpell("healing wave", primaryTank) then
+            if missingHealth >= AI.GetSpellEffect("healing wave") and AI.CastSpell("healing wave", primaryTank) then
                 return
             end
             -- if missingHealth >= AI.GetSpellEffect("lesser healing wave") and
@@ -113,30 +113,32 @@ local function doOnUpdate_RestorationShaman()
     end
 
     -- heal raid
-    -- if AI.IsUnitValidFriendlyTarget(secondTar) and secondTarHp >= AI.GetSpellEffect("chain heal") * 0.4 then
-    --     if doHealTarget(healTar, missingHp, "chain heal") then
-    --         return
-    --     end
-    -- else
-    --     if doHealTarget(healTar, missingHp, "riptide") or doHealTarget(healTar, missingHp, "lesser healing wave") then
-    --         return
-    --     end
-    -- end
-    if doHealTarget(healTar, missingHp, "chain heal") then
-        return
+    if AI.IsUnitValidFriendlyTarget(secondTar) and secondTarHp >= AI.GetSpellEffect("chain heal") * 0.6 then
+        if doHealTarget(healTar, missingHp, "chain heal") then
+            return
+        end
+    else
+        if doHealTarget(healTar, missingHp, "riptide") or doHealTarget(healTar, missingHp, "lesser healing wave") then
+            return
+        end
     end
+    -- if doHealTarget(healTar, missingHp, "chain heal") then
+    --     return
+    -- end
 
     if AI.AUTO_PURGE and autoPurge() then
         return
     end
 
-    -- mana pot and mana ride
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= manaTideTreshold and AI.CastSpell("mana tide totem") then
-        return
-    end
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= manaPctThreshold and AI.HasContainerItem(primaryManaPot) and
-        AI.UseContainerItem(primaryManaPot) then
-        return
+    if AI.USE_MANA_REGEN and AI.IsInCombat() then
+        -- mana pot and mana ride
+        if AI.GetUnitPowerPct("player") <= manaTideTreshold and AI.CastSpell("mana tide totem") then
+            return
+        end
+        if AI.GetUnitPowerPct("player") <= manaPctThreshold and AI.HasContainerItem(primaryManaPot) and
+            AI.UseContainerItem(primaryManaPot) then
+            return
+        end
     end
 
     if AI.AUTO_CLEANSE and AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease") then
@@ -215,8 +217,12 @@ local function doDpsElemental(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() >= 2 then
+    if AI.GetTargetStrength() > 2 then
         AI.CastSpell("elemental mastery")
+    end
+
+    if AI.USE_MANA_REGEN and AI.GetUnitPowerPct("player") < 70 and AI.CastSpell("thunderstorm") then
+        return
     end
 
     if isAoE then
@@ -228,18 +234,15 @@ local function doDpsElemental(isAoE)
         end
     end
 
-    if not AI.HasMyDebuff("flame shock", "target") and AI.CastSpell("flame shock", "target") then
-        return
-    end
-    if AI.HasMyDebuff("flame shock", "target") and AI.CastSpell("lava burst", "target") then
+    if AI.GetMyDebuffDuration("flame shock", "target") <= 1 and AI.CastSpell("flame shock", "target") then
         return
     end
 
-    if AI.GetUnitPowerPct("player") < 90 and AI.CastSpell("thunderstorm") then
+    if AI.GetMyDebuffDuration("flame shock", "target") >= 2 and AI.CastSpell("lava burst", "target") then
         return
     end
-
-    AI.CastSpell("lightning bolt", "target")
+    
+    AI.CastSpell("lightning bolt", "target")    
 end
 
 local function doAutoDpsElemental()
@@ -298,6 +301,19 @@ function AI.doOnLoad_Shaman()
             AI.doAutoDps = doAutoDpsElemental
         end
         AI.doOnTargetStartCasting_Shaman = doOnTargetStartCasting_Shaman
+
+        AI.DO_BLOODLUST = function()
+            local delay = 0
+            if AI.IsDps() then
+                delay = 2
+            end
+            AI.RegisterPendingAction(function()
+                if AI.HasDebuff("sated") then
+                    return true
+                end
+                return AI.CastSpell("Bloodlust")
+            end, "DO_BLOODLUST", delay)
+        end
 
         --
         if AI.Config then

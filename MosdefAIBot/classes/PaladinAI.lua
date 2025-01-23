@@ -46,9 +46,10 @@ local function doAutoDps()
 
     useHealthStone()
 
-    if AI.GetTargetStrength() > 3 and not AI.HasBuff("avenging wrath", "player") then
-        AI.CastSpell("avenging wrath")
-    end
+    -- if AI.GetTargetStrength() > 3 and not AI.HasBuff("avenging wrath", "player") then
+    --     AI.CastSpell("avenging wrath")
+    -- end
+
     if AI.GetTargetStrength() >= 3 and not AI.HasBuff("holy shield", "player") and AI.CastSpell("holy shield") then
         return
     end
@@ -112,9 +113,9 @@ local function doDps(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() > 3 and not AI.HasBuff("avenging wrath", "player") then
-        AI.CastSpell("avenging wrath")
-    end
+    -- if AI.GetTargetStrength() > 3 and not AI.HasBuff("avenging wrath", "player") then
+    --     AI.CastSpell("avenging wrath")
+    -- end
     if AI.GetTargetStrength() >= 3 and not AI.HasBuff("divine plea", "player") and AI.CastSpell("divine plea") then
         return
     end

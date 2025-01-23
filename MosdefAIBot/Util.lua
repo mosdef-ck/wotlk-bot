@@ -107,5 +107,5 @@ function MaloWUtils_StrStartsWith(fullString, startString)
 end
 
 function MaloWUtils_StrContains(fullString, substr)
-    return fullString:lower():find(substr:lower(), 1, true) ~= nil
+    return (fullString or ""):lower():find((substr or ""):lower(), 1, true) ~= nil
 end

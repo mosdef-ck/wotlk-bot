@@ -15,6 +15,7 @@ AI.IS_DOING_ONUPDATE = false
 AI.AUTO_AOE = false
 AI.DISABLE_DRAIN = false
 AI.DISABLE_THREAT_MANAGEMENT = false
+AI.USE_MANA_REGEN = true
 
 AI.BossModules = {}
 AI.ZoneModules = {}
@@ -71,23 +72,8 @@ local function onUpdate()
     end
     ---        
     AI.IS_DOING_ONUPDATE = true
-    local bossMod = findEnabledBossModule()
-    -- if we have a boss module
-    if bossMod and type(bossMod.onUpdate) == "function" and bossMod:onUpdate() then
-        -- execute the base on update method but skip all the class specific ones
-        AI.doOnUpdate_BotBase()
-        AI.IS_DOING_ONUPDATE = false
-        return
-    end
-    for i, f in ipairs(cachedOnUpdateCallbacks) do
-        f()
-    end
-    AI.IS_DOING_ONUPDATE = false
-    -- do auto-dps towards the end
-    if AI.AUTO_DPS and AI.doAutoDps then
-        AI.doAutoDps()
-    end
 
+    -- execute pending actions first
     local now = GetTime()
     -- execute pending action before boss updates
     for i, action in ipairs(registeredPendingActions) do
@@ -108,6 +94,24 @@ local function onUpdate()
             end
         end
     end
+
+    -- execute boss actions
+    local bossMod = findEnabledBossModule()
+    -- if we have a boss module
+    if bossMod and type(bossMod.onUpdate) == "function" and bossMod:onUpdate() then
+        -- execute the base on update method but skip all the class specific ones
+        AI.doOnUpdate_BotBase()
+        AI.IS_DOING_ONUPDATE = false
+        return
+    end
+    for i, f in ipairs(cachedOnUpdateCallbacks) do
+        f()
+    end
+    AI.IS_DOING_ONUPDATE = false
+    -- do auto-dps towards the end
+    if AI.AUTO_DPS and AI.doAutoDps then
+        AI.doAutoDps()
+    end    
 end
 
 local function onAddOnLoad()
@@ -315,12 +319,13 @@ local function onAddOnChatMessage(from, message)
         end
     elseif cmd == 'follow-me' then
         if from ~= UnitName("player") then
-            AI.Print("setting follow to "..from)
+            AI.Print("setting follow to " .. from)
             desiredFollowTarget = from
         end
     elseif cmd == 'stop-follow' then
         AI.Print("Clearing follow")
-        desiredFollowTarget = nil        
+        desiredFollowTarget = nil
+        AI.ResetMoveToPosition()
     end
 end
 
@@ -411,7 +416,13 @@ local function onEvent(self, event, ...)
     elseif event == "UNIT_AURA" then
         -- print("UNIT_AURA "..arg1)
     elseif event == "RAID_BOSS_EMOTE" then
-        print("RAID_BOSS_EMOTE" .. arg1 .. arg2 .. arg3)
+        -- print("RAID_BOSS_EMOTE" .. arg1 .. arg2 .. arg3)
+    elseif event == "CHAT_MSG_MONSTER_YELL" then
+        -- print("CHAT_MSG_MONSTER_YELL "..arg1.. " "..arg2)
+    elseif event == "CHAT_MSG_RAID_BOSS_EMOTE" then
+        -- print("CHAT_MSG_RAID_BOSS_EMOTE "..arg1.. " "..arg2)
+    elseif event == "CHAT_MSG_MONSTER_EMOTE" then
+        -- print("CHAT_MSG_MONSTER_EMOTE "..arg1.. " "..arg2)    
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         -- event out unit deaths
         if arg2 == "UNIT_DIED" or arg2 == "UNIT_DESTROYED" then
@@ -471,7 +482,7 @@ end
 -- #auto movement
 
 function AI.SetMoveToPosition(x, y, minDist)
-    --AI.StopMoving()
+    -- AI.StopMoving()
     goToPositionDestination = {
         x = x,
         y = y,
@@ -638,8 +649,10 @@ end
 function AI.do_PriorityTarget()
     return false
 end
+-- stub overridden by class AIs
+function AI.DO_DPS(isAoE)
+end
 
--- stub
 function AI.FollowCrawl(unit)
     if unit ~= nil and UnitExists(unit) then
         FollowUnit(unit)
@@ -647,19 +660,32 @@ function AI.FollowCrawl(unit)
     end
 end
 
--- stub overridden by class AIs
-function AI.DO_DPS(isAoE)
+function AI.MustCastSpell(spell, target)
+    AI.RegisterPendingAction(function()
+        if GetSpellCooldown(spell) > 5 then
+            return true
+        end
+        if AI.CanCastSpell(spell, target) then
+            AI.StopCasting()
+        end                
+        return AI.CastSpell(spell, target)
+    end, null, spell)    
 end
 
 function AI.ExecuteDpsMethod(isAoE)
-    AI.RegisterPendingAction(function()
-        if not AI.AUTO_DPS then
-            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
-                AI.DO_DPS(isAoE)
-            end
+    -- AI.RegisterPendingAction(function()
+    --     if not AI.AUTO_DPS then
+    --         if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
+    --             AI.DO_DPS(isAoE)
+    --         end
+    --     end
+    --     return true
+    -- end, null, "DO_DPS")
+    if not AI.IsMoving() and  not AI.HasMoveToPosition() and not AI.AUTO_DPS and not AI.IS_DOING_ONUPDATE then
+        if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
+            AI.DO_DPS(isAoE)
         end
-        return true
-    end, null, "DO_DPS")
+    end
 end
 
 -- generic mount function, customizable
@@ -755,6 +781,10 @@ f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("CHAT_MSG_RAID_BOSS_EMOTE")
 f:RegisterEvent("RAID_BOSS_EMOTE")
+f:RegisterEvent("CHAT_MSG_MONSTER_YELL")
+f:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
+f:RegisterEvent("CHAT_MSG_MONSTER_PARTY")
+f:RegisterEvent("CHAT_MSG_MONSTER_WHISPER")
 f:RegisterEvent("UNIT_DIED")
 f:RegisterEvent("UNIT_AURA")
 f:RegisterEvent("UNIT_DESTROYED")

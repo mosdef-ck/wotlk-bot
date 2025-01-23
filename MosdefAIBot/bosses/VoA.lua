@@ -72,20 +72,17 @@ local emalon = MosDefBossModule:new({
     name = "Emalon the Storm Watcher",
     creatureId = {33993},
     onStart = function(self)
-        AI.DISABLE_DRAIN = true        
+        AI.DISABLE_DRAIN = true
     end,
     onEnd = function(self)
         AI.DISABLE_DRAIN = false
     end,
     onUpdate = function(self)
-        if AI.IsTank() and AI.GetUnitHealthPct() < 80 then
-            AI.UseInventorySlot(13)
-            --AI.UseInventorySlot(14)
-        end
-
-        if AI.IsShaman() and AI.IsValidOffensiveUnit() and AI.GetUnitHealthPct("target") < 80 and
-            AI.CastSpell("fire elemental totem") then
-            return true
+        if AI.IsPriest() then
+            if AI.IsUnitValidFriendlyTarget(AI.Config.tank) and AI.GetUnitHealthPct(AI.Config.tank) <= 50 and
+                not AI.HasDebuff("weakened soul", AI.Config.tank) and AI.CastSpell("power word: shield", AI.Config.tank) then
+                return true
+            end
         end
     end
 })

@@ -1,9 +1,9 @@
 local isAIEnabled = false
 local primaryTank = nil
 local primaryHealer = nil
-local manaPctThreshold = 30
+local manaPctThreshold = 10
 local startLifeTapManaThreshold = 50
-local endLifeTapManaThreshold = 70
+local endLifeTapManaThreshold = 85
 
 local isLifeTapping = false
 local panicPct = 20
@@ -66,7 +66,7 @@ end
 local function doLifeTap()
     local pct = AI.GetUnitPowerPct("player")
     local healthpct = AI.GetUnitHealthPct("player")
-    if healthpct > 30 then
+    if AI.USE_MANA_REGEN and healthpct > 30 then
         if AI.IsInCombat() then
             if pct <= startLifeTapManaThreshold then
                 isLifeTapping = true
@@ -108,13 +108,13 @@ local function manageHealthstone()
 end
 
 local function getProcTier()
-    if AI.HasBuff("bloodlust") or AI.HasBuff("eradication") or AI.HasBuff("embrace of the spider") then
+    if AI.HasBuff("bloodlust") or AI.HasBuff("eradication") or AI.HasBuff("hyperspeed acceleration") then
         return 1
     end
-    if AI.HasBuff("bloodlust") and (AI.HasBuff("eradication") or AI.HasBuff("embrace of the spider")) then
+    if AI.HasBuff("bloodlust") and (AI.HasBuff("eradication") or AI.HasBuff("hyperspeed acceleration")) then
         return 2
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("eradication") and AI.HasBuff("embrace of the spider") then
+    if AI.HasBuff("bloodlust") and AI.HasBuff("eradication") and AI.HasBuff("hyperspeed acceleration") then
         return 3
     end
     return 0
@@ -220,7 +220,10 @@ local function doAutoDpsAffliction()
     end
 
     if AI.AUTO_AOE then
-        if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
+        -- if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
+        --     return
+        -- end
+        if coroutine.resume(SoCFn) then
             return
         end
     else
@@ -347,19 +350,19 @@ local function doDpsDestro(isAoE)
             return
         end
 
-        if AI.CastSpell("seed of corruption", "target") then
-            return
-        end
-        -- if coroutine.resume(SoCFn) then
+        -- if AI.CastSpell("seed of corruption", "target") then
         --     return
         -- end
+        if coroutine.resume(SoCFn) then
+            return
+        end
     end
 
-    if GetTime() > lastSbTime and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
-        AI.CastSpell("shadow bolt", "target") then
-        lastSbTime = GetTime() + 3
-        return
-    end
+    -- if GetTime() > lastSbTime and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= 3 and
+    --     AI.CastSpell("shadow bolt", "target") then
+    --     lastSbTime = GetTime() + 3
+    --     return
+    -- end
 
     if not AI.HasMyBuff("backdraft", "player") and not AI.HasDebuff("immolate", "target") and
         AI.CastSpell("immolate", "target") then
@@ -387,9 +390,8 @@ local function doDpsAffliction(isAoE)
 
     PetAttack()
 
-    if UnitChannelInfo("player") == "Drain Soul" and AI.GetMyDebuffDuration("haunt", "target") <= 3 then
-        AI.StopCasting()
-        AI.StopMoving()
+    if AI.GetTargetStrength() >= 2 and UnitChannelInfo("player") == "Drain Soul" and AI.GetMyDebuffDuration("haunt", "target") <= 3 then
+        AI.StopCasting()        
     end
 
     if not AI.CanCast() then
@@ -407,12 +409,15 @@ local function doDpsAffliction(isAoE)
     end
 
     if isAoE then
-        if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
+        -- if not AI.HasMyDebuff("seed of corruption", "target") and AI.CastSpell("seed of corruption", "target") then
+        --     return
+        -- end
+        if coroutine.resume(SoCFn) then
             return
         end
     end
 
-    if AI.GetTargetStrength() >= 3 and AI.HasMyDebuff("shadow mastery", "target") and
+    if AI.GetTargetStrength() >= 2 and AI.HasMyDebuff("shadow mastery", "target") and
         AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.HasMyDebuff("haunt", "target") then
 
         if not AI.HasMyDebuff("corruption", "target") and AI.CastSpell("corruption", "target") then

@@ -20,4 +20,4 @@ bosses\BossModule.lua
 bosses\Naxxramas.lua
 bosses\VoA.lua
 bosses\EoE.lua
-bosses\Ulduar.l1ua
+bosses\Ulduar.lua

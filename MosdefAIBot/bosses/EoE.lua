@@ -86,8 +86,7 @@ local malygos = MosDefBossModule:new({
                     --     return true
                     -- end
                     if self:CanCast("Revivify") then
-                        if AI.GetBuffCount("revivify", healTarget) < 5 and GetComboPoints("playerpet", healTarget) and
-                            AI.UsePossessionSpell("Revivify", healTarget) then
+                        if AI.GetBuffCount("revivify", healTarget) < 5 and AI.UsePossessionSpell("Revivify", healTarget) then
                             return true
                         end
                     end
