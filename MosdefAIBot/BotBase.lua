@@ -35,10 +35,6 @@ local autoEnableIfInRaid = true
 
 local tickTime = 0
 
-local lastIwtTime = 0
-local wrongFacingIwtTime = 0
-local lastRefaceLeaderTime = 0
-
 local lastPlayerEnterWorld = nil
 
 local previousZoneName = nil
@@ -57,6 +53,10 @@ local registeredPendingActions = {}
 local desiredPlayerFacing = nil
 local desiredVehicleAimAngle = nil
 local desiredFollowTarget = nil
+
+local lastPosCheckTime = 0
+local positionSetTime = 0
+local lastCheckedPosition = nil
 
 local function onUpdate()
     if not isAIEnabled or not isGreenlit then
@@ -77,7 +77,7 @@ local function onUpdate()
     local now = GetTime()
     -- execute pending action before boss updates
     for i, action in ipairs(registeredPendingActions) do
-        if now >= action.when and action.executed == false and action.f() then
+        if now >= action.when and not action.executed and action.f() then
             action.executed = true
         end
     end
@@ -87,7 +87,7 @@ local function onUpdate()
     while not done do
         done = true
         for i, action in ipairs(registeredPendingActions) do
-            if action.executed == true then
+            if action.executed then
                 table.remove(registeredPendingActions, i)
                 done = false
                 break
@@ -111,7 +111,7 @@ local function onUpdate()
     -- do auto-dps towards the end
     if AI.AUTO_DPS and AI.doAutoDps then
         AI.doAutoDps()
-    end    
+    end
 end
 
 local function onAddOnLoad()
@@ -176,7 +176,7 @@ local function loadBossModule(bossName, creatureId)
         if foundMod ~= nil and not foundMod.enabled then
             foundMod.enabled = true
             foundMod:onStart()
-            AI.Print(bossName .. " module enabled, good luck!")
+            AI.Print(foundMod.name .. " module enabled, good luck!")
         end
     end
 end
@@ -305,7 +305,7 @@ local function onAddOnChatMessage(from, message)
         if from ~= UnitName("player") then
             -- print("Moving to "..from)
             local x, y = AI.GetPosition(from)
-            AI.SetMoveToPosition(x, y, 0.001)
+            AI.SetMoveToPosition(x, y)
         end
     elseif cmd == "set-facing" then
         if from ~= UnitName("player") then
@@ -331,12 +331,7 @@ end
 
 local function handleFacingWrongWay()
     if AI.ALLOW_AUTO_REFACE then
-        if GetCVar("autoInteract") ~= 1 then
-            SetCVar("autoInteract", 1)
-        end
-        InteractUnit("target")
-        SetCVar("autoInteract", 0)
-        wrongFacingIwtTime = tickTime
+        AI.SetFacingCoords(AI.GetPosition("target"))
     end
 end
 
@@ -481,14 +476,20 @@ end
 
 -- #auto movement
 
-function AI.SetMoveToPosition(x, y, minDist)
-    -- AI.StopMoving()
+function AI.SetMoveToPosition(x, y, dist)
+    local minDistance = dist or 0.5
+    if AI.IsInVehicle() then
+        minDistance = dist or 5
+    end
     goToPositionDestination = {
         x = x,
         y = y,
-        minDistance = minDist or 0.003
+        minDistance = minDistance
     }
+    -- print("SetMoveTo "..x.." y:"..y.." minDist:"..minDistance)
     hasReachedGoToPosition = false
+    positionSetTime = GetTime()
+    AI.StopMoving()
 end
 
 function AI.HasMoveToPosition()
@@ -506,19 +507,27 @@ function AI.HasReachedDestination()
     return hasReachedGoToPosition
 end
 
+function AI.IsFacingTowardsDestination()
+    if not AI.HasMoveToPosition() then
+        return nil
+    end
+    return AI.IsFacingTowards(goToPositionDestination.x, goToPositionDestination.y)
+end
+
 local function doAutoMovementUpdate()
-    if goToPositionDestination == nil then
+    if goToPositionDestination == nil or goToPositionDestination.x == nil or goToPositionDestination.y == nil then
         return true
     end
 
-    local curX, curY = AI.GetPosition("player")
-    local dX, dY = goToPositionDestination.x - curX, goToPositionDestination.y - curY
-    local distance = math.sqrt(dX * dX + dY * dY)
-    if hasReachedGoToPosition and distance <= goToPositionDestination.minDistance * 1.2 then
+    local dist = AI.GetDistanceTo(goToPositionDestination.x, goToPositionDestination.y)
+    -- print("dist to MoveTo:"..dist)
+
+    if hasReachedGoToPosition and dist <= goToPositionDestination.minDistance then
         -- Allow 20% leeway if you reached the destination previously.
         return true
     end
-    if distance <= goToPositionDestination.minDistance then
+    if dist <= goToPositionDestination.minDistance then
+        -- print("reached coords")
         AI.StopMoving()
         hasReachedGoToPosition = true
         goToPositionDestination = nil
@@ -526,40 +535,20 @@ local function doAutoMovementUpdate()
     end
     hasReachedGoToPosition = false
 
-    local currentFacing = GetPlayerFacing()
-    local desiredFacing = math.atan2(dX, dY) + math.pi
-    local diff = desiredFacing - currentFacing
-
-    -- the difference btwn our facing and desired facing is more than 10 degrees, then we bother w/ turning left/righ.
-    if math.abs(diff) > 0.1745329252 then
-        if diff > 0 then
-            if (currentFacing + 2 * math.pi) - desiredFacing < diff then
-                diff = (currentFacing + 2 * math.pi) - desiredFacing
-                TurnLeftStop()
-                TurnRightStop()
-                TurnRightStart()
-            else
-                TurnRightStop()
-                TurnLeftStop()
-                TurnLeftStart()
-            end
-        elseif diff < 0 then
-            if (currentFacing - 2 * math.pi) - desiredFacing > diff then
-                diff = (currentFacing - 2 * math.pi) - desiredFacing
-                TurnRightStop()
-                TurnLeftStop()
-                TurnLeftStart()
-            else
-                TurnLeftStop()
-                TurnRightStop()
-                TurnRightStart()
-            end
-        end
-    else
-        TurnRightStop()
-        TurnLeftStop()
+    if not AI.IsFacingTowards(goToPositionDestination.x, goToPositionDestination.y) then
+        AI.SetFacingCoords(goToPositionDestination.x, goToPositionDestination.y)
     end
-    if math.abs(diff) < math.pi / 3 then
+
+    if GetTime() > positionSetTime + 1 then
+        local x, y = AI.GetPosition();
+        lastCheckedPosition = {
+            x = x,
+            y = y
+        }
+        positionSetTime = GetTime()
+    end
+
+    if dist > goToPositionDestination.minDistance then
         MoveForwardStart()
     else
         MoveForwardStop()
@@ -568,81 +557,66 @@ local function doAutoMovementUpdate()
 end
 
 function AI.doOnUpdate_BotBase()
-    if wrongFacingIwtTime > 0 then
-        local diff = tickTime - wrongFacingIwtTime
-        if diff > 0.2 then
-            wrongFacingIwtTime = 0
-            AI.StopMoving()
-        end
-    end
-    if lastRefaceLeaderTime > 0 then
-        local diff = tickTime - lastRefaceLeaderTime
-        if diff > 0.2 then
-            lastRefaceLeaderTime = 0
-            AI.StopMoving()
-        end
-    end
-    --
-    if AI.ALLOW_AUTO_MOVEMENT then
-        doAutoMovementUpdate()
-    end
-
+    --    
     if desiredPlayerFacing ~= nil then
         local currentFacing = GetPlayerFacing()
         local diff = desiredPlayerFacing - currentFacing
-        if math.abs(diff) > 0.1745329252 then
-            if diff > 0 then
-                if (currentFacing + 2 * math.pi) - desiredPlayerFacing < diff then
-                    diff = (currentFacing + 2 * math.pi) - desiredPlayerFacing
-                    TurnLeftStop()
-                    TurnRightStop()
-                    TurnRightStart()
-                else
-                    TurnRightStop()
-                    TurnLeftStop()
-                    TurnLeftStart()
-                end
-            elseif diff < 0 then
-                if (currentFacing - 2 * math.pi) - desiredPlayerFacing > diff then
-                    diff = (currentFacing - 2 * math.pi) - desiredPlayerFacing
-                    TurnRightStop()
-                    TurnLeftStop()
-                    TurnLeftStart()
-                else
-                    TurnLeftStop()
-                    TurnRightStop()
-                    TurnRightStart()
-                end
-            end
-        else
+        if math.abs(diff) > 0.05 then
+            AI.SetFacing(desiredPlayerFacing)
             desiredPlayerFacing = nil
-            TurnRightStop()
-            TurnLeftStop()
         end
     end
 
-    if desiredVehicleAimAngle ~= nil and AI.IsPossessing() and IsVehicleAimAngleAdjustable() then
+    if desiredVehicleAimAngle ~= nil and AI.IsInVehicle() and IsVehicleAimAngleAdjustable() then
         local currentAimAngle = VehicleAimGetAngle()
         local diff = desiredVehicleAimAngle - currentAimAngle
-        if math.abs(diff) > 0.1745329252 then
+        -- print("Current angle:"..currentAimAngle.. " Desired: "..desiredVehicleAimAngle.. " Diff:"..diff)                
+        -- if math.abs(diff) > 0.1745329252 then
+        if math.abs(diff) > 0.08726646 then
             if diff > 0 then
-                VehicleAimUpStart()
+                -- print("Current angle:"..currentAimAngle.. " Desired: "..desiredVehicleAimAngle.. " Diff:"..diff)                
+                VehicleAimIncrement(diff)
+                -- VehicleAimUpStart()
             else
-                VehicleAimDownStart()
+                -- print("Current angle:"..currentAimAngle.. " Desired: "..desiredVehicleAimAngle.. " Diff:"..diff)                
+                VehicleAimDecrement(math.abs(diff))
+                -- VehicleAimDownStart()
             end
         else
+            -- print("Stopped at aim angle: "..currentAimAngle)
             VehicleAimUpStop()
             VehicleAimDownStop()
             desiredVehicleAimAngle = nil
         end
     end
 
-    if desiredFollowTarget ~= nil and desiredFollowTarget ~= UnitName("player") then
+    if desiredFollowTarget and desiredFollowTarget ~= UnitName("player") then
         local calcDist = AI.GetDistanceTo(AI.GetPosition(desiredFollowTarget))
-        if AI.GetDistanceTo(AI.GetPosition(desiredFollowTarget)) > 0.003 then
-            AI.SetMoveToPosition(AI.GetPosition(desiredFollowTarget))
+        if calcDist >= 5 then
+            local x, y = AI.GetPosition(desiredFollowTarget)
+            AI.SetMoveToPosition(x, y)
         end
     end
+
+    if AI.ALLOW_AUTO_MOVEMENT then
+        doAutoMovementUpdate()
+    end
+end
+
+function AI.SetDesiredFacing(facing)
+    desiredPlayerFacing = facing
+end
+
+function AI.HasDesiredFacing()
+    return desiredPlayerFacing ~= nil
+end
+
+function AI.SetDesiredAimAngle(angle)
+    desiredVehicleAimAngle = angle
+    -- print("SetDesiredAimAngle "..angle)
+end
+function AI.HasDesiredAimAngle()
+    return desiredVehicleAimAngle ~= nil
 end
 
 -- stub, overridden
@@ -655,37 +629,35 @@ end
 
 function AI.FollowCrawl(unit)
     if unit ~= nil and UnitExists(unit) then
-        FollowUnit(unit)
-        lastRefaceLeaderTime = tickTime
+        AI.SetFacingCoords(AI.GetPosition(unit))
     end
 end
 
 function AI.MustCastSpell(spell, target)
-    AI.RegisterPendingAction(function()
-        if GetSpellCooldown(spell) > 5 then
-            return true
-        end
-        if AI.CanCastSpell(spell, target) then
-            AI.StopCasting()
-        end                
-        return AI.CastSpell(spell, target)
-    end, null, spell)    
+    if GetSpellCooldown(spell) < 10 then
+        AI.RegisterPendingAction(function()        
+            if AI.CanCastSpell(spell, target) then
+                AI.StopCasting()
+            end
+            return AI.CastSpell(spell, target)
+        end, null, spell)
+    end    
 end
 
 function AI.ExecuteDpsMethod(isAoE)
-    -- AI.RegisterPendingAction(function()
-    --     if not AI.AUTO_DPS then
-    --         if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
-    --             AI.DO_DPS(isAoE)
-    --         end
-    --     end
-    --     return true
-    -- end, null, "DO_DPS")
-    if not AI.IsMoving() and  not AI.HasMoveToPosition() and not AI.AUTO_DPS and not AI.IS_DOING_ONUPDATE then
-        if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
-            AI.DO_DPS(isAoE)
-        end
+    if (not AI.HasMoveToPosition() or AI.IsInVehicle()) and not AI.AUTO_DPS then
+        AI.RegisterPendingAction(function()
+            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
+                AI.DO_DPS(isAoE)
+            end
+            return true
+        end, null, "DO_DPS")
     end
+    -- if (not AI.HasMoveToPosition() or AI.IsInVehicle()) and not AI.AUTO_DPS and not AI.IS_DOING_ONUPDATE then
+    --     if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
+    --         AI.DO_DPS(isAoE)
+    --     end       
+    -- end
 end
 
 -- generic mount function, customizable

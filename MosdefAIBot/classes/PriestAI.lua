@@ -29,7 +29,7 @@ local function doPowerWordShield()
         if criticalTarget and AI.GetUnitHealthPct(criticalTarget) <= panicPct and
             not AI.HasDebuff("weakened soul", criticalTarget) then
             if AI.IsCasting() then
-                SpellStopCasting()
+                AI.StopCasting()
             end
             if AI.CastSpell("power word: shield", criticalTarget) then
                 -- AI.Print("pw:shielded " .. UnitName(criticalTarget))
@@ -161,11 +161,7 @@ local function doOnUpdate_ShadowPriest()
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() then
         return
-    end
-
-    if doPowerWordShield() then
-        return
-    end
+    end    
 
     if not AI.CanCast() then
         return
@@ -173,9 +169,9 @@ local function doOnUpdate_ShadowPriest()
 
     if upkeepShadowForm() then
         return
-    end
+    end    
 
-    if manageThreat() then
+    if AI.AUTO_CLEANSE and AI.CleanseRaid("Dispel Magic", "Magic") then
         return
     end
 
@@ -183,9 +179,14 @@ local function doOnUpdate_ShadowPriest()
         return
     end
 
-    if AI.AUTO_CLEANSE and AI.CleanseRaid("Dispel Magic", "Magic") then
+    if doPowerWordShield() then
         return
     end
+
+    if manageThreat() then
+        return
+    end
+    
 
     if AI.IsInCombat() and AI.USE_MANA_REGEN then
         if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") <= 50 and AI.HasContainerItem(primaryManaPot) and

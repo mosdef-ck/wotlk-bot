@@ -26,6 +26,9 @@ end
 local function doHealTarget(target, missingHp, healSpell)
     if AI.IsUnitValidFriendlyTarget(target) then
         local missingPct = AI.GetUnitHealthPct(target)
+        if target:lower() == AI.GetPrimaryTank():lower() and missingPct > AI.Config.startTankHealThreshold then
+            return true
+        end
         if missingPct <= panicPct and AI.IsInCombat() then
             AI.CastSpell("Nature's Swiftness")
             AI.CastSpell("Tidal Force")
@@ -85,18 +88,21 @@ local function doOnUpdate_RestorationShaman()
             AI.CastSpell("Tidal Force")
         end
 
-        if missingHealth >= AI.GetSpellEffect("riptide") and not AI.HasMyBuff("riptide", primaryTank) and
-            AI.CastSpell("riptide", primaryTank) then
-            return
-        end
-        if AI.HasBuff("tidal waves", "player") then
-            if missingHealth >= AI.GetSpellEffect("healing wave") and AI.CastSpell("healing wave", primaryTank) then
+        if AI.Config.startTankHealThreshold and tankHpPct <= AI.Config.startTankHealThreshold then
+
+            if missingHealth >= AI.GetSpellEffect("riptide") and not AI.HasMyBuff("riptide", primaryTank) and
+                AI.CastSpell("riptide", primaryTank) then
                 return
             end
-            -- if missingHealth >= AI.GetSpellEffect("lesser healing wave") and
-            --     AI.CastSpell("lesser healing wave", primaryTank) then
-            --     return
-            -- end
+            if AI.HasBuff("tidal waves", "player") then
+                if missingHealth >= AI.GetSpellEffect("healing wave") and AI.CastSpell("healing wave", primaryTank) then
+                    return
+                end
+                -- if missingHealth >= AI.GetSpellEffect("lesser healing wave") and
+                --     AI.CastSpell("lesser healing wave", primaryTank) then
+                --     return
+                -- end
+            end
         end
 
         -- keep earth shield on the tank
@@ -132,7 +138,8 @@ local function doOnUpdate_RestorationShaman()
 
     if AI.USE_MANA_REGEN and AI.IsInCombat() then
         -- mana pot and mana ride
-        if AI.GetUnitPowerPct("player") <= manaTideTreshold and AI.CastSpell("mana tide totem") then
+        if AI.GetUnitPowerPct("player") <= manaTideTreshold and AI.GetTargetStrength() > 3 and
+            AI.CastSpell("mana tide totem") then
             return
         end
         if AI.GetUnitPowerPct("player") <= manaPctThreshold and AI.HasContainerItem(primaryManaPot) and
@@ -141,7 +148,8 @@ local function doOnUpdate_RestorationShaman()
         end
     end
 
-    if AI.AUTO_CLEANSE and AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease") then
+    if AI.AUTO_CLEANSE and
+        (AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease") or AI.CleanseRaid("Dispel Magic", "Magic")) then
         return
     end
 
@@ -202,8 +210,7 @@ local function doOnUpdate_ElementalShaman()
 end
 
 local function doDpsElemental(isAoE)
-    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() or
-        AI.AUTO_DPS then
+    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
 
@@ -241,8 +248,8 @@ local function doDpsElemental(isAoE)
     if AI.GetMyDebuffDuration("flame shock", "target") >= 2 and AI.CastSpell("lava burst", "target") then
         return
     end
-    
-    AI.CastSpell("lightning bolt", "target")    
+
+    AI.CastSpell("lightning bolt", "target")
 end
 
 local function doAutoDpsElemental()

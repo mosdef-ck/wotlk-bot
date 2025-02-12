@@ -28,3 +28,5 @@ dps1 = "mosdefswp"
 dps2 = "mosdeflocka"
 
 dps3 = "mosdefelsham"
+
+startTankHealThreshold = 100

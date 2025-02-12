@@ -1,31 +1,5 @@
 AI = AI or {}
 
-local function getGCDSpell(playerClass)
-    if playerClass == "DEATHKNIGHT" then
-        return "Death Coil"
-    elseif playerClass == "DRUID" then
-        return "lifebloom"
-    elseif playerClass == "HUNTER" then
-        return "Serpent Sting"
-    elseif playerClass == "MAGE" then
-        return "frost armor"
-    elseif playerClass == "PALADIN" then
-        return "Seal of Righteousness"
-    elseif playerClass == "PRIEST" then
-        return "lesser heal"
-    elseif playerClass == "ROGUE" then
-        return "Sinister Strike"
-    elseif playerClass == "SHAMAN" then
-        return "healing wave"
-    elseif playerClass == "WARLOCK" then
-        return "demon skin"
-    elseif playerClass == "WARRIOR" then
-        return "Hamstring"
-    else
-        AI.Print("Error, playerClass " .. tostring(playerClass) .. " not supported")
-    end
-end
-
 local function getInSpellRangeHarm(class)
     local lClass = class:lower()
     if lClass == "shaman" then
@@ -520,6 +494,13 @@ function AI.IsInVehicle(unit)
 end
 
 function AI.StopMoving()
+
+    --print("STop moving")
+    MoveBackwardStop()    
+    MoveForwardStop()
+    StrafeLeftStop()
+    StrafeRightStop()    
+
     MoveBackwardStart()
     MoveForwardStart()
     StrafeLeftStart()
@@ -528,36 +509,7 @@ function AI.StopMoving()
     MoveBackwardStop()    
     MoveForwardStop()
     StrafeLeftStop()
-    StrafeRightStop()    
-    TurnRightStop()
-    
-    
-    MoveBackwardStop()    
-    MoveForwardStop()
-    StrafeLeftStop()
     StrafeRightStop()
-    TurnRightStop()
-
-    MoveBackwardStop()    
-    MoveForwardStop()
-    StrafeLeftStop()
-    StrafeRightStop()
-    TurnRightStop()
-
-    MoveBackwardStop()    
-    MoveForwardStop()
-    StrafeLeftStop()
-    StrafeRightStop()
-    TurnLeftStop()
-    TurnRightStop()
-        
-    -- AI.RegisterPendingAction(function()
-    --     MoveBackwardStop()    
-    --     MoveForwardStop()
-    --     StrafeLeftStop()
-    --     StrafeRightStop()
-    --     return true
-    -- end, null, "STOP_MOVING")
 end
 
 function AI.CanInterrupt()
@@ -643,6 +595,10 @@ function AI.IsPossessing()
     return false
 end
 
+function AI.IsInVehicle(unit)
+    return UnitInVehicle(unit or "player")
+end
+
 function AI.FindPossessionSpellSlot(spellName)
     if not AI.IsPossessing() then
         return nil
@@ -678,23 +634,79 @@ function AI.UsePossessionSpell(spellName, unit)
 end
 
 function AI.GetPosition(unit)
-    local x, y = GetPlayerMapPosition(unit or "player")
-    if x == 0 and y == 0 then
-        SetMapToCurrentZone()
-        x, y = GetPlayerMapPosition(unit or "player")
-    end
-    return x, y
+    local x, y, z = GetObjectCoords(unit or "player")
+    return x,y,z
 end
 
 function AI.CalcDistance(x1, y1, x2, y2)
+    if not x1 or not y1 or not x2 or not y2 then
+        return 0
+    end    
     local dX, dY = x1 - x2, y1 - y2
     local distance = math.sqrt(dX * dX + dY * dY)
     return distance
 end
 
+function AI.CalcFacing(x1, y1, x2 ,y2)
+    if not x1 or not y1 or not x2 or not y2 then
+        return  nil
+    end
+    local dX, dY = x1 - x2, y1 - y2
+    local f = math.atan2(dY, dX)
+    local pi2 = math.pi * 2.0
+    if f < 0.0 then
+        f = f +  pi2
+    else
+        if f > pi2 then
+            f = f - pi2
+        end
+    end
+    return f
+end
+
 function AI.GetDistanceTo(x, y)
     local mX, mY = AI.GetPosition()
     return AI.CalcDistance(mX, mY, x, y)
+end
+
+function AI.GetFacingForPosition(x,y)
+    local mX, mY = AI.GetPosition()
+    if not x or not y or not mX or not mY then
+        return 0
+    end
+    local dX, dY = x - mX, y - mY
+    local f = math.atan2(dY, dX)
+    local pi2 = math.pi * 2.0
+    if f < 0.0 then
+        f = f +  pi2
+    else
+        if f > pi2 then
+            f = f - pi2
+        end
+    end
+    return f
+end
+
+function AI.SetFacing(rads)
+    SetFacing(rads)
+end
+
+function AI.SetFacingCoords(x, y)
+    if x or y then
+        AI.SetFacing(AI.GetFacingForPosition(x,y))
+    end
+end
+
+function AI.SetFacingUnit(unit)
+    if not AI.IsFacingTowards(AI.GetPosition(unit or "target")) then
+        AI.SetFacingCoords(AI.GetPosition(unit or "target"))
+    end
+end
+
+function AI.IsFacingTowards(x,y)
+    local desiredFacing = AI.GetFacingForPosition(x,y)
+    local facing = GetPlayerFacing()
+    return math.abs(desiredFacing - facing) <= 0.05
 end
 
 function AI.IsMoving()
@@ -708,6 +720,9 @@ end
 
 function AI.StopCasting()
     SpellStopCasting()
+    if AI.IsChanneling() then
+        JumpOrAscendStart()
+    end
     -- AI.StopMoving()
 end
 
@@ -764,14 +779,12 @@ function AI.IsDruid()
     return class == "druid"
 end
 
-function AI.GetPrimaryTank()
-    AI.GetPosition()
-
+function AI.GetPrimaryTank()    
     if type(AI.Config.tank) == "string" then
         return AI.Config.tank
     elseif type(AI.Config.tank) == "table" then
         for i, unit in ipairs(AI.Config.tank) do
-            if UnitExists(unit) and UnitIsPlayer(unit) and GetPlayerMapPosition(unit) ~= 0 then
+            if UnitExists(unit) and UnitIsPlayer(unit) then
                 return unit
             end
         end
@@ -780,13 +793,12 @@ function AI.GetPrimaryTank()
 end
 
 function AI.GetPrimaryHealer()
-    AI.GetPosition()
 
     if type(AI.Config.healers) == "string" then
         return AI.Config.healers
     elseif type(AI.Config.healers) == "table" then
         for i, unit in ipairs(AI.Config.healers) do
-            if UnitExists(unit) and UnitIsPlayer(unit) and GetPlayerMapPosition(unit) ~= 0 then
+            if UnitExists(unit) and UnitIsPlayer(unit) then
                 return unit
             end
         end
@@ -815,4 +827,18 @@ function AI.IsDpsPosition(i)
         unit = AI.Config.dps3
     end
     return UnitName("player"):lower() == unit:lower()
+end
+
+function AI.FindNearbyObjectsByName(name)
+    local objs = GetNearbyObjects(200)
+    local result = {}
+    for i, o in ipairs(objs) do
+        if MaloWUtils_StrContains(o.name:lower(), name:lower()) then
+            --adorn w/ distance to player
+            o.distance = AI.GetDistanceTo(o.x, o.y)
+            table.insert(result, o)
+        end
+    end
+    table.sort(result, function(a, b) return a.distance < b.distance end)
+    return result
 end

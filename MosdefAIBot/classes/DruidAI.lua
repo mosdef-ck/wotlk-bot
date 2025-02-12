@@ -1,8 +1,8 @@
 local isAIEnabled = false
 local primaryTank = nil
 local primaryManaPot = "runic mana potion"
-local panicPct = 20
-local manaPotThreshold = 20
+local panicPct = 30
+local manaPotThreshold = 10
 local innervateThreshold = 50
 
 local function useHealthStone()
@@ -31,10 +31,10 @@ local function doHealTarget(healTar, missingHp)
             AI.CastSpell("rejuvenation", healTar) then
             return true
         end
-        -- if missingHp >= AI.GetSpellEffect("regrowth") and not AI.HasMyBuff("regrowth", healTar) and not AI.IsMoving() and
-        --     AI.CastSpell("regrowth", healTar) then
-        --     return true
-        -- end
+        if missingHp >= AI.GetSpellEffect("regrowth") and not AI.HasMyBuff("regrowth", healTar) and not AI.IsMoving() and
+            AI.CastSpell("regrowth", healTar) then
+            return true
+        end
     end
     return false
 end
@@ -86,22 +86,32 @@ local function doOnUpdate_RestorationDruid()
             end
         end
 
-        if missingHealth >= AI.GetSpellEffect("wild growth") and not AI.HasMyBuff("wild growth", primaryTank) and
+        if missingHealth >= AI.GetSpellEffect("lifebloom") and ( AI.HasMyBuff("Clearcasting") and
+            AI.GetMyBuffCount("lifebloom", primaryTank) < 3 ) and AI.CastSpell("lifebloom", primaryTank) then
+            return
+        end
+
+        if missingHealth >= AI.GetSpellEffect("rejuvenation") and not AI.HasMyBuff("rejuvenation", primaryTank) and
+            AI.CastSpell("rejuvenation", primaryTank) then
+            return
+        end
+
+        if missingHealth >= AI.GetSpellEffect("wild growth") and not AI.HasMyBuff("wild growth", primaryTank) and CheckInteractDistance(primaryTank, 2) and
             AI.CastSpell("wild growth", primaryTank) then
             return
         end
 
-        if missingHealth >= (AI.GetSpellEffect("healing touch") * 1.5 ) and AI.CastSpell("healing touch", primaryTank) then
+        if missingHealth >= (AI.GetSpellEffect("healing touch") * 1.0) and AI.CastSpell("healing touch", primaryTank) then
+            return
+        end
+
+        if missingHealth >= AI.GetSpellEffect("regrowth") and not AI.HasMyBuff("regrowth", primaryTank) and
+            AI.CastSpell("regrowth", primaryTank) then
             return
         end
 
         if missingHealth >= AI.GetSpellEffect("nourish") and AI.HasMyBuff("regrowth", primaryTank) and
             AI.CastSpell("nourish", primaryTank) then
-            return
-        end
-
-        if missingHealth >= AI.GetSpellEffect("lifebloom") and ( AI.HasMyBuff("Clearcasting") and
-            AI.GetMyBuffCount("lifebloom", primaryTank) < 3 ) and AI.CastSpell("lifebloom", primaryTank) then
             return
         end
         
@@ -113,16 +123,7 @@ local function doOnUpdate_RestorationDruid()
         --         return
         --     end
         -- end
-
-        if missingHealth >= AI.GetSpellEffect("rejuvenation") and not AI.HasMyBuff("rejuvenation", primaryTank) and
-            AI.CastSpell("rejuvenation", primaryTank) then
-            return
-        end
-
-        if missingHealth >= AI.GetSpellEffect("regrowth") and not AI.HasMyBuff("regrowth", primaryTank) and
-            AI.CastSpell("regrowth", primaryTank) then
-            return
-        end
+ 
     end
 
     if AI.IsInCombat() and AI.GetTargetStrength() > 3 and AI.GetUnitHealthPct("target") < 95 then

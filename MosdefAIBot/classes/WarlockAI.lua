@@ -325,7 +325,7 @@ end
 
 local function doDpsDestro(isAoE)
     if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() or AI.AUTO_DPS then
+        AI.HasBuff("drink") then
         return
     end
 
@@ -379,10 +379,6 @@ local function doDpsDestro(isAoE)
 end
 
 local function doDpsAffliction(isAoE)
-    if AI.IS_DOING_ONUPDATE or AI.AUTO_DPS then
-        return
-    end
-
     if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() or
         AI.AUTO_DPS then
         return
