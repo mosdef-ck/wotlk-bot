@@ -117,7 +117,6 @@ local ichoron = MosDefBossModule:new({
 
 AI.RegisterBossModule(ichoron)
 
-
 -- grand magus
 local grandMagus = MosDefBossModule:new({
     name = "Grand Magus Telestra",
@@ -127,8 +126,9 @@ local grandMagus = MosDefBossModule:new({
     onEnd = function(self)
     end,
     onUpdate = function(self)
-        if AI.IsWarlock() and UnitExists("focus") and AI.IsValidOffensiveUnit("focus") and not AI.HasMyDebuff("Fear", "focus") and AI.CastSpell("fear", "focus") then
-            --AI.SayRaid("Fearing " .. UnitName("focus"))
+        if AI.IsWarlock() and UnitExists("focus") and AI.IsValidOffensiveUnit("focus") and
+            not AI.HasMyDebuff("Fear", "focus") and AI.CastSpell("fear", "focus") then
+            -- AI.SayRaid("Fearing " .. UnitName("focus"))
             return true
         end
         return false
@@ -138,9 +138,9 @@ local grandMagus = MosDefBossModule:new({
 function grandMagus:SPELL_CAST_START(args)
     if args.spellName == "Critter" then
         TargetUnit(args.caster)
-        FocusUnit("target") 
+        FocusUnit("target")
         if AI.IsWarlock() and not AI.HasMyDebuff("fear", "focus") then
-            AI.RegisterPendingAction( function() 
+            AI.RegisterPendingAction(function()
                 if UnitName("focus") ~= "Grand Magus Telestra" then
                     TargetUnit("Grand Magus Telestra")
                     FocusUnit("target")
@@ -150,15 +150,15 @@ function grandMagus:SPELL_CAST_START(args)
                 end
                 return AI.CastSpell("fear", "focus")
             end, null, "CC_THE_CCER")
-        end       
+        end
     end
 end
 function grandMagus:UNIT_SPELLCAST_START(caster, spellName)
     if spellName == "Critter" then
         TargetUnit(caster)
-        FocusUnit("target") 
+        FocusUnit("target")
         if AI.IsWarlock() and not AI.HasMyDebuff("fear", "focus") then
-            AI.RegisterPendingAction( function() 
+            AI.RegisterPendingAction(function()
                 if UnitName("focus") ~= "Grand Magus Telestra" then
                     TargetUnit("Grand Magus Telestra")
                     FocusUnit("target")
@@ -168,7 +168,7 @@ function grandMagus:UNIT_SPELLCAST_START(caster, spellName)
                 end
                 return AI.CastSpell("fear", "focus")
             end, null, "CC_THE_CCER")
-        end       
+        end
     end
 end
 
@@ -222,7 +222,8 @@ local leyguardian = MosDefBossModule:new({
         AI.PRE_DO_DPS = function(isAoe)
             if AI.IsPossessing() then
                 local pet = UnitName("playerpet"):lower()
-                if pet == "ruby drake" and AI.IsValidOffensiveUnit() and AI.UsePossessionSpell("searing wrath", "target") then
+                if pet == "ruby drake" and AI.IsValidOffensiveUnit() and
+                    AI.UsePossessionSpell("searing wrath", "target") then
                     return true
                 elseif pet == "amber drake" then
                     if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "Ley") then
@@ -243,7 +244,8 @@ local leyguardian = MosDefBossModule:new({
                     elseif AI.UsePossessionSpell("shock lance", "target") then
                         return true
                     end
-                elseif pet == "emerald drake" and AI.IsValidOffensiveUnit() and not AI.IsCasting("playerpet") and AI.UsePossessionSpell("leeching poison", "target") then
+                elseif pet == "emerald drake" and AI.IsValidOffensiveUnit() and not AI.IsCasting("playerpet") and
+                    AI.UsePossessionSpell("leeching poison", "target") then
                     return true
                 end
             end
@@ -271,7 +273,7 @@ local leyguardian = MosDefBossModule:new({
                 end
             end
             if pet == "amber drake" and AI.HasBuff("enraged assault", "target") then
-                local delay = 0                
+                local delay = 0
                 if AI.IsDpsPosition(1) then
                     delay = 0
                 elseif AI.IsDpsPosition(2) then
@@ -292,3 +294,92 @@ local leyguardian = MosDefBossModule:new({
 })
 
 AI.RegisterBossModule(leyguardian)
+
+local prophetTharon = MosDefBossModule:new({
+    name = "The Prophet Tharon'Ja",
+    creatureId = {26632},
+    onUpdate = function(self)
+        if AI.HasDebuff("Gift of Tharon'ja") then
+            if not AI.IsValidOffensiveUnit() then
+                TargetUnit("the prophet")
+            end
+            if AI.IsTank() and not AI.IsTanking("player") and AI.CastSpell("taunt", "target") then
+                return true
+            end
+            if AI.IsTanking("player") and AI.CastSpell("bone armor") then
+                return true
+            end
+            if AI.CastSpell("touch of life", "target") or AI.CastSpell("slaying strike") then
+                return true
+            end
+        end
+        return false
+    end
+})
+
+AI.RegisterBossModule(prophetTharon)
+
+-- Sartharion
+
+local sartharion = MosDefBossModule:new({
+    name = "Sartharion",
+    creatureId = {28860},
+    onStart = function(self)
+        AI.do_PriorityTarget = function()
+            return AI.DoTargetChain("Acolyte of Vesperon")
+        end
+    end,
+    onEnd = function(self)
+    end,
+    onUpdate = function(self)
+        AI.DISABLE_CDS = AI.IsValidOffensiveUnit() and (not strcontains(UnitName("target"), "shadron") and not strcontains(UnitName("target"), "vesperon") and strcontains(UnitName("target"), "tenebron") )
+        if AI.IsDps() and not self.portalOpen then
+            local healer = AI.GetPrimaryHealer()
+            if AI.GetDistanceToUnit(healer) > 3 then
+                local hx, hy = AI.GetPosition(healer)
+                AI.SetMoveTo(hx, hy)
+            end
+        end
+    end,
+    portalOpen = false
+})
+
+function sartharion:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
+    if strcontains(s, "vesperon disciple appears") then
+        print("vesperon disciple appears")
+        self.portalOpen = true
+        if AI.IsDps() then
+            local portal = AI.FindNearbyObjectsByName("twilight portal")
+            if #portal > 0 then
+                if portal[1].distance > 3 then
+                    AI.SetMoveTo(portal[1].x, portal[1].y, 0.5, function()
+                        portal[1]:Interact()
+                    end)
+                else
+                    portal[1]:Interact()
+                end
+            end
+        end
+    end
+end
+
+function sartharion:CHAT_MSG_MONSTER_EMOTE(s, t)
+    if strcontains(s, "vesperon disciple appears") then
+        print("vesperon disciple appears")
+        self.portalOpen = true
+        if AI.IsDps() then
+            local portal = AI.FindNearbyObjectsByName("twilight portal")
+            if #portal > 0 then
+                if portal[1].distance > 3 then
+                    AI.SetMoveTo(portal[1].x, portal[1].y, 0.5, function()
+                        portal[1]:Interact()
+                    end)
+                else
+                    portal[1]:Interact()
+                end
+            end
+        end
+    end
+end
+
+AI.RegisterBossModule(sartharion)

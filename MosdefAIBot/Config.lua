@@ -17,16 +17,21 @@ manaPotion = "Runic Mana Potion"
 manaPctThreshold = 30
 
 --
-panicHpPct = 20
+panicHpPct = 10
 
 --
 dpsPotion = "potion of wild magic"
 
 
-dps1 = "mosdefswp"
+dps1 = { "mosdefswp" }
 
-dps2 = "mosdeflocka"
+dps2 = { "mosdeflocka" }
 
-dps3 = "mosdefelsham"
+dps3 = { "mosdefelsham", "mosdeffmage" }
 
-startTankHealThreshold = 100
+startHealOverrideThreshold = 100
+
+
+focusMagicTarget = "mosdeflocka"
+
+curseToUse = "curse of the elements"

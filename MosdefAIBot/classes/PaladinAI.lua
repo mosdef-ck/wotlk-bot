@@ -3,7 +3,7 @@ local primaryTank = nil
 local panicPct = 20
 
 local function autoTaunt()
-    if AI.AUTO_TAUNT and AI.IsInCombat() and not AI.IsTanking("player") then
+    if AI.AUTO_TAUNT and AI.IsInCombat() and AI.IsValidOffensiveUnit() and not AI.IsTanking("player") then
         if AI.CastSpell("Hand of Reckoning", "target") then
             return true
         end
@@ -50,7 +50,7 @@ local function doAutoDps()
     --     AI.CastSpell("avenging wrath")
     -- end
 
-    if AI.GetTargetStrength() >= 3 and not AI.HasBuff("holy shield", "player") and AI.CastSpell("holy shield") then
+    if AI.GetTargetStrength() > 3 and not AI.HasBuff("holy shield", "player") and AI.CastSpell("holy shield") then
         return
     end
     if AI.GetTargetStrength() >= 3 and not AI.HasBuff("divine plea") and AI.CastSpell("divine plea") then

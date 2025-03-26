@@ -9,16 +9,23 @@ local primaryManaPot = "runic mana potion"
 local procTierForSwp = 0
 
 local function upkeepShadowForm()
-    if GetShapeshiftForm() ~= 1 and AI.CastSpell("Shadowform") then
-        return true
-    end
 
-    if not AI.HasBuff("inner fire") and AI.CastSpell("inner fire") then
-        return true
-    end
+    if AI.IsInDungeonOrRaid() then
+        if GetShapeshiftForm() ~= 1 and AI.CastSpell("Shadowform") then
+            return true
+        end
 
-    if not AI.IsInCombat() and not AI.HasBuff("vampiric embrace") and AI.CastSpell("vampiric embrace") then
-        return true
+        if not AI.HasBuff("inner fire") and AI.CastSpell("inner fire") then
+            return true
+        end
+
+        if not AI.IsInCombat() and not AI.HasBuff("vampiric embrace") and AI.CastSpell("vampiric embrace") then
+            return true
+        end
+
+        if not AI.IsInCombat() and not AI.HasMyBuff("prayer of shadow protection") and AI.CastSpell("prayer of shadow protection") then
+            return true
+        end
     end
     return false
 end
@@ -161,7 +168,7 @@ local function doOnUpdate_ShadowPriest()
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() then
         return
-    end    
+    end
 
     if not AI.CanCast() then
         return
@@ -169,7 +176,11 @@ local function doOnUpdate_ShadowPriest()
 
     if upkeepShadowForm() then
         return
-    end    
+    end
+
+    if doPowerWordShield() then
+        return
+    end
 
     if AI.AUTO_CLEANSE and AI.CleanseRaid("Dispel Magic", "Magic") then
         return
@@ -179,14 +190,9 @@ local function doOnUpdate_ShadowPriest()
         return
     end
 
-    if doPowerWordShield() then
-        return
-    end
-
     if manageThreat() then
         return
     end
-    
 
     if AI.IsInCombat() and AI.USE_MANA_REGEN then
         if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") <= 50 and AI.HasContainerItem(primaryManaPot) and
@@ -206,13 +212,16 @@ local function doOnUpdate_ShadowPriest()
     end
 
     if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 95 then
-        AI.UseInventorySlot(10)
-        AI.UseInventorySlot(13)
-        AI.UseInventorySlot(14)
-    end
 
-    if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
-        AI.UseContainerItem(AI.Config.dpsPotion)
+        if AI.HasBuff("dying curse") or AI.HasBuff("bloodlust") then
+            AI.UseInventorySlot(10)
+            AI.UseInventorySlot(13)
+            AI.UseInventorySlot(14)
+        end
+        if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
+            AI.UseContainerItem(AI.Config.dpsPotion)
+        end
+
     end
 
     if AI.GetTargetStrength() > 3 and not AI.HasMyDebuff("Shadow Word: Pain", "target") then
@@ -253,16 +262,25 @@ local function doDps(isAoE)
         return
     else
         if AI.CastSpell("Shadow Word: Death", "target") then
+            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                CastCursorAOESpell(AI.GetPosition("target"))
+            end
             return
         end
 
         if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 and
             not AI.HasMyDebuff("devouring plague", "target") and AI.CastSpell("devouring plague", "target") then
+            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                CastCursorAOESpell(AI.GetPosition("target"))
+            end
             return
         end
 
         if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 then
             if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
+                if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                    CastCursorAOESpell(AI.GetPosition("target"))
+                end
                 return
             end
 
@@ -270,6 +288,9 @@ local function doDps(isAoE)
                 local procTier = getProcTier()
                 if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
                     procTierForSwp = procTier
+                    if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                        CastCursorAOESpell(AI.GetPosition("target"))
+                    end
                     -- AI.SayRaid("SWP under procTier " .. procTier)
                     return
                 end

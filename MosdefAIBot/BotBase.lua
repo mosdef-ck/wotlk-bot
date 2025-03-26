@@ -16,6 +16,7 @@ AI.AUTO_AOE = false
 AI.DISABLE_DRAIN = false
 AI.DISABLE_THREAT_MANAGEMENT = false
 AI.USE_MANA_REGEN = true
+AI.DISABLE_WARLOCK_CURSE = false
 
 AI.BossModules = {}
 AI.ZoneModules = {}
@@ -57,6 +58,9 @@ local desiredFollowTarget = nil
 local lastPosCheckTime = 0
 local positionSetTime = 0
 local lastCheckedPosition = nil
+local lastSoulwellCheckTime = 0
+
+local executeDpsMethod = nil
 
 local function onUpdate()
     if not isAIEnabled or not isGreenlit then
@@ -69,6 +73,11 @@ local function onUpdate()
                 table.insert(cachedOnUpdateCallbacks, AI[func])
             end
         end
+    end
+
+    -- not AI.IsPlayerInControl() or 
+    if UnitIsDeadOrGhost("player") then
+        return
     end
     ---        
     AI.IS_DOING_ONUPDATE = true
@@ -83,15 +92,10 @@ local function onUpdate()
     end
 
     -- clean up executed actions
-    local done = false
-    while not done do
-        done = true
-        for i, action in ipairs(registeredPendingActions) do
-            if action.executed then
-                table.remove(registeredPendingActions, i)
-                done = false
-                break
-            end
+
+    for i = #registeredPendingActions, 1, -1 do
+        if registeredPendingActions[i].executed then
+            table.remove(registeredPendingActions, i)
         end
     end
 
@@ -111,6 +115,17 @@ local function onUpdate()
     -- do auto-dps towards the end
     if AI.AUTO_DPS and AI.doAutoDps then
         AI.doAutoDps()
+    end
+
+    if executeDpsMethod ~= nil and not AI.AUTO_DPS then
+        if (not AI.HasMoveToPosition() or AI.IsInVehicle()) then
+            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(executeDpsMethod.isAoE == true) then
+                if not AI.HasBuff("invisibility") and not AI.HasBuff("fade") then
+                    AI.DO_DPS(executeDpsMethod.isAoE == true)
+                end
+            end
+        end
+        executeDpsMethod = nil
     end
 end
 
@@ -154,29 +169,34 @@ local function onAddOnUpdate(self, elapsed)
     end
 end
 
-local function loadBossModule(bossName, creatureId)
-    -- print("Attempting to load bossModule "..bossName)
-    if bossName == nil and creatureId == nil then
+local function loadBossModule(creatureId)
+
+    if UnitIsDeadOrGhost("player") then
+        return
+    end
+    if creatureId == nil then
+        return
+    end
+    local ncreatureId = tonumber(creatureId)
+    if ncreatureId == nil then
+        UIErrorsFrame:AddMessage("Failed to load boss-module for: " .. creatureId)
         return
     end
 
     for i, mod in ipairs(AI.BossModules) do
         local foundMod = nil
-        if creatureId ~= nil and type(mod.creatureId) == "table" then
+        if ncreatureId ~= nil and type(mod.creatureId) == "table" then
             for i, id in ipairs(mod.creatureId) do
-                if id == creatureId then
+                if id == ncreatureId then
                     foundMod = mod
                     break
                 end
             end
         end
-        if bossName ~= nil and mod.name:lower() == bossName:lower() then
-            foundMod = mod
-        end
         if foundMod ~= nil and not foundMod.enabled then
             foundMod.enabled = true
             foundMod:onStart()
-            AI.Print(foundMod.name .. " module enabled, good luck!")
+            UIErrorsFrame:AddMessage(foundMod.name .. " module enabled, good luck!")
         end
     end
 end
@@ -198,6 +218,7 @@ local function unloadBossModules()
             -- AI.Print("stopping boss mod " .. mod.name)
             mod:onStop()
             mod.enabled = false
+            UIErrorsFrame:AddMessage(mod.name .. " module stopped.")
         end
     end
 end
@@ -330,7 +351,7 @@ local function onAddOnChatMessage(from, message)
 end
 
 local function handleFacingWrongWay()
-    if AI.ALLOW_AUTO_REFACE then
+    if AI.ALLOW_AUTO_REFACE and not AI.HasMoveToPosition() and not AI.IsMoving() then
         AI.SetFacingCoords(AI.GetPosition("target"))
     end
 end
@@ -357,12 +378,13 @@ local function onEvent(self, event, ...)
         onAddOnChatMessage(from, msg)
     elseif event == "PLAYER_REGEN_DISABLED" then
         AI.isInCombat = true
-        loadBossModule(UnitName("target"), AI.GetUnitCreatureId("target"))
-        AI.SendAddonMessage("load-boss-module", UnitName("target"))
+        loadBossModule(AI.GetUnitCreatureId("target"))
+        AI.SendAddonMessage("load-boss-module", AI.GetUnitCreatureId("target"))
     elseif event == "PLAYER_REGEN_ENABLED" then
         AI.isInCombat = false
         unloadBossModules()
         AI.ResetMoveToPosition()
+        AI.StopMoving()
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastPlayerEnterWorld = GetTime()
         AI.ResetMoveToPosition()
@@ -392,8 +414,8 @@ local function onEvent(self, event, ...)
 
     elseif event == "PLAYER_TARGET_CHANGED" then
         if AI.IsInCombat() and AI.IsValidOffensiveUnit("target") then
-            loadBossModule(UnitName("target"), AI.GetUnitCreatureId("target"))
-            AI.SendAddonMessage("load-boss-module", UnitName("target"))
+            loadBossModule(AI.GetUnitCreatureId("target"))
+            AI.SendAddonMessage("load-boss-module", AI.GetUnitCreatureId("target"))
         end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         local zoneName = GetRealZoneText()
@@ -425,6 +447,7 @@ local function onEvent(self, event, ...)
             if unitName:lower() == UnitName("player"):lower() then
                 unloadBossModules()
                 AI.ResetMoveToPosition()
+                AI.StopMoving()
             end
             -- print("unit died/destroyed "..arg6.. " ".. arg7)
             if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
@@ -476,7 +499,7 @@ end
 
 -- #auto movement
 
-function AI.SetMoveToPosition(x, y, dist)
+function AI.SetMoveToPosition(x, y, dist, onArrival)
     local minDistance = dist or 0.5
     if AI.IsInVehicle() then
         minDistance = dist or 5
@@ -484,23 +507,38 @@ function AI.SetMoveToPosition(x, y, dist)
     goToPositionDestination = {
         x = x,
         y = y,
-        minDistance = minDistance
+        minDistance = minDistance,
+        onArrival = onArrival,
+        startTime = GetTime(),
+        endTime = nil
     }
     -- print("SetMoveTo "..x.." y:"..y.." minDist:"..minDistance)
     hasReachedGoToPosition = false
     positionSetTime = GetTime()
-    AI.StopMoving()
+    AI.StopCasting()
+    -- AI.StopMoving()
+end
+
+function AI.SetMoveTo(...)
+    AI.SetMoveToPosition(...)
 end
 
 function AI.HasMoveToPosition()
     return goToPositionDestination ~= nil
 end
 
+function AI.HasMoveTo()
+    return AI.HasMoveToPosition()
+end
+
 function AI.ResetMoveToPosition()
     goToPositionDestination = nil
     hasReachedGoToPosition = false
     AI.ALLOW_AUTO_MOVEMENT = true
-    -- AI.StopMoving()
+    AI.StopMoving()
+end
+function AI.ResetMoveTo()
+    return AI.ResetMoveToPosition()
 end
 
 function AI.HasReachedDestination()
@@ -515,24 +553,27 @@ function AI.IsFacingTowardsDestination()
 end
 
 local function doAutoMovementUpdate()
-    if goToPositionDestination == nil or goToPositionDestination.x == nil or goToPositionDestination.y == nil then
+    if goToPositionDestination == nil or goToPositionDestination.x == nil or goToPositionDestination.y == nil or hasReachedGoToPosition then
         return true
     end
 
     local dist = AI.GetDistanceTo(goToPositionDestination.x, goToPositionDestination.y)
     -- print("dist to MoveTo:"..dist)
 
-    if hasReachedGoToPosition and dist <= goToPositionDestination.minDistance then
-        -- Allow 20% leeway if you reached the destination previously.
-        return true
-    end
     if dist <= goToPositionDestination.minDistance then
         -- print("reached coords")
-        AI.StopMoving()
+        if AI.IsMoving() then
+            AI.StopMoving()
+        end
+        goToPositionDestination.endTime = GetTime()
+        if type(goToPositionDestination.onArrival) == "function" then
+            goToPositionDestination.onArrival(goToPositionDestination)
+        end
         hasReachedGoToPosition = true
         goToPositionDestination = nil
         return true
     end
+
     hasReachedGoToPosition = false
 
     if not AI.IsFacingTowards(goToPositionDestination.x, goToPositionDestination.y) then
@@ -548,11 +589,12 @@ local function doAutoMovementUpdate()
         positionSetTime = GetTime()
     end
 
-    if dist > goToPositionDestination.minDistance then
-        MoveForwardStart()
-    else
-        MoveForwardStop()
+    if IsFollowing() then
+        StopFollowing()
     end
+
+    MoveForwardStart()
+
     return false
 end
 
@@ -601,6 +643,20 @@ function AI.doOnUpdate_BotBase()
     if AI.ALLOW_AUTO_MOVEMENT then
         doAutoMovementUpdate()
     end
+
+    -- soulwell
+    if not AI.HasContainerItem("fel healthstone") and not AI.IsInCombat() and not AI.HasMoveTo() and tickTime >
+        lastSoulwellCheckTime then
+        local soulwell = AI.FindYWithinXOf("player", "Soulwell", 20)
+        if #soulwell > 0 then
+            if AI.GetDistanceTo(soulwell[1].x, soulwell[1].y) <= 4 then
+                soulwell[1]:Interact()
+            else
+                AI.SetMoveTo(soulwell[1].x, soulwell[1].y)
+            end
+        end
+        lastSoulwellCheckTime = tickTime + 1
+    end
 end
 
 function AI.SetDesiredFacing(facing)
@@ -634,36 +690,35 @@ function AI.FollowCrawl(unit)
 end
 
 function AI.MustCastSpell(spell, target)
-    if GetSpellCooldown(spell) < 10 then
-        AI.RegisterPendingAction(function()        
-            if AI.CanCastSpell(spell, target) then
+    local tick = GetTime()
+    local cd = GetSpellCooldown(spell)
+    if cd == nil or cd == 0 or (tick - cd) < 3 then
+        AI.RegisterPendingAction(function()
+            if AI.CanCastSpell(spell, target, true) then
                 AI.StopCasting()
             end
             return AI.CastSpell(spell, target)
         end, null, spell)
-    end    
+    end
 end
 
 function AI.ExecuteDpsMethod(isAoE)
-    if (not AI.HasMoveToPosition() or AI.IsInVehicle()) and not AI.AUTO_DPS then
-        AI.RegisterPendingAction(function()
-            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
-                AI.DO_DPS(isAoE)
-            end
-            return true
-        end, null, "DO_DPS")
+    if executeDpsMethod == nil then
+        executeDpsMethod = {
+            isAoE = isAoE
+        }
     end
-    -- if (not AI.HasMoveToPosition() or AI.IsInVehicle()) and not AI.AUTO_DPS and not AI.IS_DOING_ONUPDATE then
-    --     if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
-    --         AI.DO_DPS(isAoE)
-    --     end       
-    -- end
+    executeDpsMethod.isAoE = isAoE == true
 end
 
 -- generic mount function, customizable
 function AI.DO_MOUNT(flyMount)
     if flyMount then
-        RunMacroText("/use blue wind rider")
+        if AI.IsPriest() then
+            RunMacroText("/use magnificent flying carpet")
+        else
+            RunMacroText("/use bronze drake")
+        end
     else
         RunMacroText("/use amani war bear")
     end
@@ -731,6 +786,7 @@ function AI.RegisterPendingAction(f, delay, id)
         id = actionId,
         f = f,
         when = now,
+        createTime = now,
         executed = false
     }
     if type(delay) == "number" then
@@ -738,6 +794,9 @@ function AI.RegisterPendingAction(f, delay, id)
     end
 
     table.insert(registeredPendingActions, action)
+    table.sort(registeredPendingActions, function(a, b)
+        return a.createTime < b.createTime
+    end)
 end
 
 f:RegisterEvent("ADDON_LOADED")

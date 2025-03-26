@@ -14,6 +14,12 @@ local noth = MosDefBossModule:new({
             end
             return false
         end
+        AI.PRE_DO_DPS = function(isAoe)
+            if AI.IsDps() then
+                return GetTime() < self.lastBlinkTime + 10
+            end
+            return false
+        end
         if AI.IsPriest() then
             CancelUnitBuff("player", "vampiric embrace")
             AI.CastSpell("power word: shield", AI.Config.tank)
@@ -28,6 +34,7 @@ local noth = MosDefBossModule:new({
             AI.do_PriorityTarget = oldPriorityTargetFn
         end
         AI.ALLOW_AUTO_REFACE = true
+        AI.PRE_DO_DPS =nil
     end,
     onUpdate = function(self)
         if AI.IsTank() then
@@ -51,10 +58,18 @@ local noth = MosDefBossModule:new({
                 (AI.CleanseRaid("Cleanse", "Poison", "Disease", "Magic") or AI.CleanseRaid("Remove Curse", "Curse")) then
                 return
             end
-        end
+        end        
         return false
-    end
+    end,
+    lastBlinkTime = 0
 })
+
+function noth:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
+    print("Noth has blinked")
+    if strcontains(s, "blinks") then
+        self.lastBlinkTime = GetTime()
+    end
+end
 
 AI.RegisterBossModule(noth)
 
@@ -339,6 +354,7 @@ AI.RegisterBossModule(maexxna)
 -- instructor razuvious
 local razuvious = MosDefBossModule:new({
     name = "instructor razuvious",
+    creatureId = {16061},
     onStart = function()
         AI.AUTO_TAUNT = false
     end,
@@ -520,6 +536,7 @@ AI.RegisterBossModule(gluth)
 -- heigan the unclean
 local heigan = MosDefBossModule:new({
     name = "Heigan The Unclean",
+    creatureId = {15936},
     platformX = 0.51658093929291,
     platformY = 0.41808542609215,
     danceStartX = 0.48749935626984,
@@ -555,7 +572,6 @@ function heigan:CHAT_MSG_RAID_BOSS_EMOTE(arg1, arg2)
     end
 end
 
-heigan:RegisterEvent("CHAT_MSG_RAID_BOSS_EMOTE")
 AI.RegisterBossModule(heigan)
 
 -- loatheb

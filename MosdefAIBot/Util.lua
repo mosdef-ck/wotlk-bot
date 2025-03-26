@@ -150,8 +150,8 @@ function MalowUtils_ShowNearbyObjects(distanceFilter)
         if total >= 1 then
             local nearbyObjects = GetNearbyObjects()
             local s = ""
-            for i, o in ipairs(nearbyObjects) do
-                if not distanceFilter or AI.GetDistanceTo(o.x,o.y) <= distanceFilter then
+            for i, o in ipairs(nearbyObjects) do                                
+                if not distanceFilter or AI.GetDistanceTo(o.x,o.y) <= distanceFilter and not strcontains(o.name, "dark rune") and not strcontains(o.name, "invisible") then
                     -- s = s .. "name: " .. strpad(o.name, 50) .. "\n"
                     s = s .. "name: " .. strpad(o.name, 30) .. " x:" .. o.x .. " y:" .. o.y .. " z:" .. o.z .. "\n"
                 end
@@ -271,4 +271,12 @@ function strpad(s, len)
         return s .. filler
     end
     return s
+end
+
+function strcontains(fs, substr)
+    return MaloWUtils_StrContains(fs, substr)
+end
+
+function strstartswith(fs, substr)
+    return MaloWUtils_StrStartsWith(fs, substr)
 end

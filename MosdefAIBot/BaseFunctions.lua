@@ -1,5 +1,31 @@
 AI = AI or {}
 
+local function getGCDSpell(playerClass)
+    if playerClass == "DEATHKNIGHT" then
+        return "Death Coil"
+    elseif playerClass == "DRUID" then
+        return "lifebloom"
+    elseif playerClass == "HUNTER" then
+        return "Serpent Sting"
+    elseif playerClass == "MAGE" then
+        return "frost armor"
+    elseif playerClass == "PALADIN" then
+        return "Seal of Righteousness"
+    elseif playerClass == "PRIEST" then
+        return "lesser heal"
+    elseif playerClass == "ROGUE" then
+        return "Sinister Strike"
+    elseif playerClass == "SHAMAN" then
+        return "healing wave"
+    elseif playerClass == "WARLOCK" then
+        return "demon skin"
+    elseif playerClass == "WARRIOR" then
+        return "Hamstring"
+    else
+        AI.Print("Error, playerClass " .. tostring(playerClass) .. " not supported")
+    end
+end
+
 local function getInSpellRangeHarm(class)
     local lClass = class:lower()
     if lClass == "shaman" then
@@ -66,7 +92,18 @@ function AI.IsChanneling(unit)
 end
 
 function AI.IsOnGCD()
-    -- return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) ~= 0
+    -- local minValue = 0.05;
+    -- local maxValue = 0.3;
+    -- local _, _, lag = GetNetStats()
+    -- local curPing = tonumber((lag) / 1000) + .025;
+
+    -- if curPing < minValue then
+    --     curPing = minValue;
+    -- elseif curPing > maxValue then
+    --     curPing = maxValue;
+    -- end
+
+    -- return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) - curPing > 0
     return false
 end
 
@@ -140,13 +177,13 @@ function AI.IsUsableSpell(spell, unit)
     end
 end
 
-function AI.CanCastSpell(spell, unit)
+function AI.CanCastSpell(spell, unit, ignoreCurrentCasting)
     local name, r, i, manaCost, _, _, castTime = GetSpellInfo(spell)
     if name == nil then
         return false
     end
-    return AI.CanCast() and AI.IsUsableSpell(spell, unit) and GetSpellCooldown(spell) == 0 and UnitPower("player") >=
-               manaCost and (not AI.IsMoving() or castTime == 0)
+    return (ignoreCurrentCasting or AI.CanCast()) and AI.IsUsableSpell(spell, unit) and GetSpellCooldown(spell) == 0 and
+               UnitPower("player") >= manaCost and (not AI.IsMoving() or castTime == 0)
 end
 
 function AI.CastSpell(spell, target)
@@ -394,29 +431,34 @@ function AI.GetMostDamagedFriendlyPet()
 end
 
 --
-local function UnitHasDebuffOfType(unit, debuffType1, debuffType2, debuffType3)
+local function UnitHasDebuffOfType(unit, ...)
     for i = 1, 40 do
         local name, _, _, _, type = UnitDebuff(unit, i)
         if name then
-            if debuffType1 ~= nil and debuffType1 == type then
-                return true
-            end
-            if debuffType2 ~= nil and debuffType2 == type then
-                return true
-            end
-            if debuffType3 ~= nil and debuffType3 == type then
-                return true
+            local count = select("#", ...)
+            for j = 1, count, 1 do
+                if type == select(j, ...) then
+                    return true
+                end
             end
         end
     end
     return false
 end
 
-function AI.CleanseRaid(spell, debuffType1, debuffType2, debuffType3)
+AI.UnitHasDebuffOfType = UnitHasDebuffOfType
+
+function AI.CleanseSelf(spell, ...)
+    if UnitHasDebuffOfType("player", ...) and AI.IsUnitValidFriendlyTarget("player", spell) then
+        return AI.CastSpell(spell, "player")
+    end
+    return false
+end
+
+function AI.CleanseRaid(spell, ...)
     for i = 1, AI.GetNumPartyOrRaidMembers() do
         local unit = AI.GetUnitFromPartyOrRaidIndex(i)
-        if UnitHasDebuffOfType(unit, debuffType1, debuffType2, debuffType3) and
-            AI.IsUnitValidFriendlyTarget(unit, spell) then
+        if UnitHasDebuffOfType(unit, ...) and AI.IsUnitValidFriendlyTarget(unit, spell) then
             return AI.CastSpell(spell, unit)
         end
     end
@@ -494,22 +536,7 @@ function AI.IsInVehicle(unit)
 end
 
 function AI.StopMoving()
-
-    --print("STop moving")
-    MoveBackwardStop()    
-    MoveForwardStop()
-    StrafeLeftStop()
-    StrafeRightStop()    
-
-    MoveBackwardStart()
-    MoveForwardStart()
-    StrafeLeftStart()
-    StrafeRightStart()
-
-    MoveBackwardStop()    
-    MoveForwardStop()
-    StrafeLeftStop()
-    StrafeRightStop()
+    StopMoving()
 end
 
 function AI.CanInterrupt()
@@ -635,27 +662,67 @@ end
 
 function AI.GetPosition(unit)
     local x, y, z = GetObjectCoords(unit or "player")
-    return x,y,z
+    return x, y, z
 end
 
 function AI.CalcDistance(x1, y1, x2, y2)
     if not x1 or not y1 or not x2 or not y2 then
         return 0
-    end    
+    end
     local dX, dY = x1 - x2, y1 - y2
     local distance = math.sqrt(dX * dX + dY * dY)
     return distance
 end
 
-function AI.CalcFacing(x1, y1, x2 ,y2)
-    if not x1 or not y1 or not x2 or not y2 then
-        return  nil
+function AI.DoesLineIntersect(x1, y1, x2, y2, x_c, y_c, radius)
+    -- Handle vertical line case
+    if x2 - x1 == 0 then
+        -- Calculate distance from circle center to line
+        local distance = math.abs(x_c - x1)
+        return distance <= radius
     end
-    local dX, dY = x1 - x2, y1 - y2
+
+    -- Calculate slope and intercept of the line
+    local slope = (y2 - y1) / (x2 - x1)
+    local intercept = y1 - slope * x1
+
+    -- Substitute line equation into circle equation
+    local A = 1 + slope * slope
+    local B = 2 * slope * (intercept - y_c) - 2 * x_c
+    local C = x_c * x_c + (intercept - y_c) * (intercept - y_c) - radius * radius
+
+    -- Calculate discriminant
+    local discriminant = B * B - 4 * A * C
+
+    -- Check for intersection
+    if discriminant < 0 then
+        return false -- No intersection
+    elseif discriminant == 0 then
+        -- Tangent to circle
+        return true
+    else
+        -- Calculate intersection points (x1, x2)
+        x1 = (-B + math.sqrt(discriminant)) / (2 * A)
+        x2 = (-B - math.sqrt(discriminant)) / (2 * A)
+
+        -- Check if intersection points are within the line segment
+        if (math.min(x1, x2) <= x1 and x1 <= math.max(x1, x2)) or (math.min(x1, x2) <= x2 and x2 <= math.max(x1, x2)) then
+            return true
+        else
+            return false
+        end
+    end
+end
+
+function AI.CalcFacing(x1, y1, x2, y2)
+    if not x1 or not y1 or not x2 or not y2 then
+        return nil
+    end
+    local dX, dY = x2 - x1, y2 - y1
     local f = math.atan2(dY, dX)
     local pi2 = math.pi * 2.0
     if f < 0.0 then
-        f = f +  pi2
+        f = f + pi2
     else
         if f > pi2 then
             f = f - pi2
@@ -669,7 +736,19 @@ function AI.GetDistanceTo(x, y)
     return AI.CalcDistance(mX, mY, x, y)
 end
 
-function AI.GetFacingForPosition(x,y)
+function AI.GetDistanceToUnit(unit)
+    local nUnit = unit or "target"
+    local uX, uY
+    if type(unit) == "table" and type(unit.guid) == "string" then
+        uX, uY = unit.x, unit.y
+    else
+        uX, uY = AI.GetPosition(nUnit)
+    end
+    local mX, mY = AI.GetPosition()
+    return AI.CalcDistance(mX, mY, uX, uY)
+end
+
+function AI.GetFacingForPosition(x, y)
     local mX, mY = AI.GetPosition()
     if not x or not y or not mX or not mY then
         return 0
@@ -678,13 +757,22 @@ function AI.GetFacingForPosition(x,y)
     local f = math.atan2(dY, dX)
     local pi2 = math.pi * 2.0
     if f < 0.0 then
-        f = f +  pi2
-    else
-        if f > pi2 then
-            f = f - pi2
-        end
+        f = f + pi2
+    elseif f > pi2 then
+        f = f - pi2
     end
     return f
+end
+
+function AI.GetFacingForUnit(unit)
+    local nUnit = unit or "target"
+    local nX, nY
+    if type(unit.guid) == "string" then
+        nX, nY = unit.x, unit.y
+    else
+        nX, nY = AI.GetPosition(nUnit)
+    end
+    return AI.GetFacingForPosition(nX, nY)
 end
 
 function AI.SetFacing(rads)
@@ -693,7 +781,7 @@ end
 
 function AI.SetFacingCoords(x, y)
     if x or y then
-        AI.SetFacing(AI.GetFacingForPosition(x,y))
+        AI.SetFacing(AI.GetFacingForPosition(x, y))
     end
 end
 
@@ -703,10 +791,40 @@ function AI.SetFacingUnit(unit)
     end
 end
 
-function AI.IsFacingTowards(x,y)
-    local desiredFacing = AI.GetFacingForPosition(x,y)
+function AI.IsFacingTowards(x, y)
+    local desiredFacing = AI.GetFacingForPosition(x, y)
     local facing = GetPlayerFacing()
     return math.abs(desiredFacing - facing) <= 0.05
+end
+
+function AI.IsPointWithinCone(x, y, x2, y2, theta, coneAngleRads)
+    local half_cone_angle_radians = coneAngleRads / 2
+
+    -- Vector from (x2, y2) to (x, y)
+    local v_x = x - x2
+    local v_y = y - y2
+
+    -- Central axis vector
+    local a_x = math.cos(theta)
+    local a_y = math.sin(theta)
+
+    -- Dot product
+    local dot_product = v_x * a_x + v_y * a_y
+
+    -- Magnitudes
+    local magnitude_v = math.sqrt(v_x ^ 2 + v_y ^ 2)
+    local magnitude_a = 1 -- Always 1 for a unit vector
+
+    -- Angle calculation
+    if magnitude_v == 0 then
+        return true
+    end
+
+    local cos_angle = dot_product / (magnitude_v * magnitude_a)
+    local angle_radians = math.acos(cos_angle)
+
+    -- Check if within half the cone angle
+    return math.abs(angle_radians) <= half_cone_angle_radians
 end
 
 function AI.IsMoving()
@@ -720,9 +838,7 @@ end
 
 function AI.StopCasting()
     SpellStopCasting()
-    if AI.IsChanneling() then
-        JumpOrAscendStart()
-    end
+    CancelChannelingSpell()
     -- AI.StopMoving()
 end
 
@@ -779,7 +895,12 @@ function AI.IsDruid()
     return class == "druid"
 end
 
-function AI.GetPrimaryTank()    
+function AI.IsPaladin()
+    local class = AI.GetClass():lower()
+    return class == "paladin"
+end
+
+function AI.GetPrimaryTank()
     if type(AI.Config.tank) == "string" then
         return AI.Config.tank
     elseif type(AI.Config.tank) == "table" then
@@ -806,39 +927,192 @@ function AI.GetPrimaryHealer()
     return nil
 end
 
-function AI.GetDps(i)
+function AI.IsDpsPosition(i)
+    local units
     if i == 1 then
-        return AI.Config.dps1
+        units = AI.Config.dps1
     elseif i == 2 then
-        return AI.Config.dps2
+        units = AI.Config.dps2
     else
-        return AI.Config.dps3
+        units = AI.Config.dps3
     end
-    return nil
+    for i, unit in ipairs(units) do
+        if UnitName("player"):lower() == unit:lower() then
+            return true
+        end
+    end
+    return false
 end
 
-function AI.IsDpsPosition(i)
-    local unit
-    if i == 1 then
-        unit = AI.Config.dps1
-    elseif i == 2 then
-        unit = AI.Config.dps2
-    else
-        unit = AI.Config.dps3
+local function adornObject(obj)
+    local stunnedFlag, pacifiedFlag, confusedFlag, fleeingFlag, possessedFlag = 0x00040000, 0x00020000, 0x00400000,
+        0x00800000, 0x01000000
+    if obj ~= nil and type(obj.unitFlags) == "number" then
+        obj.isStunned = bit.band(obj.unitFlags, stunnedFlag) ~= 0
+        obj.isPacified = bit.band(obj.unitFlags, pacifiedFlag) ~= 0
+        obj.isConfused = bit.band(obj.unitFlags, confusedFlag) ~= 0
+        obj.isFleeing = bit.band(obj.unitFlags, fleeingFlag) ~= 0
+        obj.isPossessed = bit.band(obj.unitFlags, possessedFlag) ~= 0
     end
-    return UnitName("player"):lower() == unit:lower()
+    if obj ~= nil and type(obj.health) == "number" then
+        obj.isDead = obj.health == 0
+    end
+
+    obj.HasAura = function(self, spell)
+        local auras = self:auras()
+        for i, a in ipairs(auras) do
+            if type(spell) == "number" and a.spellId == spell then
+                return true
+            end
+            if type(spell) == "string" and spell:lower() == a.name:lower() then
+                return true
+            end
+        end
+        return false
+    end
+    return obj
+end
+
+function AI.GetNearbyObjects(range)
+    local objs = GetNearbyObjects(range)
+    for i, o in ipairs(objs) do
+        adornObject(o)
+        o.distance = AI.GetDistanceTo(o.x, o.y)
+    end
+    table.sort(objs, function(a, b)
+        return a.distance < b.distance
+    end)
+    return objs
 end
 
 function AI.FindNearbyObjectsByName(name)
-    local objs = GetNearbyObjects(200)
+    local objs = AI.GetNearbyObjects(200)
     local result = {}
     for i, o in ipairs(objs) do
-        if MaloWUtils_StrContains(o.name:lower(), name:lower()) then
-            --adorn w/ distance to player
-            o.distance = AI.GetDistanceTo(o.x, o.y)
+        if strcontains(o.name:lower(), name:lower()) then
             table.insert(result, o)
         end
     end
-    table.sort(result, function(a, b) return a.distance < b.distance end)
     return result
+end
+
+function AI.FindUnitsWithinXOf(unit, r)
+    local unitName = UnitName(unit or "player") or unit
+    if type(unitName) ~= "string" then
+        return {}
+    end
+    local unitInQuestion = AI.FindNearbyObjectsByName(unitName)
+    local result = {}
+    if #unitInQuestion > 0 then
+        local nearbyObjs = AI.GetNearbyObjects(200)
+        for i, o in ipairs(nearbyObjs) do
+            if o.guid ~= unitInQuestion[1].guid and AI.CalcDistance(o.x, o.y, unitInQuestion[1].x, unitInQuestion[1].y) <=
+                r then
+                table.insert(result, o)
+            end
+        end
+    end
+    return result
+end
+
+function AI.FindYWithinXOf(haystack, needle, r)
+
+    local unitInQuestion
+    if type(haystack) == "string" then
+        local unitName = UnitName(haystack or "player") or haystack
+        if type(unitName) ~= "string" then
+            return {}
+        end
+        unitInQuestion = AI.FindNearbyObjectsByName(unitName)
+    else
+        unitInQuestion = haystack
+    end
+    local result = {}
+    if #unitInQuestion > 0 then
+        local nearbyObjs = AI.FindNearbyObjectsByName(needle)
+        for i, o in ipairs(nearbyObjs) do
+            if o.guid ~= unitInQuestion[1].guid and strcontains(o.name:lower(), needle:lower()) and
+                AI.CalcDistance(o.x, o.y, unitInQuestion[1].x, unitInQuestion[1].y) <= r then
+                table.insert(result, o)
+            end
+        end
+    end
+    return result
+end
+
+function AI.GetObjectInfo(unit)
+    local info = GetObjectInfo(unit)
+    if info ~= nil then
+        adornObject(info)
+    end
+    return info
+end
+
+function AI.IsPlayerInControl()
+    local playerInfo = AI.GetObjectInfo("player")
+    -- If we have on control of our character, return elemental master
+    if playerInfo.isStunned or playerInfo.isConfused or playerInfo.isPossessed or playerInfo.isFleeing then
+        return false
+    end
+    return true
+end
+
+function AI.IsUnitCC(unit)
+    local info
+    if type(unit) == "table" and type(unit.guid) == "string" then
+        info = unit
+    else
+        local info = AI.GetObjectInfo(unit or "target")
+    end
+    if info ~= nil then
+        return info.isStunned or info.isPacified or info.isFleeing or info.isConfused
+    end
+    return false
+end
+
+function AI.DoTargetChain(...)
+    local count = select('#', ...)
+    if count > 0 then
+        for i = 1, count, 1 do
+            TargetUnit(select(i, ...))
+            if AI.IsValidOffensiveUnit() and strcontains((UnitName("target") or ""):lower(), select(i, ...):lower()) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function AI.HasTotemOut(idx)
+    local _, active = GetTotemInfo(idx)
+    return active ~= "" and active ~= nil
+end
+
+function AI.GetInterruptSpell()
+    local spell = nil
+    if AI.IsMage() then
+        spell = "counterspell"
+    elseif AI.IsPriest() then
+        spell = "shadow shear"
+    elseif AI.IsShaman() then
+        spell = "wind shear"
+    end
+    return spell
+end
+
+function AI.GetClosestAlly()
+    local allies = AI.GetRaidOrPartyMemberUnits()
+    local spots = {}
+    local closestAlly = nil
+    local distToAlly = 200
+    for i, ally in ipairs(allies) do
+        if UnitGUID(ally) ~= UnitGUID("player") then
+            local dist = AI.GetDistanceToUnit(ally)
+            if dist <= distToAlly then
+                distToAlly = dist
+                closestAlly = ally
+            end
+        end
+    end
+    return closestAlly, distToAlly
 end
