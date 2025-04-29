@@ -15,7 +15,9 @@ local function doManaSapphire()
         return true
     end
     if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 50 then
-        AI.UseContainerItem("mana sapphire")
+        if not AI.UseContainerItem("mana sapphire") then
+            AI.UseContainerItem(AI.Config.manaPotion)
+        end
     end
     return false
 end
@@ -147,7 +149,7 @@ local function doOnUpdate_MageAI()
     --     return
     -- end
 
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 20 and AI.CastSpell("Evocation") then
+    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 10 and AI.CastSpell("Evocation") then
         return
     end
 
@@ -235,24 +237,24 @@ local function doDpsFireMage(isAoE)
 
     if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("living bomb", "target") and
         AI.CastSpell("living bomb", "target") then
-        if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-            CastCursorAOESpell(AI.GetPosition("target"))
-        end
+        -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+        --     CastCursorAOESpell(AI.GetPosition("target"))
+        -- end
         return
     end
 
     if AI.HasBuff("hot streak", "player") and AI.CastSpell("pyroblast") then
-        if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-            CastCursorAOESpell(AI.GetPosition("target"))
-        end
+        -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+        --     CastCursorAOESpell(AI.GetPosition("target"))
+        -- end
         return
     end
 
     if isAoE then
-        if (AI.GetDistanceToUnit("target") <= 13 and AI.CastSpell("dragon's breath")) then
-            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                CastCursorAOESpell(AI.GetPosition("target"))
-            end
+        if (AI.GetDistanceToUnit("target") <= 10 and AI.CastSpell("dragon's breath")) then
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
         if (AI.CastSpell("flamestrike") and CastCursorAOESpell(AI.GetPosition("target"))) then

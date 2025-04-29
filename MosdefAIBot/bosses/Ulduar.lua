@@ -7,15 +7,9 @@ local pi2 = math.pi * 2
 local pi = math.pi
 local rad45 = 0.785398
 local rad90 = 1.570796
-
-local function normalizeAngle(angle)
-    if angle > pi2 then
-        angle = angle - pi2
-    elseif angle < 0.0 then
-        angle = angle + pi2
-    end
-    return angle
-end
+local rad100 = 1.745329
+local rad120 = 2.094395
+local rad135 = 2.356194
 
 local function findClosestPointInList(pointList)
     local dist = 100
@@ -108,10 +102,10 @@ local ironMender = MosDefBossModule:new({
     onStart = function(self)
         if AI.IsTank() then
             TargetUnit("iron mender")
-            local nearbyMender = AI.FindYWithinXOf("target", "iron mender", 20)
+            local nearbyMender = AI.FindUnitYWithinXOf("target", "iron mender", 20)
             if #nearbyMender > 0 and not nearbyMender[1].isDead and not AI.IsUnitCC(nearbyMender[1]) then
                 nearbyMender[1]:Focus()
-                SetRaidTarget("focus", 1)
+                SetRaidTarget("focus", 7)
             end
         end
     end,
@@ -119,7 +113,7 @@ local ironMender = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         if AI.IsDps() then
-            local menders = AI.FindNearbyObjectsByName("iron mender")
+            local menders = AI.FindNearbyUnitsByName("iron mender")
             local markedMender = nil
             for i, o in ipairs(menders) do
                 if o.raidTargetIndex and not o.isDead and not AI.IsUnitCC(o) then
@@ -135,12 +129,11 @@ local ironMender = MosDefBossModule:new({
                     return AI.CastSpell("polymorph", "focus")
                 end
                 if AI.IsWarlock() then
-                    AI.RegisterPendingAction(function()
+                    AI.RegisterOneShotAction(function()
                         if not markedMender.isDead and not AI.IsUnitCC(markedMender) then
                             return AI.CastSpell("fear", "focus")
                         end
-                        return true
-                    end, 4, "CC_IRON_MENDER")
+                    end, 5, "CC_IRON_MENDER")
                 end
             end
         end
@@ -222,7 +215,7 @@ local flameLeviathan = MosDefBossModule:new({
             end
 
             if vehicle == "Salvaged Demolisher" and AI.GetUnitPowerPct("playerpet") <= 25 then
-                local pyrite = AI.FindNearbyObjectsByName("liquid pyrite")
+                local pyrite = AI.FindNearbyUnitsByName("liquid pyrite")
                 if #pyrite and pyrite[1].distance <= 50 then
                     pyrite[1]:Target()
                 end
@@ -330,7 +323,7 @@ local ignis = MosDefBossModule:new({
             if AI.IsWarlock() and AI.CastSpell("Searing Pain", "target") then
                 return true
             end
-            if AI.IsPriest() and AI.CastSpell("Mind Blast", "target") or AI.CastSpell("mind flay", "target") then
+            if AI.IsPriest() and AI.DoCastSpellChain("mind blast", "shadow word: death", "mind flay") then
                 return true
             end
             if AI.IsShaman() and AI.CastSpell("lightning bolt", "target") then
@@ -383,10 +376,10 @@ function ignis:SPELL_AURA_APPLIED(args)
                         return true
                     end
                     local hx, hy = AI.GetPosition(healer)
-                    local tX, tY = AI.GetPosition("focus")
-                    local facing = AI.GetObjectInfo("focus").facing
+                    local tX, tY = AI.GetPosition()
+                    local facing = GetPlayerFacing()
                     local success = false
-                    if AI.IsPointWithinCone(hx, hy, tX, tY, facing, math.pi) then
+                    if AI.IsPointWithinCone(tX, tY, hx, hy, facing, math.pi) then
                         success = AI.CastSpell("blink")
                         if success then
                             AI.SetMoveTo(self.dpsX, self.dpsY)
@@ -405,7 +398,7 @@ function ignis:SPELL_AURA_REMOVED(args)
         if args.target == UnitName("player") then
             AI.DISABLE_CDS = false
             if AI.IsDps() then
-                AI.SetMoveToPosition(self.dpsX, self.dpsY)
+                AI.SetMoveTo(self.dpsX, self.dpsY)
             end
         end
     end
@@ -419,24 +412,33 @@ local kologarn = MosDefBossModule:new({
     creatureId = {32930, 32933, 32934},
     onStart = function(self)
         if AI.IsDpsPosition(1) then
-            AI.SetMoveToPosition(self.dps1x, self.dps1y)
+            AI.SetMoveTo(self.dps1x, self.dps1y)
         end
         if AI.IsDpsPosition(2) then
-            AI.SetMoveToPosition(self.dps2x, self.dps2y)
+            AI.SetMoveTo(self.dps2x, self.dps2y)
         end
         if AI.IsDpsPosition(3) then
-            AI.SetMoveToPosition(self.dps3x, self.dps3y)
+            AI.SetMoveTo(self.dps3x, self.dps3y)
         end
         if AI.IsHealer() then
-            AI.SetMoveToPosition(self.healerx, self.healery)
+            AI.SetMoveTo(self.healerx, self.healery)
         end
 
-        AI.RegisterPendingAction(function()
-            TargetUnit("right arm")
-            return true
-        end, 15, "TARGET_RIGHT_ARM")
+        self.nextRightArmTargetTime = GetTime() + 13
+        local mod = self
+
+        oldPriorityTargetFn = AI.do_PriorityTarget
+        AI.do_PriorityTarget = function(self)
+            local time = GetTime()
+            if time >= mod.nextRightArmTargetTime then
+                TargetUnit("right arm")
+                return AI.IsValidOffensiveUnit()
+            end
+            return false
+        end
     end,
     onStop = function(self)
+        AI.do_PriorityTarget = oldPriorityTargetFn
     end,
     onUpdate = function(self)
         if AI.IsShaman() and AI.IsHealer() and self.gripTarget and AI.GetUnitHealthPct(self.gripTarget) <= 70 and
@@ -454,20 +456,24 @@ local kologarn = MosDefBossModule:new({
         end
 
         if AI.IsDps() then
-            local eyebeam = AI.FindNearbyObjectsByName("eyebeam")
+            local eyebeam = AI.FindNearbyUnitsByName("eyebeam")
             if #eyebeam > 0 then
                 local x, y = AI.GetPosition("player")
                 local facingToPlayer = AI.CalcFacing(eyebeam[1].x, eyebeam[1].y, x, y)
                 if GetTime() > self.eyeEvadeTime then
                     local eyeFacing = eyebeam[1].facing
-                    if eyeFacing > math.pi * 2 then
-                        eyeFacing = eyeFacing - math.pi * 2
-                    elseif eyeFacing < 0.0 then
-                        eyeFacing = eyeFacing + math.pi * 2
-                    end
-                    local diff = math.abs(eyeFacing - facingToPlayer)
+
+                    -- if AI.IsPointWithinCone(x, y, eyebeam[1].x, eyebeam[1].y, eyeFacing, rad30) then
+                    -- if eyeFacing > math.pi * 2 then
+                    --     eyeFacing = eyeFacing - math.pi * 2
+                    -- elseif eyeFacing < 0.0 then
+                    --     eyeFacing = eyeFacing + math.pi * 2
+                    -- end
+                    -- local diff = math.abs(eyeFacing - facingToPlayer)
                     -- print("eyebeam facing " .. eyeFacing .. " toplr facing:" .. facingToPlayer .. " diff:" .. diff)
-                    if (eyebeam[1].distance <= 3 and diff <= 0.5) and not AI.HasMoveToPosition() then
+                    if (eyebeam[1].distance <= 5 -- and diff <= 0.5
+                    and AI.IsPointWithinCone(x, y, eyebeam[1].x, eyebeam[1].y, eyeFacing, rad22_5)) and
+                        not AI.HasMoveToPosition() then
                         if AI.IsDpsPosition(1) then
                             AI.SetMoveToPosition(self.dps1evadeX, self.dps1evadeY, 3)
                         elseif AI.IsDpsPosition(2) then
@@ -496,14 +502,15 @@ local kologarn = MosDefBossModule:new({
         return false
     end,
     gripTarget = nil,
+    nextRightArmTargetTime = 0,
     dps1x = 1767.7006835938,
     dps1y = -3.4941546916962,
     dps2x = 1783.7899169922,
     dps2y = -3.9541857242584,
     dps3x = 1767.5830078125,
     dps3y = -20.168651580811,
-    healerx = 1775.6156005859,
-    healery = 12.006954193115,
+    healerx = 1775.3013916016,
+    healery = -12.071847915649,
     eyeEvadeTime = 0,
 
     dps1evadeX = 1751.0971679688,
@@ -530,7 +537,6 @@ end
 
 function kologarn:SPELL_AURA_APPLIED(args)
     if args.spellName:lower() == "stone grip" then
-        -- AI.SayRaid("I'm gripped")
         self.gripTarget = args.target
         TargetUnit("right arm")
         if UnitName("player") == args.target then
@@ -545,6 +551,7 @@ function kologarn:SPELL_AURA_REMOVED(args)
         TargetUnit("kologarn")
         AI.DISABLE_CDS = false
         self.gripTarget = nil
+        self.nextRightArmTargetTime = GetTime() + 15
         if args.target == UnitName("player") then
             -- self.eyeEvadeTime = GetTime() + 10
             local mod = self
@@ -565,11 +572,12 @@ function kologarn:SPELL_AURA_REMOVED(args)
                 return true
             end, 0.5, "MOVE_BACK_TO_POSITION")
         end
+    end
+end
 
-        AI.RegisterPendingAction(function()
-            TargetUnit("right arm")
-            return true
-        end, 16, "TARGET_ARM")
+function kologarn:UNIT_DIED(unit)
+    if strcontains(unit, "right arm") then
+        self.nextRightArmTargetTime = GetTime() + 60
     end
 end
 
@@ -603,9 +611,9 @@ local razorscale = MosDefBossModule:new({
         end
 
         if not AI.IsTank() then
-            local flames = AI.FindNearbyObjectsByName("devouring flame stalker")
+            local flames = AI.FindNearbyUnitsByName("devouring flame stalker")
             if #flames > 0 then
-                if flames[1].distance < 9 and not AI.HasMoveToPosition() and GetTime() > self.lastEvadeTime + 5 then
+                if flames[1].distance <= 9 and not AI.HasMoveTo() and GetTime() > self.lastEvadeTime + 5 then
                     print("devouring flame on me, moving out")
                     local angleFacing = AI.CalcFacing(self.fightx, self.fighty, self.startx, self.starty)
                     -- 90degree cone                  
@@ -631,9 +639,9 @@ local razorscale = MosDefBossModule:new({
                         p = findClosestPointInList(spots)
                     end
                     if p then
-                        AI.SetMoveToPosition(p.x, p.y)
+                        AI.SetMoveTo(p.x, p.y)
                     else
-                        AI.SetMoveToPosition(self.startx, self.starty)
+                        AI.SetMoveTo(self.startx, self.starty)
                     end
                     self.lastEvadeTime = GetTime()
                 end
@@ -671,7 +679,7 @@ function razorscale:CHAT_MSG_MONSTER_YELL(s, t)
         if not AI.IsTank() then
             local tank = AI.GetPrimaryTank()
             local tX, tY = AI.GetPosition(tank)
-            local flames = AI.FindNearbyObjectsByName("devouring flame stalker")
+            local flames = AI.FindNearbyUnitsByName("devouring flame stalker")
             local angle = AI.GetFacingForPosition(self.fightx, self.fighty) + math.pi
             local spots = {}
             for theta = angle - rad90, angle + rad90, rad5 do
@@ -855,7 +863,7 @@ local thorim = MosDefBossModule:new({
         local mod = self
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
-            if mod.thorimDropped then
+            if mod.thorimDropped or not mod.gauntletStarted then
                 return false
             end
             if UnitName("player") ~= mod.gauntletLeader and UnitName("player") ~= mod.follower then
@@ -888,7 +896,7 @@ local thorim = MosDefBossModule:new({
         -- guy going into tunnel
         AI.PRE_DO_DPS = function(isAoe)
 
-            if mod.thorimDropped then
+            if mod.thorimDropped or not self.gauntletStarted then
                 return false
             end
 
@@ -903,9 +911,7 @@ local thorim = MosDefBossModule:new({
             return false
         end
 
-        if AI.IsPriest() then
-            AI.AUTO_CLEANSE = false
-        end
+        AI.AUTO_CLEANSE = false
     end,
     onStop = function(self)
         if oldPriorityTargetFn ~= nil then
@@ -915,7 +921,7 @@ local thorim = MosDefBossModule:new({
         AI.AUTO_CLEANSE = true
     end,
     onUpdate = function(self)
-        if not self.thorimDropped and UnitName("player") == self.follower then
+        if self.gauntletStarted and not self.thorimDropped and UnitName("player") == self.follower then
             if AI.GetDistanceTo(AI.GetPosition(self.gauntletLeader)) > 2 then
                 local x, y = AI.GetPosition(self.gauntletLeader)
                 AI.SetMoveTo(x, y)
@@ -927,8 +933,8 @@ local thorim = MosDefBossModule:new({
                 TargetUnit("Thorim")
                 FocusUnit("target")
             end
-            local orbs = AI.FindNearbyObjectsByName("thunder orb")
-            if #orbs > 0 and AI.IsDps() and not AI.HasMoveTo() then
+            local orbs = AI.FindNearbyUnitsByName("thunder orb")
+            if #orbs > 0 and not AI.HasMoveTo() then
                 local thorim = AI.GetObjectInfo("target")
                 if thorim then
                     local px, py = AI.GetPosition("player")
@@ -949,10 +955,12 @@ local thorim = MosDefBossModule:new({
                                 if AI.IsDpsPosition(3) then
                                     AI.SetMoveToPosition(self.dps3Safex, self.dps3Safey)
                                 end
-
                                 if AI.IsHealer() then
-                                    local facing = AI.GetFacingForUnit("target")
-                                    AI.SetMoveTo(thorim.x + 3 * math.cos(facing), thorim.y + 3 * math.sin(facing))
+                                    local angleBehindThorim = thorimFacingOrb + math.pi
+                                    local r = 1 -- move 2 places behind thorim w/ the orb
+                                    local x = thorim.x + r * math.cos(angleBehindThorim)
+                                    local y = thorim.y + r * math.sin(angleBehindThorim)
+                                    AI.SetMoveTo(x, y)
                                 end
 
                                 AI.RegisterPendingAction(function()
@@ -966,15 +974,20 @@ local thorim = MosDefBossModule:new({
                                         AI.SetMoveToPosition(self.dpsSpot3X, self.dpsSpot3Y)
                                     end
                                     return true
-                                end, 8, "RETURN_TO_POSITION")
+                                end, 7, "RETURN_TO_POSITION")
                             end
                         end
                     end
                 end
             end
 
-            if AI.IsPriest() and AI.CleanseRaid("Dispel Magic", "Magic") then
-                return true
+            if AI.IsPriest() then
+                local allies = AI.GetRaidOrPartyMemberUnits()
+                for i, a in ipairs(allies) do
+                    if AI.HasDebuff("frost nova", a) and AI.CastSpell("dispel magic", a) then
+                        return true
+                    end
+                end
             end
 
             if AI.IsMage() and AI.HasMoveTo() and AI.IsFacingTowardsDestination() and AI.CastSpell("blink") then
@@ -983,7 +996,7 @@ local thorim = MosDefBossModule:new({
         end
     end,
     gauntletLeader = "Mosdeflocka",
-    follower = "Mosdeffmage",
+    follower = "",
 
     dpsSpot1X = 2126.8469238281,
     dpsSpot1Y = -277.53002929688,
@@ -1035,7 +1048,13 @@ function thorim:CHAT_MSG_MONSTER_YELL(text, monster)
         if UnitName("player") == self.follower then
             FollowUnit(self.gauntletLeader)
         end
+        if AI.IsHealer() then
+            AI.AUTO_CLEANSE = false
+        end
         if AI.IsDps() then
+            if AI.IsPriest() then
+                AI.MustCastSpell("vampiric embrace", "player")
+            end
             AI.RegisterPendingAction(function()
                 if AI.IsDpsPosition(1) and AI.GetDistanceTo(self.dpsSpot1X, self.dpsSpot1Y) > 1 then
                     AI.SetMoveToPosition(self.dpsSpot1X, self.dpsSpot1Y)
@@ -1088,24 +1107,34 @@ local freya = MosDefBossModule:new({
             TargetUnit("Freya")
             FocusUnit("target")
         end
+        local allies = AI.GetRaidOrPartyMemberUnits()
         if not AI.IsTank() then
-            local natureBombs = AI.FindNearbyObjectsByName("nature bomb")
+            local natureBombs = AI.FindNearbyUnitsByName("nature bomb")
             if AI.IsDps() and AI.GetDistanceTo(AI.GetPosition("target")) > 40 and #natureBombs == 0 then
                 local tX, tY = AI.GetPosition("target")
                 local cX, cY = AI.GetPosition("player")
-                local r = 40
+                local r = 35
                 local facing = AI.CalcFacing(tX, tY, cX, cY)
                 local nX, nY = tX + r * math.cos(facing), tY + r * math.sin(facing)
                 AI.SetMoveToPosition(nX, nY)
             end
-            local spores = AI.FindNearbyObjectsByName("healthy spore")
+            local spores = AI.FindNearbyUnitsByName("healthy spore")
             if #spores > 0 and (UnitName("target") == "Ancient Conservator" and not AI.HasBuff("potent pheromones")) and
                 not AI.HasMoveTo() then
                 print("moving towards mushroom for buff")
-                AI.SetMoveToPosition(spores[1].x, spores[1].y)
+                if not AI.HasDebuff("nature's fury") then
+                    AI.SetMoveToPosition(spores[1].x, spores[1].y)
+                else
+                    for i, spore in ipairs(spores) do
+                        if self.isFarEnoughFromAllies(spore.x, spore.y, allies) then
+                            AI.SetMoveToPosition(spore.x, spore.y)
+                            return false
+                        end
+                    end
+                end
             end
 
-            if #natureBombs > 0 and natureBombs[1].distance <= 13 and not AI.HasMoveTo() then
+            if #natureBombs > 0 and natureBombs[1].distance <= 14 and not AI.HasMoveTo() then
                 print("nature bomb on me, moving out")
                 local freyaX, freyaY = AI.GetPosition("focus")
                 local angleFacing = AI.CalcFacing(freyaX, freyaY, natureBombs[1].x, natureBombs[1].y)
@@ -1131,7 +1160,7 @@ local freya = MosDefBossModule:new({
                 if #spots > 0 then
                     local p = self.findClosestPointInList(spots)
                     if p then
-                        AI.SetMoveToPosition(p.x, p.y)
+                        AI.SetMoveTo(p.x, p.y)
                     end
                 end
             end
@@ -1141,7 +1170,7 @@ local freya = MosDefBossModule:new({
     isPointSafeFromBombs = function(x, y, bombList)
         local cX, cY = AI.GetPosition("player")
         for i, o in ipairs(bombList) do
-            if AI.CalcDistance(x, y, o.x, o.y) <= 13 then
+            if AI.CalcDistance(x, y, o.x, o.y) <= 14 then
                 return false
             end
         end
@@ -1157,8 +1186,43 @@ local freya = MosDefBossModule:new({
             end
         end
         return point
+    end,
+    isFarEnoughFromAllies = function(x, y, allies)
+        for i, a in ipairs(allies) do
+            local aX, aY = AI.GetPosition(a)
+            if UnitGUID(a) ~= UnitGUID("player") and AI.CalcDistance(x, y, aX, aY) <= 10 then
+                return false
+            end
+        end
+        return true
     end
 })
+
+function freya:SPELL_AURA_APPLIED(args)
+    if args.spellName:lower() == "nature's fury" and UnitName("player") == args.target and not AI.IsTank() then
+        local spores = AI.FindNearbyUnitsByName("healthy spore")
+        if #spores > 0 then
+            print("avoiding allies coz of nature's fury")
+            local allies = AI.GetRaidOrPartyMemberUnits()
+            for i, spore in ipairs(spores) do
+                if self.isFarEnoughFromAllies(spore.x, spore.y, allies) then
+                    AI.SetMoveToPosition(spore.x, spore.y)
+                    return
+                end
+            end
+        end
+    end
+end
+
+function freya:SPELL_CAST_START(args)
+    if args.spellName == "Tidal Wave" then
+        print(args.caster .. " is casting tidal wave")
+        if not AI.IsTank() then
+            TargetUnit(args.caster)
+            AI.DoStaggeredInterrupt()
+        end
+    end
+end
 
 AI.RegisterBossModule(freya)
 
@@ -1174,8 +1238,8 @@ local hodir = MosDefBossModule:new({
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if AI.IsDps() then
-                local frozenVeesha = AI.FindYWithinXOf("veesha", "flash freeze", 1)
-                if #frozenVeesha > 0 and frozenVeesha[1].health > 0 then
+                local frozenVeesha = AI.FindUnitYWithinXOf("veesha", "flash freeze", 1)
+                if #frozenVeesha > 0 and not frozenVeesha[1].isDead then
                     frozenVeesha[1]:Target()
                     if AI.GetDistanceTo(frozenVeesha[1].x, frozenVeesha[1].y) > 40 then
                         local facing = AI.GetFacingForPosition(frozenVeesha[1].x, frozenVeesha[1].y) + math.pi
@@ -1184,12 +1248,17 @@ local hodir = MosDefBossModule:new({
                         AI.SetMoveTo(x + r * math.cos(facing), y + r * math.sin(facing))
                         print("moving closer to veesha")
                     end
-                else
-                    TargetUnit("flash freeze")
-                end
-                if AI.IsValidOffensiveUnit() and AI.GetDistanceTo(AI.GetPosition("target")) <= 40 and UnitName("target") ==
-                    "Flash Freeze" then
                     return true
+                else
+                    if AI.IsDpsPosition(1) then
+                        local freezes = AI.FindNearbyUnitsByName("flash freeze")
+                        for i, o in ipairs(freezes) do
+                            if not o.isDead and o.distance <= 40 then
+                                o:Target()
+                                return true
+                            end
+                        end
+                    end
                 end
             end
             return false
@@ -1197,13 +1266,16 @@ local hodir = MosDefBossModule:new({
 
         AI.PRE_DO_DPS = function(isAoE)
             if AI.IsDps() and UnitName("target") == "Flash Freeze" then
-                if AI.IsWarlock() and AI.CastSpell("shadow bolt", "target") then
+                if AI.IsWarlock() and AI.DoCastSpellChain("target", "corruption", "shadow bolt") then
                     return true
                 end
-                if AI.IsPriest() and AI.CastSpell("mind blast", "target") or AI.CastSpell("mind flay", "target") then
+                if AI.IsPriest() and AI.DoCastSpellChain("target", "mind blast", "shadow word: death", "mind flay") then
                     return true
                 end
-                if AI.IsShaman() and AI.CastSpell("lightning bolt", "target") then
+                if AI.IsShaman() and AI.DoCastSpellChain("target", "flame shock", "lava burst", "lightning bolt") then
+                    return true
+                end
+                if AI.IsMage() and AI.DoCastSpellChain("target", "living bomb", "fire blast", "scorch") then
                     return true
                 end
             end
@@ -1213,10 +1285,11 @@ local hodir = MosDefBossModule:new({
     onStop = function(self)
         AI.ALLOW_AUTO_REFACE = true
         AI.PRE_DO_DPS = nil
+        AI.do_PriorityTarget = oldPriorityTargetFn
     end,
     onUpdate = function(self)
-        if AI.IsDps() or AI.IsHealer() then
-            local nearbyObjects = AI.GetNearbyObjects(100)
+        if not AI.IsTank() then
+            local nearbyObjects = AI.GetNearbyObjects()
             local closestToastyFire = nil
             local closestIcicle = nil
             local closestSnowpackedIcicle = nil
@@ -1225,32 +1298,32 @@ local hodir = MosDefBossModule:new({
             local fires = {}
             local snowpackedIcicles = {}
             local fireMage = nil
-            local torGreycloud = nil
             local hodir = nil
+            local starlights = {}
             local tank = AI.GetObjectInfo(AI.GetPrimaryTank())
-            local cX, cY = AI.GetPosition("player")
+            local cX, cY, cZ = AI.GetPosition("player")
             local teamList = AI.GetRaidOrPartyMemberUnits()
             for i, o in ipairs(nearbyObjects) do
-                if o.name:lower() == "toasty fire" then
+                if strcontains(o.name, "toasty fire") then
                     table.insert(fires, o)
                     if closestToastyFire == nil then
                         closestToastyFire = o
                     end
                 end
-                if o.name:lower() == "icicle" then
+                if o.name and o.name:lower() == "icicle" then
                     table.insert(icicles, o)
                     if not closestIcicle then
                         closestIcicle = o
                     end
                 end
-                if o.name:lower() == "snowpacked icicle" then
+                if strcontains(o.name, "snowpacked icicle") then
                     table.insert(snowpackedIcicles, o)
                     if not closestSnowpackedIcicle then
                         closestSnowpackedIcicle = o
                     end
                 end
 
-                if o.name:lower() == "snowpacked icicle target" and closestSnowpackedIcicleTarget == nil then
+                if o.name and o.name:lower() == "snowpacked icicle target" and closestSnowpackedIcicleTarget == nil then
                     closestSnowpackedIcicleTarget = o
                 end
                 if strcontains(o.name, "veesha") then
@@ -1259,12 +1332,12 @@ local hodir = MosDefBossModule:new({
                 if strcontains(o.name, "hodir") then
                     hodir = o
                 end
-                if strcontains(o.name, "greycloud") then
-                    torGreycloud = o
+                if o.spellName and strcontains(o.spellName, "starlight") then
+                    table.insert(starlights, o)
                 end
             end
 
-            if AI.HasDebuff("Freeze") or fireMage == nil then
+            if AI.HasDebuff("Freeze") then
                 return false
             end
 
@@ -1274,13 +1347,9 @@ local hodir = MosDefBossModule:new({
                 -- 180 degree cone
                 local points = {}
                 for theta = angleFacing - rad90, angleFacing + rad90, rad10 do
-                    if theta < 0.0 then
-                        theta = theta + pi2
-                    elseif theta > pi2 then
-                        theta = theta - pi2
-                    end
-                    for r = 1, 8, 1 do
-                        local x, y = r * math.cos(theta), r * math.sin(theta)
+                    local nTheta = normalizeAngle(theta)
+                    for r = 1, 3, 1 do
+                        local x, y = r * math.cos(nTheta), r * math.sin(nTheta)
                         local nX, nY = closestSnowpackedIcicleTarget.x + x, closestSnowpackedIcicleTarget.y + y
                         table.insert(points, {
                             x = nX,
@@ -1301,13 +1370,9 @@ local hodir = MosDefBossModule:new({
                     -- 180 degree cone
                     local points = {}
                     for theta = angleFacing - rad90, angleFacing + rad90, rad10 do
-                        if theta < 0.0 then
-                            theta = theta + pi2
-                        elseif theta > pi2 then
-                            theta = theta - pi2
-                        end
+                        local nTheta = normalizeAngle(theta)
                         for r = 12, 20, 1 do
-                            local x, y = r * math.cos(theta), r * math.sin(theta)
+                            local x, y = r * math.cos(nTheta), r * math.sin(nTheta)
                             local nX, nY = closestSnowpackedIcicle.x + x, closestSnowpackedIcicle.y + y
                             if self.isPointFarEnoughFromSnowpackedIcicles(nX, nY, snowpackedIcicles) then
                                 table.insert(points, {
@@ -1324,42 +1389,38 @@ local hodir = MosDefBossModule:new({
                     end
 
                 end
-            elseif closestIcicle ~= nil and closestIcicle.distance < icicleRadius and not AI.HasMoveToPosition() then
+            elseif closestIcicle and closestIcicle.distance <= icicleRadius and not AI.HasMoveTo() then
                 -- print("icicle above me.");
                 local targetToMoveAround = closestIcicle
                 -- local targetToMoveAround = fireMage
 
-                if closestToastyFire and not AI.HasBuff("toasty fire") then
-                    local rI = math.random(1, #fires)
-                    targetToMoveAround = fires[rI]
-                    -- targetToMoveAround = closestToastyFire
-                end
+                -- if closestToastyFire and not AI.HasBuff("toasty fire") then
+                --     local rI = math.random(1, #fires)
+                --     targetToMoveAround = fires[rI]
+                --     -- targetToMoveAround = closestToastyFire
+                -- end
 
-                local angleToTarget = AI.CalcFacing(targetToMoveAround.x, targetToMoveAround.y, cX, cY)
+                local angleToTarget = AI.CalcFacing(cX, cY, self.centerX, self.centerY)
                 if AI.CalcDistance(targetToMoveAround.x, targetToMoveAround.y, self.centerX, self.centerY) >
                     AI.GetDistanceTo(self.centerX, self.centerY) then
                     angleToTarget =
-                        AI.CalcFacing(self.centerX, self.centerY, targetToMoveAround.x, targetToMoveAround.y)
+                        AI.CalcFacing(targetToMoveAround.x, targetToMoveAround.y, self.centerX, self.centerY)
                 end
 
                 local points = {}
-                for theta = angleToTarget - rad90, angleToTarget + rad90, rad5 do
-                    local rStart, rEnd = 8, 15
+                for theta = angleToTarget - rad120, angleToTarget + rad120, rad5 do
+                    local rStart, rEnd = 7.5, 13
                     if targetToMoveAround == closestIcicle then
-                        rStart, rEnd = icicleRadius + 1, 15
+                        rStart, rEnd = icicleRadius + 1.5, 13
                     end
-                    for r = rStart, rEnd, 1 do
-                        if theta < 0.0 then
-                            theta = theta + pi2
-                        elseif theta > pi2 then
-                            theta = theta - pi2
-                        end
-                        local x, y = r * math.cos(theta), r * math.sin(theta)
+                    for r = rStart, rEnd, 0.5 do
+                        local ntheta = normalizeAngle(theta)
+                        local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
                         local nX, nY = targetToMoveAround.x + x, targetToMoveAround.y + y
                         if self.isPointFarEnoughFromTeammates(nX, nY, teamList) and
-                            self.isPointFarEnoughFromFires(nX, nY, fires) and
+                            -- self.isPointFarEnoughFromFires(nX, nY, fires) and
                             not self.doesLineIntersectAnyFires(cX, cY, nX, nY, fires) and
-                            AI.CalcDistance(nX, nY, fireMage.x, fireMage.y) > icicleRadius and
+                            -- AI.CalcDistance(nX, nY, fireMage.x, fireMage.y) > icicleRadius and
                             -- AI.CalcDistance(nX, nY, self.centerX, self.centerY) <= self.divertFromCenterR and
                             not self.doesLineIntersectAnyIcicles(cX, cY, nX, nY, icicles, closestIcicle.guid) then
                             table.insert(points, {
@@ -1386,25 +1447,23 @@ local hodir = MosDefBossModule:new({
                 -- if we don't have toasty fire buff, move to closest toasty fire
                 local points = {}
                 for i, fireToUse in ipairs(fires) do
-                    local angleToTarget = AI.CalcFacing(fireToUse.x, fireToUse.y, cX, cY)
-                    if AI.CalcDistance(fireToUse.x, fireToUse.y, self.centerX, self.centerY) >
-                        AI.GetDistanceTo(self.centerX, self.centerY) then
-                        angleToTarget = AI.CalcFacing(self.centerX, self.centerY, fireToUse.x, fireToUse.y)
-                    end
-                    for theta = angleToTarget - rad90, angleToTarget + rad90, rad5 do
+                    local angleToTarget = AI.CalcFacing(fireToUse.x, fireToUse.y, self.centerX, self.centerY)
+
+                    for theta = angleToTarget - rad120, angleToTarget + rad120, rad5 do
+                        local ntheta = normalizeAngle(theta)
                         for r = icicleRadius + 1, 13, 1 do
                             if theta < 0.0 then
                                 theta = theta + pi2
                             elseif theta > pi2 then
                                 theta = theta - pi2
                             end
-                            local x, y = r * math.cos(theta), r * math.sin(theta)
+                            local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
                             local nX, nY = fireToUse.x + x, fireToUse.y + y
                             if self.isPointFarEnoughFromTeammates(nX, nY, teamList) and
                                 -- self.isPointFarEnoughFromFires(nX, nY, fires) and
                                 not self.doesLineIntersectAnyFires(cX, cY, nX, nY, fires) and
-                                not self.doesLineIntersectAnyIcicles(cX, cY, nX, nY, icicles) and
-                                AI.CalcDistance(nX, nY, fireMage.x, fireMage.y) > icicleRadius then
+                                not self.doesLineIntersectAnyIcicles(cX, cY, nX, nY, icicles) -- and AI.CalcDistance(nX, nY, fireMage.x, fireMage.y) > icicleRadius 
+                            then
                                 table.insert(points, {
                                     x = nX,
                                     y = nY
@@ -1416,7 +1475,7 @@ local hodir = MosDefBossModule:new({
 
                 local p = self.findClosestPointInList(points)
                 if p then
-                    print("No toasty fire buff, moving towards it")
+                    print("no toasty fire buff, moving towards it")
                     AI.SetMoveToPosition(p.x, p.y)
                 else
                     print("no safe toasty-fire point so moving to tank location")
@@ -1426,20 +1485,20 @@ local hodir = MosDefBossModule:new({
                 end
                 return false
             elseif not closestSnowpackedIcicle and not closestSnowpackedIcicleTarget and
-                (not closestIcicle or closestIcicle.distance >= icicleRadius) and not AI.HasMoveTo() then
-                if AI.IsDps() then
+                (not closestIcicle or closestIcicle.distance > icicleRadius) and not AI.HasMoveTo() then
+                if AI.IsDps() and AI.GetDebuffCount("biting cold") <= 3 then
                     if self.stormPowerPlayer and (not AI.HasBuff("storm power") and not AI.HasBuff("storm cloud")) then
                         local stormcloudPlr = AI.GetObjectInfo(self.stormPowerPlayer)
-                        if stormcloudPlr and AI.GetDistanceTo(stormcloudPlr.x, stormcloudPlr.y) > 4 and
+                        if stormcloudPlr and AI.GetDistanceTo(stormcloudPlr.x, stormcloudPlr.y) > 5.5 and
                             not self.doesLineIntersectAnyIcicles(cX, cY, stormcloudPlr.x, stormcloudPlr.y, icicles, nil) then
                             AI.SetMoveTo(stormcloudPlr.x, stormcloudPlr.y)
                             self.isHeadedTowardsStormPlr = true
                             print("moving to storm power plr")
                         end
-                    elseif AI.IsDpsPosition(2) and not AI.HasBuff("starlight") and AI.GetDistanceToUnit(torGreycloud) <
-                        5 then
-                        print("moving to tor greycloud for starlight")
-                        AI.SetMoveTo(torGreycloud.x, torGreycloud.y)
+                    elseif not AI.HasBuff("starlight") and #starlights > 0 and starlights[1].distance <= 15 and
+                        self.isPointFarEnoughFromTeammates(starlights[1].x, starlights[1].y, teamList) then
+                        print("moving to starlight for buff")
+                        AI.SetMoveTo(starlights[1].x, starlights[1].y)
                     end
                 end
             end
@@ -1449,7 +1508,7 @@ local hodir = MosDefBossModule:new({
     isPointFarEnoughFromTeammates = function(x, y, teamList)
         for i, o in ipairs(teamList) do
             local tX, tY = AI.GetPosition(o)
-            if UnitGUID(o) ~= UnitGUID("player") and AI.CalcDistance(x, y, tX, tY) < 1 then
+            if UnitGUID(o) ~= UnitGUID("player") and AI.CalcDistance(x, y, tX, tY) <= icicleRadius then
                 return false
             end
         end
@@ -1457,7 +1516,7 @@ local hodir = MosDefBossModule:new({
     end,
     isPointFarEnoughFromFires = function(x, y, fireList)
         for i, o in ipairs(fireList) do
-            if AI.CalcDistance(x, y, o.x, o.y) < icicleRadius then
+            if AI.CalcDistance(x, y, o.x, o.y) <= icicleRadius then
                 return false
             end
         end
@@ -1473,7 +1532,7 @@ local hodir = MosDefBossModule:new({
     end,
     doesLineIntersectAnyFires = function(x1, y1, x2, y2, fireList)
         for i, o in ipairs(fireList) do
-            if AI.DoesLineIntersect(x1, y1, x2, y2, o.x, o.y, 0.5) then
+            if AI.DoesLineIntersect(x1, y1, x2, y2, o.x, o.y, 1.5) then
                 return true
             end
         end
@@ -1547,7 +1606,7 @@ function hodir:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     end
     if strcontains(s, "frozen") then
         if not AI.IsTank() then
-            local veesha = AI.FindNearbyObjectsByName("veesha")
+            local veesha = AI.FindNearbyUnitsByName("veesha")
             if #veesha > 0 and veesha[1].distance > 10 then
                 local facing = AI.CalcFacing(veesha[1].x, veesha[1].y, self.centerX, self.centerY)
                 local r = 10
@@ -1656,7 +1715,7 @@ local vezax = MosDefBossModule:new({
         end
 
         AI.do_PriorityTarget = function()
-            return AI.DoTargetChain("saronite animus")
+            return AI.DoTargetChain("saronite animus", "vezax")
         end
 
         AI.Config.startHealOverrideThreshold = 50
@@ -1668,16 +1727,11 @@ local vezax = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         local tick = GetTime()
-        -- clean up crashes
-        for i = #self.crashes, 1, -1 do
-            if tick > self.crashes[i].time + 20 then
-                table.remove(self.crashes, i)
-            end
-        end
-        if tick > self.lastCrashTime and AI.IsDps() and #self.crashes > 0 then
+        local crashes = AI.FindNearbyDynamicObjects("shadow crash")
+        if tick > self.lastCrashTime and AI.IsDps() and #crashes > 0 then
             if not AI.HasDebuff("shadow crash") and not AI.HasDebuff("mark of the faceless") and
-                not AI.HasMoveToPosition() then
-                local closestCrash = self.findClosestPointInList(self.crashes)
+                not AI.HasMoveToPosition() and not AI.HasObjectAvoidance() then
+                local closestCrash = self.findClosestPointInList(crashes)
                 if closestCrash then
                     print("moving into shadow crash impact area")
                     AI.SetMoveTo(closestCrash.x, closestCrash.y)
@@ -1692,38 +1746,38 @@ local vezax = MosDefBossModule:new({
             end
         end
 
-        if AI.HasDebuff("mark of the faceless") and not AI.HasMoveTo() then
-            local spots = {}
-            local closestAlly, distToAlly = AI.GetClosestAlly()
-            if closestAlly and distToAlly <= 18 then
-                print("I have mark, moving to avoid allies")
-                local angle = AI.GetFacingForUnit(closestAlly) + math.pi
-                local cX, cY = AI.GetPosition(closestAlly)
-                for theta = angle - rad90, angle + rad90, rad5 do
-                    if theta > pi2 then
-                        theta = theta - pi2
-                    elseif theta < 0.0 then
-                        theta = theta + pi2
-                    end
-                    for r = 19, 25, 1 do
-                        local x, y = r * math.cos(theta), r * math.sin(theta)
-                        local nX, nY = cX + x, cY + y
-                        table.insert(spots, {
-                            x = nX,
-                            y = nY
-                        })
-                    end
-                end
-            end
-            if #spots > 0 then
-                local p = self.findClosestPointInList(spots)
-                AI.SetMoveTo(p.x, p.y)
-            end
-        end
+        -- if AI.HasDebuff("mark of the faceless") and not AI.HasMoveTo() then
+        --     local spots = {}
+        --     local gX, gY = AI.GetPosition("focus")
+        --     local closestAlly, distToAlly = AI.GetClosestAlly()
+        --     if closestAlly and distToAlly <= 18 then
+        --         print("I have mark, moving to avoid allies")
+        --         local cX, cY = AI.GetPosition(closestAlly)
+        --         local angle = AI.CalcFacing(cX, cY, gX, gY)
+        --         local allies = AI.GetRaidOrPartyMemberUnits()
+        --         for theta = angle - rad90, angle + rad90, rad5 do
+        --             local nTheta = normalizeAngle(theta)
+        --             for r = 19, 25, 1 do
+        --                 local x, y = r * math.cos(nTheta), r * math.sin(nTheta)
+        --                 local nX, nY = cX + x, cY + y
+        --                 if self.isFarEnoughFromAllies(nX, nY, allies) then
+        --                     table.insert(spots, {
+        --                         x = nX,
+        --                         y = nY
+        --                     })
+        --                 end
+        --             end
+        --         end
+        --     end
+        --     if #spots > 0 then
+        --         local p = self.findClosestPointInList(spots)
+        --         AI.SetMoveTo(p.x, p.y)
+        --     end
+        -- end
     end,
     lastCrashTime = 0,
     animus = false,
-    crashes = {},
+    markedPlayer = nil,
     findClosestPointInList = function(pointList)
         local dist = 500
         local point = nil
@@ -1743,30 +1797,25 @@ local vezax = MosDefBossModule:new({
             end
         end
         return true
+    end,
+    isFarEnoughFromMarkedPlayer = function(self, x, y)
+        if self.markedPlayer == nil then
+            return true
+        end
+        local info = AI.GetObjectInfo(self.markedPlayer)
+        if info then
+            return AI.CalcDistance(x, y, info.x, info.y) > 18
+        end
+        return true
     end
 })
 
 function vezax:SPELL_CAST_START(args)
     if args.spellName:lower() == "searing flames" then
-        if AI.IsDps() and (AI.IsPriest() or AI.IsShaman() or AI.IsMage()) then
-            local cd = 0
-            if AI.IsShaman() or AI.IsMage() then
-                cd = 1
-            end
-            AI.RegisterPendingAction(function()
-                if UnitName("focus") ~= "General Vezax" then
-                    TargetUnit("General Vezax")
-                    FocusUnit("target")
-                end
-                if AI.IsCasting("focus") then
-                    if AI.IsCasting() then
-                        AI.StopCasting()
-                    end
-                    return AI.CastSpell(AI.GetInterruptSpell(), "focus")
-                end
-                return true
-            end, cd, "INTERRUPT_SEARING_FLAMES")
-        end
+        AI.DoStaggeredInterrupt()
+    end
+    if args.spellName:lower() == "surge of darkness" then
+        AI.Config.startHealOverrideThreshold = 100
     end
 end
 
@@ -1782,69 +1831,79 @@ function vezax:SPELL_CAST_SUCCESS(args)
         local speed = 10.0 -- from Shadow Crash spell.dbc
         local secondsToImpact = math.ceil(distToTarget / speed) -- calculation that the server does to determine impact time        
         self.lastCrashTime = GetTime() + secondsToImpact
-        table.insert(self.crashes, {
-            x = sX,
-            y = sY,
-            time = self.lastCrashTime
-        })
         local mod = self
         local cX, cY = AI.GetPosition()
         if AI.GetDistanceTo(sX, sY) <= 11 and not AI.IsTank() then
             print("evading shadow crash")
             local allies = AI.GetRaidOrPartyMemberUnits()
-            local angle = AI.GetFacingForPosition(AI.GetPosition("target"))
+            local angle = AI.CalcFacing(sX, sY, gX, gY)
             local points = {}
-            for theta = angle - rad90, angle + rad90, rad45 do
-                if theta > pi2 then
-                    theta = theta - pi2
-                elseif theta < 0.0 then
-                    theta = theta + pi2
-                end
-                for r = 13, 40, 1 do
-                    local x, y = r * math.cos(theta), r * math.sin(theta)
-                    local nX, nY = sX + x, sY + y
-                    if not AI.HasDebuff("mark of the faceless") or self.isFarEnoughFromAllies(nX, nY, allies) then
-                        table.insert(points, {
-                            x = nX,
-                            y = nY
-                        })
+            if AI.HasDebuff("mark of the faceless") then
+                for theta = angle - rad90, angle + rad90, rad5 do
+                    local ntheta = normalizeAngle(theta)
+                    for r = 13, 40, 1 do
+                        local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
+                        local nX, nY = sX + x, sY + y
+                        if self.isFarEnoughFromAllies(nX, nY, allies) then
+                            table.insert(points, {
+                                x = nX,
+                                y = nY
+                            })
+                        end
                     end
                 end
-                local p = self.findClosestPointInList(points)
-                AI.SetMoveToPosition(p.x, p.y)
+            else
+                for i, theta in ipairs({angle - rad90, angle + rad90}) do
+                    local ntheta = normalizeAngle(theta)
+                    for r = 13, 20, 1 do
+                        local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
+                        local nX, nY = sX + x, sY + y
+                        if self:isFarEnoughFromMarkedPlayer(nX, nY) then
+                            table.insert(points, {
+                                x = nX,
+                                y = nY
+                            })
+                        end
+                    end
+                end
             end
+
+            local p = self.findClosestPointInList(points)
+            AI.SetMoveToPosition(p.x, p.y)
         end
     end
 end
 
 function vezax:SPELL_AURA_APPLIED(args)
-    if args.spellName:lower() == "mark of the faceless" and UnitName("player") == args.target then
-        local spots = {}
-        local closestAlly, distToAlly = AI.GetClosestAlly()
-        if closestAlly and distToAlly <= 18 then
-            print("I have mark, moving to avoid allies")
-            local angle = AI.GetFacingForUnit(closestAlly) + math.pi
-            local cX, cY = AI.GetPosition(closestAlly)
-            for theta = angle - rad90, angle + rad90, rad5 do
-                if theta > pi2 then
-                    theta = theta - pi2
-                elseif theta < 0.0 then
-                    theta = theta + pi2
-                end
-                for r = 19, 25, 1 do
-                    local x, y = r * math.cos(theta), r * math.sin(theta)
-                    local nX, nY = cX + x, cY + y
-                    table.insert(spots, {
-                        x = nX,
-                        y = nY
-                    })
+    if args.spellName:lower() == "mark of the faceless" then
+        self.markedPlayer = args.target
+        if UnitName("player") == args.target then
+
+            local allies = AI.GetRaidOrPartyMemberUnits()
+            local obstacles = {}
+            for i, a in ipairs(allies) do
+                if UnitGUID(a) ~= UnitGUID("player") then
+                    local info = AI.GetObjectInfo(a)
+                    info.radius = 18
+                    table.insert(obstacles, info)
                 end
             end
+            AI.SetObjectAvoidance({
+                guids = obstacles,
+                safeDistance = 1,
+                gridSize = 5
+            })
         end
-        if #spots > 0 then
-            local p = self.findClosestPointInList(spots)
-            AI.SetMoveTo(p.x, p.y)
-        end
+    end
+end
+
+function vezax:SPELL_AURA_REMOVED(args)
+    if args.spellName:lower() == "mark of the faceless" then
+        self.markedPlayer = nil
+        AI.ClearObjectAvoidance()
+    end
+    if args.spellName:lower() == "surge of darkness" and not self.animus then
+        AI.Config.startHealOverrideThreshold = 50
     end
 end
 
@@ -1870,7 +1929,7 @@ local twilightAdherent = MosDefBossModule:new({
     onStart = function(self)
         if AI.IsTank() then
             TargetUnit("Twilight Adherent")
-            local frostMage = AI.FindNearbyObjectsByName("twilight frost mage")
+            local frostMage = AI.FindNearbyUnitsByName("twilight frost mage")
             if #frostMage > 0 and not frostMage[1].isDead and not AI.IsUnitCC(frostMage[1]) then
                 frostMage[1]:Focus()
                 SetRaidTarget("focus", 2)
@@ -1881,7 +1940,7 @@ local twilightAdherent = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         if AI.IsDps() then
-            local frostMage = AI.FindNearbyObjectsByName("twilight frost mage")
+            local frostMage = AI.FindNearbyUnitsByName("twilight frost mage")
             local markedMage = nil
             for i, o in ipairs(frostMage) do
                 if o.raidTargetIndex and not o.isDead and not AI.IsUnitCC(o) then
@@ -1904,12 +1963,14 @@ local twilightAdherent = MosDefBossModule:new({
                     return true
                 end
 
-                if AI.IsMage() and AI.CastSpell("polymorph", "focus") then
+                if AI.IsMage() and AI.CastSpell("polymorph", "focus") and GetTime() > self.ccCd then
+                    self.ccCd = GetTime() + 5
                     return true
                 end
             end
         end
-    end
+    end,
+    ccCd = 0
 })
 AI.RegisterBossModule(twilightAdherent)
 
@@ -2001,7 +2062,7 @@ local mimiron = MosDefBossModule:new({
             end
         end
 
-        if AI.IsHealer() and self.plasmaTarget ~= nil and AI.GetUnitHealthPct(self.plasmaTarget) <= 80 then
+        if AI.IsHealer() and self.plasmaTarget then
             if AI.IsShaman() and AI.CastSpell("riptide", self.plasmaTarget) or
                 AI.CastSpell("healing wave", self.plasmaTarget) then
                 return true
@@ -2012,9 +2073,9 @@ local mimiron = MosDefBossModule:new({
             return true
         end
 
-        if AI.IsHealer() or AI.IsTank() then
-            local rocket = AI.FindNearbyObjectsByName("rocket strike")
-            if #rocket > 0 and rocket[1].distance <= 3 and not AI.HasMoveTo() then
+        if AI.IsHealer() then
+            local rocket = AI.FindNearbyUnitsByName("rocket strike")
+            if #rocket > 0 and rocket[1].distance <= 3 and rocket[1]:HasAura("64064") and not AI.HasMoveTo() then
                 print('evading rocket')
                 local facing = AI.GetFacingForPosition(self.centerx, self.centery)
                 local theta = facing - rad90
@@ -2089,17 +2150,13 @@ end
 function mimiron:SPELL_CAST_SUCCESS(args)
     if args.spellId == 63414 or args.spellName == "spinning up" then
         if AI.IsTank() and AI.IsValidOffensiveUnit() then
-            AI.SayRaid("Mimiron is spinning up")
+            print("mimiron spinning up")
             local pi2 = math.pi * 2
             local target = GetObjectInfo("target")
             if target.facing ~= nil then
-                local angleBehind = target.facing + math.pi + rad22_5
-                if angleBehind > pi2 then
-                    angleBehind = angleBehind - pi2
-                elseif angleBehind < 0.0 then
-                    angleBehind = angleBehind + pi2
-                end
-                local r = 3
+                local angleBehind = target.facing + math.pi
+                angleBehind = normalizeAngle(angleBehind)
+                local r = 2
                 local x, y = r * math.cos(angleBehind), r * math.sin(angleBehind)
                 local nX, nY = target.x + x, target.y + y
                 AI.SetMoveToPosition(nX, nY)
@@ -2110,122 +2167,427 @@ end
 
 AI.RegisterBossModule(mimiron)
 
+-- local yoggFightAreaPolygon = {{
+--     x = 1988.3841552734,
+--     y = 0.81914699077606,
+--     z = 325.94177246094
+-- }, {
+--     x = 2020.4310302734,
+--     y = 17.84090423584,
+--     z = 329.23315429688
+-- }, {
+--     x = 2057.8447265625,
+--     y = -10.671962738037,
+--     z = 332.16909790039
+-- }, {
+--     x = 2055.03515625,
+--     y = -44.346775054932,
+--     z = 331.8444519043
+-- }, {
+--     x = 2015.2801513672,
+--     y = -71.150527954102,
+--     z = 329.4658203125
+-- }, {
+--     x = 1992.8668212891,
+--     y = -49.949775695801,
+--     z = 325.48022460938
+-- }, {
+--     x = 2009.4018554688,
+--     y = -26.272981643677,
+--     z = 325.61602783203
+-- }}
+
+local yoggFightAreaPolygon = {{
+    x = 1977.8753662109,
+    y = -52.049556732178,
+    z = 324.96905517578
+}, {
+    x = 1975.8239746094,
+    y = -79.036811828613,
+    z = 329.15621948242
+}, {
+    x = 1996.3413085938,
+    y = -91.403045654297,
+    z = 330.19497680664
+}, {
+    x = 2019.0654296875,
+    y = -68.501243591309,
+    z = 328.92037963867
+}, {
+    x = 2030.5631103516,
+    y = -54.842628479004,
+    z = 329.00997924805
+}, {
+    x = 2053.3598632813,
+    y = -44.36323928833,
+    z = 331.51644897461
+}, {
+    x = 2059.2114257813,
+    y = -15.882532119751,
+    z = 332.3782043457
+}, {
+    x = 2024.7449951172,
+    y = 12.82525062561,
+    z = 329.33810424805
+}, {
+    x = 2009.4055175781,
+    y = 32.77600479126,
+    z = 331.00936889648
+}, {
+    x = 1990.0318603516,
+    y = 24.874994277954,
+    z = 329.34487915039
+}, {
+    x = 1982.5721435547,
+    y = 1.5592385530472,
+    z = 325.41296386719
+}, {
+    x = 2004.9440917969,
+    y = -20.725526809692,
+    z = 325.52200317383
+}, {
+    x = 1995.4056396484,
+    y = -41.379180908203,
+    z = 324.88952636719
+}}
+
 local yoggSaron = MosDefBossModule:new({
     name = "Yogg-Saron",
     creatureId = {33288, 33134, 33136},
     onStart = function(self)
+        local mod = self
+        if not AI.IsTank() then
+            AI.RegisterOneShotAction(function()
+                local cx, cy, cz = AI.GetPosition()
+                local path = CalculatePathToDetour(GetCurrentMapID(), AI.PathFinding.Vector3.new(cx, cy, cz),
+                    AI.PathFinding.Vector3.new(self.dpsstartx, self.dpsstarty, self.dpsstartz))
+                if path and type(path) == "table" then
+                    print("moving to starting point")
+                    AI.SetMoveToPath(path)
+                else
+                    print("moving directly to starting point")
+                    AI.SetMoveTo(self.dpsstartx, self.dpsstarty)
+                end
+            end)
+        end
+
+        AI.Config.manaTideThreshold = 20
+
         oldPriorityTargetFn = AI.do_PriorityTarget
+
         AI.do_PriorityTarget = function()
-            if self:isDescentTeam() then
-                if self.illusionShattered then
-                    TargetUnit("brain")
-                    return true
-
-                end
-                if self.usedDescentPortal then
-                    TargetNearestEnemy()
-                    return true
-                end
-
+            if AI.IsValidOffensiveUnit() and
+                (AI.HasBuff("shadowy barrier", "target") or
+                    (not mod:isDescentTeam() and strcontains("brain", UnitName("target")))) then
+                return false
             end
-            if self.phase == 2 then
-                TargetUnit("Constrictor")
-                if AI.IsValidOffensiveUnit() and UnitName("target") == "Constrictor Tentacle" and
-                    AI.GetDistanceTo(AI.GetPosition("target")) <= 40 then
-                    return true
-                end
-                if not AI.IsValidOffensiveUnit() then
-                    TargetNearestEnemy()
+
+            if mod.phase == 2 then
+                if AI.IsTank() then
+                    if AI.DoTargetChain("constrictor", "guardian", "corruptor", "tentacle") then
+                        return true
+                    end
+                else
+                    if mod:isDescentTeam() then
+                        if mod.illusionShattered and mod.usedDescentPortal then
+                            TargetUnit("brain")
+                            return true
+
+                        end
+                        if mod.usedDescentPortal then
+                            -- TargetNearestEnemy()
+                            return true
+                        end
+                    end
+                    AssistUnit(AI.GetPrimaryTank())
+                    return AI.IsValidOffensiveUnit()
                 end
             end
-            return false
-        end
-        AI.PRE_DO_DPS = function(isAoE)
-            if self.phase == 3 then
-                if not AI.IsValidOffensiveUnit() then
+
+            if mod.phase == 3 then
+                if UnitName("focus") ~= "Yogg-Saron" then
                     TargetUnit("yogg")
-                elseif MaloWUtils_StrContains(UnitName("target"):lower(), "yogg") and AI.IsChanneling("target") then
-                    return true
+                    FocusUnit("target")
                 end
-            end
 
-            if self:isDescentTeam() and AI.IsValidOffensiveUnit() and self.usedDescentPortal and
-                not self.illusionShattered then
-                if AI.IsWarlock() and not AI.HasMyDebuff("corruption") and AI.CastSpell("corruption", "target") then
-                    return true
-                end
-                if AI.IsPriest() and not AI.HasMyDebuff("shadow word: pain") and AI.CastSpell("shadow word: pain") then
-                    return true
+                if not AI.IsTank() then
+                    -- AssistUnit(AI.GetPrimaryTank())
+                    if not AI.IsChanneling("focus") or (AI.GetDebuffCount("sanity") > 15 and AI.GetUnitHealthPct() > 50) then
+                        TargetUnit("focus")
+                        return true
+                    else
+                        if AI.DoTargetChain("tentacle") then
+                            return true
+                        end
+                        AssistUnit(AI.GetPrimaryTank())
+                    end
                 end
             end
             return false
         end
 
-        if AI.IsMage() then
-            -- AI.AUTO_CLEANSE = false
+        AI.PRE_DO_DPS = function(isAoE)
+            local tick = GetTime()
+
+            if AI.HasBuff("flash freeze") or AI.HasDebuff("squeeze") or AI.HasDebuff("malady of the mind") then
+                return true
+            end
+
+            if self.phase == 3 then
+                if strcontains(UnitName("target"), "yogg") and AI.GetDebuffCount("sanity") <= 15 and
+                    (AI.IsChanneling("target") or math.abs(tick - self.nextLunaticGazeTime) <= 0.5) then
+                    return true
+                end
+            end
+
+            if self.phase == 2 and AI.IsValidOffensiveUnit() and not AI.HasBuff("shadowy barrier", "target") and
+                not AI.IsTank() and AI.GetDistanceToUnit("target") > 40 and
+                (not self.portalToUse and not self.usedDescentPortal) then
+                local x, y, z = AI.GetPosition("target")
+                local dist = ternary(AI.IsHealer(), 25, 35)
+                if (not AI.IsHealer() or not AI.IsCasting()) and tick > self.lastPathTargetSetTime + 5 then
+                    if AI.HasObjectAvoidance() then
+                        AI.SetObjectAvoidanceTarget(UnitGUID("target"), dist)
+                        self.lastPathTargetSetTime = tick
+                    elseif not AI.HasMoveTo() or not AI.IsCurrentPathSafeFromObstacles(self:GetCurrentObstacles()) then
+                        self:MoveSafelyToSpotWithin(dist, x, y, z, nil, "to range dps the target")
+                        self.lastPathTargetSetTime = tick
+                    end
+                end
+            end
+
+            -- Paladin tank moves in-range to melee attack target
+            if AI.IsTank() and AI.AUTO_DPS and AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "tentacle") and
+                AI.GetDistanceToUnit("target") > 5 and tick > self.lastPathTargetSetTime + 5 then
+                if AI.HasObjectAvoidance() then
+                    AI.SetObjectAvoidanceTarget(UnitGUID("target"), 4.5)
+                    self.lastPathTargetSetTime = tick
+                elseif not AI.HasMoveTo() or not AI.IsCurrentPathSafeFromObstacles(self:GetCurrentObstacles()) then
+                    local x, y, z = AI.GetPosition("target")
+                    self:MoveSafelyToSpotWithin(4.5, x, y, z, nil, "to melee attack the target");
+                    self.lastPathTargetSetTime = tick
+                end
+            end
+
+            if self.usedDescentPortal and not self.illusionShattered then
+                if AI.IsWarlock() and AI.DoCastSpellChain("target", "corruption") then
+                    return true
+                end
+            end
+
+            if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "constrictor") then
+                if AI.IsPriest() and AI.DoCastSpellChain("target", "mind blast", "shadow word: death", "mind flay") then
+                    return true
+                end
+                if AI.IsWarlock() and AI.DoCastSpellChain("target", "corruption", "shadow bolt") then
+                    return true
+                end
+                if AI.IsMage() and AI.DoCastSpellChain("target", "fire blast", "scorch") then
+                    return true
+                end
+            end
+
+            return false
         end
     end,
     onEnd = function(self)
         AI.do_PriorityTarget = oldPriorityTargetFn
     end,
     onUpdate = function(self)
+        local tick = GetTime()
         if AI.HasBuff("flash freeze") or AI.HasDebuff("squeeze") or AI.HasDebuff("malady of the mind") then
             return true
         end
 
         if (AI.IsMage() and AI.CleanseRaid("Remove Curse", "Curse")) or
-            (AI.IsPriest() and AI.CleanseRaid("Dispel Magic", "Magic")) then
+            (AI.IsPriest() and AI.CleanseRaid("Dispel Magic", "Magic")) or
+            (AI.IsShaman() and AI.CleanseRaid("Cleanse Spirit", "Curse")) then
             return true
         end
 
-        if self.phase == 2 and AI.IsShaman() and not AI.HasTotemOut("3") and AI.CastSpell("cleansing totem") then
+        if AI.IsWarlock() and
+            ((not self.illusionShattered and AI.GetUnitHealthPct() < 30) or AI.HasDebuff("sara's blessing")) and
+            AI.CastSpell("shadow ward") then
             return true
+        end
+
+        -- have priest keep healer free of black plague
+        if AI.IsPriest() and self.phase == 2 then
+            local healer = AI.GetPrimaryHealer()
+            if not AI.HasMyBuff("abolish disease", healer) and AI.HasDebuff("black plague", healer) and
+                AI.CastSpell("abolish disease", healer) then
+                return true
+            end
+        end
+
+        if AI.IsShaman() then
+            local totems = AI.FindNearbyUnitsByName("grounding totem")
+            if not AI.HasMoveTo() and (#totems == 0 or totems[1].distance > 30) and AI.CastSpell("grounding totem") then
+                return true
+            end
+            totems = AI.FindNearbyUnitsByName("cleansing totem")
+            if self.phase == 2 and not AI.HasMoveTo() and (#totems == 0 or totems[1].distance > 30) and
+                AI.CastSpell("cleansing totem") then
+                return true
+            end
         end
 
         -- have paladin self cleanse in p2
-        if AI.IsPaladin() and self.phase == 2 then
+        if AI.IsPaladin() and self.phase >= 2 then
             if AI.GetUnitPowerPct() > 20 and AI.CleanseSelf("Cleanse", "Disease", "Magic", "Poison") then
                 return true
             end
         end
 
-        if AI.IsPaladin() and AI.AUTO_DPS and AI.IsValidOffensiveUnit() and UnitName("target") == "Constrictor Tentacle" then
-            if AI.GetDistanceTo(AI.GetPosition("target")) > 3 and not AI.HasMoveToPosition() then
-                local x, y = AI.GetPosition("target")
-                AI.SetMoveTo(x, y, 1)
-                print("moving to melee-range of constrictor")
-            end
-        end
         if self.phase == 2 then
+            local deathorbs = AI.FindNearbyUnitsByName("death orb")
+            if #deathorbs == 0 and AI.HasObjectAvoidance() and not self.maladyTarget and not self.usedDescentPortal then
+                print("death orbs gone, clearing object avoidance")
+                AI.ClearObjectAvoidance()
+            end
+
             if self:isDescentTeam() then
                 if self.portalToUse and not self.doesPortalExist(self.portalToUse) then
                     self.portalToUse = nil
+                    print("portal to use no longer around")
+                    if not AI.HasObjectAvoidance() and AI.HasMoveTo() then
+                        AI.ResetMoveTo()
+                    elseif AI.HasObjectAvoidance() then
+                        AI.ClearObjectAvoidanceTarget()
+                    end
                 end
-                if self.portalToUse and AI.GetDistanceTo(self.portalToUse.x, self.portalToUse.y) <= 4 then
-                    print("taking brain portal")
-                    self.portalToUse:Interact()
-                    self.usedDescentPortal = true
-                    self.portalToUse = nil
-                    AI.ResetMoveToPosition()
-                    AI.StopMoving()
+                if self.portalToUse then
+                    if AI.GetDistanceTo(self.portalToUse.x, self.portalToUse.y) <= 5 and tick > self.squeezeExpireTime +
+                        1 then
+                        AI.ClearObjectAvoidance()
+                        AI.ResetMoveTo()
+                        self.portalToUse:InteractWith()
+                        self.portalToUse = nil
+                        if not self.usedDescentPortal then
+                            print("taking brain portal")
+                            if AI.IsWarlock() then
+                                AI.USE_MANA_REGEN = false
+                            end
+                            if UnitName("player"):lower() == self.descentDps2 then -- face away from skulls upon teleporting
+                                AI.RegisterOneShotAction(function(self)
+                                    AI.SetFacing(GetPlayerFacing() + math.pi)
+                                    if self.illusionShattered then
+                                        print(
+                                            "took brain portal after shattered illusion. Moving to brain attack vector")
+                                        local brain = AI.FindNearbyUnitsByName("brain of")
+                                        if #brain > 0 then
+                                            brain[1]:Target()
+                                        else
+                                            print("could not find/target brain of yogg-saron")
+                                        end
+                                        local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
+                                        if #escapePortal > 0 then
+                                            local path = CalculatePathToDetour(GetCurrentMapID(),
+                                                AI.PathFinding.Vector3.new(AI.GetPosition()), AI.PathFinding.Vector3
+                                                    .new(escapePortal[1].x, escapePortal[1].y, escapePortal[1].z))
+                                            if type(path) == "table" and #path > 0 then
+                                                print("moving to engage brain of yogg")
+                                                AI.SetMoveToPath(path)
+                                                AI.UseInventorySlot(8)
+                                            else
+                                                print("failed to generate path to brain of yogg")
+                                            end
+                                        else
+                                            print("no escape portal found, something is wrong!")
+                                        end
+                                    end
+                                end, 1)
+                            end
+                            AI.toggleAutoDps(false)
+                        else
+                            print("taking escape portal")
+                            AI.toggleAutoDps(false)
+                            self.illusionShattered = false
+                            AI.RegisterOneShotAction(function(self)
+                                self.lastPathTargetSetTime = 0
+                            end, 0.5)
+                        end
+                        self.usedDescentPortal = (not self.usedDescentPortal)
+                    elseif self.usedDescentPortal and not AI.HasMoveTo() then
+                        print("moving to escape portal")
+                        local path = CalculatePathToDetour(GetCurrentMapID(),
+                            AI.PathFinding.Vector3.new(AI.GetPosition()), AI.PathFinding.Vector3
+                                .new(self.portalToUse.x, self.portalToUse.y, self.portalToUse.z))
+                        if path and type(path) == "table" then
+                            AI.SetMoveToPath(path)
+                        end
+                    elseif not self.usedDescentPortal then
+                        -- if we have object avoidance, let the portal as the target goal
+                        if AI.HasObjectAvoidance() then
+                            AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 1)
+                            self.lastPathTargetSetTime = tick
+                        elseif not AI.HasMoveTo() or
+                            (not AI.IsCurrentPathSafeFromObstacles(self:GetCurrentObstacles()) and tick >
+                                self.lastPathGenerateTime) then
+                            self:MoveSafelyToSpot(self.portalToUse.x, self.portalToUse.y, self.portalToUse.z, nil,
+                                "Get to Brain Portal")
+                            self.lastPathGenerateTime = tick + 1
+                            self.lastPathTargetSetTime = tick
+                        end
+                    end
+                end
+            end
+
+            if self.brainLinkCaster ~= nil and self.brainLinkVictim and UnitName("player") == self.brainLinkCaster and
+                not self.portalToUse and not self.usedDescentPortal and not AI.IsHealer() and
+                (not self.portalsOpen or
+                    (UnitName(self.brainLinkVictim) ~= Unit(self.descentDps2) and UnitName(self.brainLinkVictim) ~=
+                        UnitName(self.descentDps1))) then
+                if AI.HasObjectAvoidance() then
+                    AI.SetObjectAvoidanceTarget(UnitGUID(self.brainLinkVictim), 20)
+                    self.lastPathTargetSetTime = tick
+                else
+                    if AI.GetDistanceToUnit(self.brainLinkVictim) > 20 and
+                        (not AI.HasMoveTo() or tick > self.lastPathGenerateTime) then
+                        local tx, ty, tz = AI.GetPosition(self.brainLinkVictim)
+                        self:MoveSafelyToSpotWithin(20, tx, ty, tz, nil, " moving in-range of brain-link victim")
+                        self.lastPathGenerateTime = tick + 0.5
+                        self.lastPathTargetSetTime = tick
+                    end
+                end
+            end
+            if self.brainLinkVictim ~= nil and self.brainLinkCaster ~= nil and UnitName("player") ==
+                self.brainLinkVictim and not self.portalToUse and not self.usedDescentPortal and not AI.IsHealer() and
+                (not self.portalsOpen or
+                    (UnitName(self.brainLinkCaster) ~= Unit(self.descentDps2) and UnitName(self.brainLinkCaster) ~=
+                        UnitName(self.descentDps1))) then
+                if AI.HasObjectAvoidance() then
+                    AI.SetObjectAvoidanceTarget(UnitGUID(self.brainLinkCaster), 20)
+                    self.lastPathTargetSetTime = tick
+                else
+                    if AI.GetDistanceToUnit(self.brainLinkCaster) > 20 and
+                        (not AI.HasMoveTo() or tick > self.lastPathGenerateTime) then
+                        local tx, ty, tz = AI.GetPosition(self.brainLinkCaster)
+                        self:MoveSafelyToSpotWithin(20, tx, ty, tz, nil, " moving in-range of brain-link caster")
+                        self.lastPathGenerateTime = tick + 0.5
+                        self.lastPathTargetSetTime = tick
+                    end
                 end
             end
         elseif self.phase == 3 then
-            if self:isDescentTeam() then
-                if self.usedDescentPortal and self.portalToUse and
-                    AI.GetDistanceTo(self.portalToUse.x, self.portalToUse.y) <= 4 then
-                    print("taking escape portal")
-                    AI.ResetMoveToPosition()
-                    AI.StopMoving()
-                    self.portalToUse:Interact()
+            --- Escaping yogg's brain after phase 3 starts
+            if self.usedDescentPortal and self.portalToUse then
+                if AI.GetDistanceTo(self.portalToUse.x, self.portalToUse.y) <= 5 then
+                    print("taking escape portal due to phase 3")
+                    AI.ResetMoveTo()
+                    self.portalToUse:InteractWith()
                     self.portalToUse = nil
                     self.usedDescentPortal = false
                     self.illusionShattered = false
-
-                    local tank = AI.GetPrimaryTank()
-                    local tx, ty = AI.GetPosition(tank)
-                    if not AI.HasMoveToPosition() then
-                        AI.SetMoveToPosition(tx, ty)
+                    AI.RegisterOneShotAction(function(self)
+                        AI.SetMoveTo(self.p3x, self.p3y, self.p3z)
+                    end, 0.5)
+                else
+                    print("moving to escape portal due to phase 3")
+                    local path = CalculatePathToDetour(GetCurrentMapID(), AI.PathFinding.Vector3.new(AI.GetPosition(),
+                        AI.PathFinding.Vector3.new(self.portalToUse.x, self.portalToUse.y, self.portalToUse.z)))
+                    if path and type(path) == "table" then
+                        AI.SetMoveToPath(path)
                     end
                 end
             end
@@ -2234,237 +2596,524 @@ local yoggSaron = MosDefBossModule:new({
                 TargetUnit("yogg")
                 FocusUnit("target")
             end
-            if AI.IsChanneling("focus") then
+
+            if ((math.abs(tick - self.nextLunaticGazeTime) <= 0.5) or AI.IsChanneling("focus")) and
+                (AI.GetDebuffCount("sanity") <= 15 or AI.GetUnitHealthPct() < 50) and not AI.IsTank() then
                 local facing = AI.GetFacingForPosition(AI.GetPosition("focus")) + math.pi
                 AI.SetFacing(facing)
-                -- print("lunatic Gaze, facing away from boss")
             end
         end
         return false
     end,
     phase = 1,
     descentDps1 = "mosdeflocka",
-    descentDps2 = "mosdefswp",
+    descentDps2 = "mosdeffmage",
     portalToUse = nil,
     illusionShattered = false,
     usedDescentPortal = false,
     portalsOpen = false,
+    lastPathGenerateTime = 0,
+    lastPathTargetSetTime = 0,
+    squeezeExpireTime = 0,
+    centerx = 1980.1986083984,
+    centery = -26.137254714966,
+    centerz = 324.88958740234,
+    dpsstartx = 2010.7935791016,
+    dpsstarty = -32.513927459717,
+    dpsstartz = 325.5881652832,
+    p3x = 2008.7709960938,
+    p3y = -34.256763458252,
+    p3z = 325.3928527832,
+    p3tankx = 2029.5695800781,
+    p3tanky = -44.710132598877,
+    p3tankz = 328.283203125,
+    yoggRadius = 27.0,
     isDescentTeam = function(self)
         return UnitName("player"):lower() == self.descentDps1 or UnitName("player"):lower() == self.descentDps2
     end,
+    maladyTarget = nil,
+    brainLinkCaster = nil,
+    brainLinkVictim = nil,
     doesPortalExist = function(portal)
-        local portals = AI.FindNearbyObjectsByName("descend into madness")
+        local portals = AI.FindNearbyObjectsOfTypeAndName(AI.ObjectTypeFlag.UnitsAndGameObjects, "descend into madness",
+            "flee to the surface")
         for i, o in ipairs(portals) do
             if portal.guid == o.guid then
                 return true
             end
         end
         return false
-    end
+    end,
+    nextLunaticGazeTime = 0
 })
 
-function yoggSaron:CHAT_MSG_MONSTER_YELL(text, monster)
-    if MaloWUtils_StrContains(text:lower(), "lucid dream") then
-        self.phase = 2
-        print("Entering phase 2")
+function yoggSaron:GetCurrentObstacles()
+    local obstacles = AI.FindNearbyUnitsByName("death orb")
+    for i, o in ipairs(obstacles) do
+        o.radius = 10
+    end
+    -- if AI.IsDps() then
+    --     local crushers = AI.FindNearbyUnitsByName("crusher")
+    --     for i, o in ipairs(crushers) do
+    --         o.radius = 6
+    --         table.insert(obstacles, o)
+    --     end
+    -- end
+    if self.maladyTarget ~= UnitName("player") and not self.squeezeTarget then
+        local maladyOb = AI.GetObjectInfo(self.maladyTarget)
+        if maladyOb then
+            maladyOb.radius = 13
+            table.insert(obstacles, maladyOb)
+        end
+    end
+    return obstacles
+end
+
+function yoggSaron:MoveToSanityWell(force)
+    if AI.GetDebuffCount("sanity") <= 50 or force then
+        local well = AI.FindUnitYWithinXOf("thorim", "sanity well", 50)
+        if #well > 0 and AI.GetDistanceTo(well[1].x, well[1].y) > 4 then
+            self:MoveSafelyToSpot(well[1].x, well[1].y, well[1].z, "moving to sanity well")
+            return true
+        end
+    end
+    return false
+end
+
+function yoggSaron:MoveSafelyToSpotWithin(r, tx, ty, tz, force, reason)
+    local x, y = AI.GetPosition()
+    local facing = AI.CalcFacing(tx, ty, x, y)
+    if AI.CalcDistance(x, y, tx, ty) > r then
+        local nx, ny = tx + r * math.cos(facing), ty + r * math.sin(facing)
+        return self:MoveSafelyToSpot(nx, ny, tz, force, reason)
+    else
+        AI.StopMoving()
+    end
+    return true
+end
+
+function yoggSaron:MoveSafelyToSpot(tx, ty, tz, force, reason)
+    local startp = AI.PathFinding.Vector3.new(AI.GetPosition())
+    local endp = AI.PathFinding.Vector3.new(tx, ty, tz)
+
+    local obstacles = self:GetCurrentObstacles()
+    local dist = startp:distanceTo(endp)
+
+    local gridSize = 1
+    if dist < 20 then
+        gridSize = 0.5
+    elseif dist > 40 then
+        gridSize = 3.0
     end
 
-    if MaloWUtils_StrContains(text:lower(), "true face of death") then
-        self.phase = 3
-        AI.toggleAutoDps(false)
-        print("Entering phase 3")
-        if self:isDescentTeam() and self.illusionShattered then
-            local escapePortal = AI.FindNearbyObjectsByName("flee to the surface")
-            if #escapePortal > 0 then
-                self.portalToUse = escapePortal[1]
-                if AI.GetDistanceTo(escapePortal[1].x, escapePortal[1].y) > 5 then
-                    print("moving to escape portal");
-                    AI.SetMoveToPosition(escapePortal[1].x, escapePortal[1].y)
+    ---yogg sitting at the center, avoid him too
+    -- table.insert(obstacles, {
+    --     x = self.centerx,
+    --     y = self.centery,
+    --     z = self.centerz,
+    --     radius = 22
+    -- })
+
+    local path = CalculatePathWhileAvoidingPFP(GetCurrentMapID(), startp, endp, obstacles, gridSize, 200)
+    if type(path) == "table" and #path > 0 then
+        print("moving safely due to " .. (reason or ""))
+        AI.SetMoveToPath(path)
+        return true
+    else
+        print("failed to gen safe path " .. (reason or ""))
+        AI.StopMoving()
+    end
+    return false
+end
+
+function yoggSaron:SPELL_CAST_START(args)
+    if strcontains(args.spellName, "dark volley") then
+        print("dark volley/drain life casting")
+        if not AI.IsTank() then
+            local guardians = AI.FindNearbyUnitsByName("guardian")
+            for i, o in ipairs(guardians) do
+                if not o.isDead and (o.castingSpellId or o.channelingSpellId) then
+                    o:Target()
+                    AI.DoStaggeredInterrupt()
+                    return
                 end
-            end
-        end
-        if not self:isDescentTeam() then
-            local tank = AI.GetPrimaryTank()
-            if not AI.IsTank() then
-                AI.SetMoveToPosition(AI.GetPosition(tank))
             end
         end
     end
 end
 
+function yoggSaron:CHAT_MSG_MONSTER_YELL(text, monster)
+    if strcontains(text, "lucid dream") then
+        AI.AUTO_AOE = false
+        self.phase = 2
+        print("phase 2")
+        if AI.IsHealer() then
+            AI.toggleAutoDps(true)
+        end
+        AI.Config.startHealOverrideThreshold = 90
+    end
+
+    if strcontains(text, "true face of death") then
+        self.phase = 3
+        AI.toggleAutoDps(false)
+        print("phase 3")
+        self.nextLunaticGazeTime = GetTime() + 7
+        if self.usedDescentPortal and self.illusionShattered then
+            local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
+            if #escapePortal > 0 then
+                self.portalToUse = escapePortal[1]
+            end
+        end
+        if not self.usedDescentPortal then
+            if AI.IsDps() then
+                AI.SetMoveTo(self.p3x, self.p3y, self.p3z)
+            else
+                AI.SetMoveTo(self.p3tankx, self.p3tanky, self.p3tankz);
+            end
+        end
+    end
+
+    if strcontains(text, "tremble") then
+        AI.RegisterOneShotAction(function(self)
+            if not self.portalToUse and not self.usedDescentPortal then
+                print("death rays inbound")
+                local obstacles = self:GetCurrentObstacles()
+                if #obstacles > 0 then
+                    AI.SetObjectAvoidance({
+                        guids = obstacles,
+                        safeDistance = 3,
+                        polygon = yoggFightAreaPolygon
+                    })
+                end
+            end
+        end, 2)
+    end
+end
+
 function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
-    if MaloWUtils_StrContains(s, "illusion shatters") then
+    if strcontains(s, "illusion shatters") then
         print("illusion shattered")
-        -- AI.toggleAutoDps(false)
+        AI.toggleAutoDps(true)
+        AI.USE_MANA_REGEN = true
         self.illusionShattered = true
-        if self:isDescentTeam() then
-            local brain = AI.FindNearbyObjectsByName("brain of")
+        if self.usedDescentPortal then
+            local brain = AI.FindNearbyUnitsByName("brain of")
             if #brain > 0 then
                 brain[1]:Target()
             else
                 print("could not find/target brain of yogg-saron")
             end
+            local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
+            if #escapePortal > 0 then
+                local path = CalculatePathToDetour(GetCurrentMapID(), AI.PathFinding.Vector3.new(AI.GetPosition()),
+                    AI.PathFinding.Vector3.new(escapePortal[1].x, escapePortal[1].y, escapePortal[1].z))
+                if type(path) == "table" and #path > 0 then
+                    print("moving to engage brain of yogg")
+                    AI.SetMoveToPath(path)
+                    AI.UseInventorySlot(8)
+                else
+                    print("failed to generate path to brain of yogg")
+                end
+            else
+                print("no escape portal found, something is wrong!")
+            end
         end
     end
 
-    if MaloWUtils_StrContains(s, "open into") then
-        AI.ResetMoveTo()
+    if strcontains(s, "portals open into") then
         self.portalsOpen = true
         self.usedDescentPortal = false
         self.illusionShattered = false
         local mod = self
-        AI.RegisterPendingAction(function()
+        AI.RegisterOneShotAction(function(self)
+            -- print("portals closed")
             mod.portalsOpen = false
-            return true
         end, 25, "PORTALS_CLOSED")
 
-        if self:isDescentTeam() then
-            local mod = self
+        if AI.IsPriest() then
             AI.RegisterPendingAction(function()
-                local portals = AI.FindNearbyObjectsByName("descend into madness")
-                if #portals == 2 then
-                    if AI.IsPriest() then
-                        AI.RegisterPendingAction(function()
-                            return not AI.HasMyBuff("abolish disease", self.descentDps1) and
-                                       AI.CastSpell("abolish disease", self.descentDps1)
-                        end, null, "CLEANSE_DESCENDER_1")
-                        AI.RegisterPendingAction(function()
-                            return not AI.HasMyBuff("abolish disease", self.descentDps2) and
-                                       AI.CastSpell("abolish disease", self.descentDps2)
-                        end, null, "CLEANSE_DESCENDER_2")
-                    end
-                    if AI.IsWarlock() then
-                        AI.RegisterPendingAction(function()
-                            return AI.CastSpell("shadow ward")
-                        end, null, "SHADOW_WARD")
-                    end
-                    if UnitName("player"):lower() == self.descentDps1 and not AI.HasMoveToPosition() then
-                        local portal = portals[1]
-                        self.portalToUse = portal
-                        if AI.GetDistanceTo(portal.x, portal.y) > 4 then
-                            print("dps1 to move to brain portal")
-                            -- AI.SetMoveToPosition(portal.x, portal.y)
-                        else
-                            print("dps1 already at portal")
-                        end
-                    end
-                    if UnitName("player"):lower() == self.descentDps2 and not AI.HasMoveToPosition() then
-                        local portal = portals[2]
-                        AI.RegisterPendingAction(function()
-                            AI.CastSpell("power word: shield", "player")
-                            local x, y = AI.GetPosition()
-                            local deathorbs = AI.FindNearbyObjectsByName("death orb")
-                            if #deathorbs > 0 then
-                                for i, orb in ipairs(deathorbs) do
-                                    if AI.DoesLineIntersect(x, y, portal.x, portal.y, orb.x, orb.y, 3) then
-                                        return false
-                                    end
-                                end
-                            end
-                            if AI.GetDistanceTo(portal.x, portal.y) > 4 then
-                                print("dps2 moving to brain portal")
-                                AI.SetMoveToPosition(portal.x, portal.y)
-                                self.portalToUse = portal
-                            end
-                            return true
-                        end, 5, "MOVE_TO_PORTAL")
+                return AI.HasMyBuff("abolish disease", self.descentDps1) or
+                           AI.CastSpell("abolish disease", self.descentDps1)
+            end, nil, "CLEANSE_DESCENDER_1")
+            AI.RegisterPendingAction(function()
+                return AI.HasMyBuff("abolish disease", self.descentDps2) or
+                           AI.CastSpell("abolish disease", self.descentDps2)
+            end, nil, "CLEANSE_DESCENDER_2")
+
+            AI.RegisterPendingAction(function(self)
+                local healer = AI.GetPrimaryHealer()
+                AI.CastSpell("power word: shield", healer)
+                return self.illusionShattered
+            end, nil, "BUBBLE_HEALER")
+        end
+
+        if self:isDescentTeam() then
+            local portals = AI.FindNearbyUnitsByName("descend into madness")
+            if #portals == 2 then
+                if AI.IsWarlock() then
+                    AI.MustCastSpell("shadow ward")
+                end
+                if strcontains(UnitName("player"), self.descentDps1) then
+                    local portal = portals[1]
+                    self.portalToUse = portal
+                    AI.ResetMoveTo()
+                    -- AI.SayRaid("descentDps1 portal set heading to it")
+                    if AI.HasObjectAvoidance() then
+                        AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
+                        self.lastPathTargetSetTime = GetTime()
                     end
                 end
-                --- Move to escape portals when it's time(5s before induce madness finishes)
-                local mod = self
-                AI.RegisterPendingAction(function()
-                    if mod.phase == 2 then
-                        print("Brain will finish casting Induce Madness in 10s")
-                        local escapePortal = AI.FindNearbyObjectsByName("flee to the surface")
-                        if #escapePortal > 0 then
-                            if AI.GetDistanceTo(escapePortal[1].x, escapePortal[1].y) > 5 then
-                                print("moving to escape portal");
-                                AI.SetMoveToPosition(escapePortal[1].x, escapePortal[1].y)
-                            end
-                            AI.RegisterPendingAction(function()
-                                if mod.phase == 2 then
-                                    print("using escape portal");
-                                    AI.ResetMoveToPosition()
-                                    AI.StopMoving()
-                                    escapePortal[1]:Interact()
-                                    mod.usedDescentPortal = false
-                                    mod.illusionShattered = false
-                                    AI.RegisterPendingAction(function()
-                                        local tank = AI.GetPrimaryTank()
-                                        local tx, ty = AI.GetPosition(tank)
-                                        if not AI.HasMoveToPosition() then
-                                            AI.SetMoveToPosition(tx, ty)
-                                        end
-                                        return true
-                                    end, 1, "MOVE_BACK_TO_TANK")
+                if strcontains(UnitName("player"), self.descentDps2) then
+                    AI.RegisterOneShotAction(function(self)
+                        local portals = AI.FindNearbyUnitsByName("descend into madness")
+                        -- if AI.IsMage() then
+                        --     AI.MustCastSpell("mana shield")
+                        -- end
+                        if #portals > 0 then
+                            if #portals == 2 then
+                                local dx, dy = AI.GetPosition(self.descentDps1)
+                                local dist = 0
+                                for i, o in ipairs(portals) do
+                                    if AI.CalcDistance(dx, dy, o.x, o.y) > dist then
+                                        dist = AI.CalcDistance(dx, dy, o.x, o.y)
+                                        self.portalToUse = o
+                                    end
                                 end
-                                return true
-                            end, 6, "ESCAPE_BRAIN")
+                            else
+                                self.portalToUse = portals[1]
+                            end
+                            AI.ResetMoveTo()
+                            -- AI.SayRaid("descentDps2 portal set heading to it")
+                            if AI.HasObjectAvoidance() then
+                                AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
+                                self.lastPathTargetSetTime = GetTime()
+                            end
+                        else
+                            AI.SayRaid("descendDps2 rdy to take portal but no portal found")
                         end
-                    end
-                    return true
-                end, 50, "MOVE_TO_ESCAPE_PORTALS")
+                    end, 10)
+                end
+            end
 
-                return true
-            end, 1, "REACT_TO_PORTALS")
+            --- Move to escape portals when it's time(3s before induce madness finishes)
+            AI.RegisterOneShotAction(function(self)
+                if self.phase == 2 and self.usedDescentPortal then
+                    print("brain will finish casting Induce Madness in 2s")
+                    local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
+                    if #escapePortal > 0 then
+                        self.portalToUse = escapePortal[1]
+                    end
+                end
+            end, 58, "MOVE_TO_ESCAPE_PORTALS")
         end
         if not self:isDescentTeam() then
             AI.toggleAutoDps(true)
-
-            AI.RegisterPendingAction(function()
-                local constrictors = AI.FindNearbyObjectsByName("Constrictor")
-                if #constrictors == 0 then
-                    local wells = AI.FindNearbyObjectsByName("sanity well")
-                    local deathorbs = AI.FindNearbyObjectsByName("death orb")
-                    if #deathorbs == 0 and #wells > 0 and not AI.HasMoveToPosition() then
-                        print("no constrictors, moving to sanity well while brain phase")
-                        if AI.GetDistanceTo(wells[1].x, wells[1].y) > 2 then
-                            AI.SetMoveToPosition(wells[1].x, wells[1].y)
-                            return true
-                        else
-                            print("Already at well")
-                            return true
-                        end
-                    end
-                end
-                return false
-            end)
-
         end
+    end
+
+    if strcontains(s, "opens his mouth wide") then
+        self.nextLunaticGazeTime = self.nextLunaticGazeTime + 1
     end
 end
 
 function yoggSaron:SPELL_AURA_APPLIED(args)
-    if args.spellName == "Squeeze" and not self:isDescentTeam() and self.portalsOpen then
-        AI.ResetMoveToPosition()
-        AI.StopMoving()
-        TargetUnit("constrictor")
+    if args.spellName == "Squeeze" then
+        self.squeezeTarget = args.target
+        if not self.portalToUse and not self.usedDescentPortal then
+            if AI.IsPaladin() and strcontains(UnitName(args.target), AI.GetPrimaryHealer()) and
+                AI.GetUnitHealthPct(args.target) <= 50 then
+                print("healer has been squeeze, will try bubble")
+                AI.MustCastSpell("hand of protection", args.target)
+            end
+            if AI.IsPriest() and not AI.HasDebuff("weakened soul", args.target) then
+                AI.MustCastSpell("power word: shield", args.target)
+            end
+            TargetUnit("constrictor")
+            local x, y, z = AI.GetPosition("target")
+            local dist = ternary(AI.IsPaladin(), 4.5, 35)
+            if AI.HasObjectAvoidance() then
+                AI.SetObjectAvoidanceTarget(UnitGUID("target"), dist)
+                self.lastPathTargetSetTime = GetTime()
+            else
+                self:MoveSafelyToSpotWithin(dist, x, y, z, nil, 'attack constrictor tentacle')
+            end
+        end
+    end
+
+    if strcontains(args.spellName, "malady of the mind") and args.target ~= UnitName("player") then
+        if not self.portalToUse and not self.usedDescentPortal then
+            self.maladyTarget = args.target
+            -- if not AI.IsHealer() then
+            print(args.target .. " has been afflicted by malady of the mind, avoiding")
+            local obstacles = self:GetCurrentObstacles()
+            AI.SetObjectAvoidance({
+                guids = obstacles,
+                polygon = yoggFightAreaPolygon,
+                safeDistance = 3
+            })
+            -- end
+        end
+    end
+
+    if strcontains(args.spellName, "brain link") then
+        -- print("brain link applied on "..args.target)
+        self.brainLinkCaster = args.target
+        local allies = AI.GetRaidOrPartyMemberUnits()
+        for i, a in ipairs(allies) do
+            if UnitGUID(a) ~= UnitGUID(args.target) then
+                local info = AI.GetObjectInfo(a)
+                if info:HasAura("brain link") then
+                    print(args.target .. " is brain linked to " .. UnitName(a))
+                    self.brainLinkVictim = UnitName(a)
+                    break
+                end
+            end
+        end
     end
 end
 
 function yoggSaron:SPELL_AURA_REMOVED(args)
-    if args.spellName == "Squeeze" and not self:isDescentTeam() and self.portalsOpen then
-        local wells = AI.FindNearbyObjectsByName("sanity well")
-        if #wells > 0 and not AI.HasMoveToPosition() and AI.GetDistanceTo(wells[1].x, wells[1].y) > 3 then
-            print("constrictors killed, resuming moving back to sanity well")
-            AI.SetMoveToPosition(wells[1].x, wells[1].y)
+    if args.spellName == "Squeeze" then
+        if args.target == UnitName("player") then
+            self.squeezeExpireTime = GetTime()
+        end
+        self.squeezeTarget = nil
+    end
+
+    if args.spellName:lower() == "brain link" then
+        self.brainLinkCaster = nil
+        self.brainLinkVictim = nil
+        -- AI.ClearObjectAvoidanceTarget()
+    end
+
+    if args.spellName:lower() == "malady of the mind" then
+        self.maladyTarget = nil
+        if not self.portalToUse and not self.usedDescentPortal then
+            local obstacles = self:GetCurrentObstacles()
+            if #obstacles == 0 and AI.HasObjectAvoidance() then
+                AI.ClearObjectAvoidance()
+            elseif not AI.HasObjectAvoidance() then
+                AI.SetObjectAvoidance({
+                    guids = obstacles,
+                    polygon = yoggFightAreaPolygon,
+                    safeDistance = 3
+                })
+            end
+            if args.target == UnitName("player") then
+                local healer = AI.GetPrimaryHealer()
+                local closestAlly, dist = AI.GetClosestAlly(function(ally)
+                    return UnitName(ally) ~= UnitName(self.descentDps1) and UnitName(ally) ~= UnitName(self.descentDps2)
+                end)
+                local targetToMoveTo = healer
+                if AI.IsHealer() then
+                    targetToMoveTo = closestAlly
+                end
+                local x, y, z = AI.GetPosition(targetToMoveTo)
+                if AI.HasObjectAvoidance() then
+                    AI.SetObjectAvoidanceTarget(UnitGUID(targetToMoveTo), 15)
+                    self.lastPathTargetSetTime = GetTime()
+                else
+                    AI.RegisterPendingAction(function(self)
+                        return self:MoveSafelyToSpotWithin(15, x, y, z, nil, "moving closer to ally")
+                    end)
+                end
+            end
         end
     end
 end
 
 function yoggSaron:SPELL_CAST_SUCCESS(args)
-    if args.spellName:lower() == "induce madness" then
-        AI.toggleAutoDps(false)
-    end
+    local time = GetTime()
     if args.spellName:lower() == "lunatic gaze" and not self.usedDescentPortal then
         if UnitName("focus") ~= "Yogg-Saron" then
             TargetUnit("yogg")
             FocusUnit("target")
         end
-        local facing = AI.GetFacingForPosition(AI.GetPosition("focus")) + math.pi
-        AI.SetFacing(facing)
-        print("lunatic Gaze, facing away from boss")
+        if AI.GetDebuffCount("sanity") <= 15 or AI.GetUnitHealthPct() < 50 then
+            local facing = AI.GetFacingForPosition(AI.GetPosition("focus")) + math.pi
+            AI.SetFacing(facing)
+        end
+        self.nextLunaticGazeTime = time + 12
+        -- print("lunatic gaze now:"..time.." Next  Cast:"..self.nextLunaticGazeTime)
+    end
+end
+
+function yoggSaron:SPELL_DAMAGE(args)
+    if args.spellName == "Brain Link" then
+        self.brainLinkCaster = args.caster
+        if args.caster ~= args.target then
+            self.brainLinkVictim = args.target
+        end
+        -- print("brainlink caster:" .. args.caster .. " target:" .. args.target)
+    end
+
+    if args.spellName == "Erupt" then
+        -- print("constrictor erupted on " .. args.target)
+        if not self.portalToUse and not self.usedDescentPortal then
+            TargetUnit("constrictor")
+            local x, y, z = AI.GetPosition("target")
+            local dist = ternary(AI.IsPaladin(), 4.5, 35)
+            if AI.HasObjectAvoidance() then
+                AI.SetObjectAvoidanceTarget(UnitGUID("target"), dist)
+                self.lastPathTargetSetTime = GetTime()
+            else
+                self:MoveSafelyToSpotWithin(dist, x, y, z, nil, 'attack constrictor tentacle')
+            end
+        end
     end
 end
 
 AI.RegisterBossModule(yoggSaron)
+
+local algalon = MosDefBossModule:new({
+    name = "Algalon The Observer",
+    creatureId = {32871},
+    onStart = function(self)
+    end,
+    onEnd = function(self)
+    end,
+    onUpdate = function(self)
+    end
+})
+
+function algalon:GetBlackHoles()
+    local bHoles = AI.FindNearbyUnitsByName("black hole")
+    if #bHoles > 0 then
+        return bHoles
+    end
+    return nil
+end
+
+function algalon:GetDarkMatters()
+    local darkMatters = AI.FindNearbyUnitsByName("unleashed dark matter")
+    if #darkMatters > 0 then
+        return darkMatters
+    end
+    return nil
+end
+
+function algalon:SPELL_CAST_START(args)
+    if strcontains(args.spellName, "big bang") then
+        print("Algalon casting big bang")
+
+        if AI.IsPriest() and AI.CanCastSpell("dispersion", "player", true) then
+            AI.RegisterOneShotAction(function()
+                print('tanking big bang with dispersion')
+                AI.MustCastSpell("dispersion")
+            end, 5)
+        elseif not AI.IsTank() then
+            AI.RegisterPendingAction(function(self)
+                if not AI.IsCasting() then
+                    local holes = self:GetBlackHoles()
+                    if #holes > 0 then
+                        print('moving into black hole')
+                        AI.SetMoveTo(holes[1].x, holes[1].y, holes[1].z, 1)
+                    end
+                end
+                return false
+            end)
+        end
+    end
+end
+
+AI.RegisterBossModule(algalon)

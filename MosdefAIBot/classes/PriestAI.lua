@@ -23,7 +23,8 @@ local function upkeepShadowForm()
             return true
         end
 
-        if not AI.IsInCombat() and not AI.HasMyBuff("prayer of shadow protection") and AI.CastSpell("prayer of shadow protection") then
+        if not AI.IsInCombat() and not AI.HasMyBuff("prayer of shadow protection") and
+            AI.CastSpell("prayer of shadow protection") then
             return true
         end
     end
@@ -95,7 +96,7 @@ local function doAutoDps()
 
     -- AI.CastSpell("inner focus")
     if not AI.AUTO_AOE then
-        if AI.GetTargetStrength() >= 2 and not AI.HasMyDebuff("Vampiric Touch", "target") and
+        if AI.GetTargetStrength() > 1 and not AI.HasMyDebuff("Vampiric Touch", "target") and
             AI.CastSpell("Vampiric Touch", "target") then
             return
         end
@@ -104,23 +105,28 @@ local function doAutoDps()
     if AI.CastSpell("mind blast", "target") then
         return
     end
-    if AI.GetUnitHealthPct("player") > 20 and AI.CastSpell("shadow word: death", "target") then
-        return
-    end
 
     if not AI.AUTO_AOE then
-        if AI.GetTargetStrength() >= 2 and not AI.HasMyDebuff("Vampiric Touch", "target") and
-            AI.CastSpell("Vampiric Touch", "target") then
+        if AI.CastSpell("Shadow Word: Death", "target") then
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
 
-        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 and
-            not AI.HasMyDebuff("devouring plague", "target") and AI.CastSpell("devouring plague", "target") then
+        if AI.GetTargetStrength() > 1 and not AI.HasMyDebuff("devouring plague", "target") and
+            AI.CastSpell("devouring plague", "target") then
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
 
-        if AI.GetTargetStrength() >= 3 and AI.GetMyBuffCount("shadow weaving") == 5 then
+        if AI.GetTargetStrength() > 1 and AI.GetMyBuffCount("shadow weaving") == 5 then
             if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
+                -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                --     CastCursorAOESpell(AI.GetPosition("target"))
+                -- end
                 return
             end
 
@@ -128,16 +134,17 @@ local function doAutoDps()
                 local procTier = getProcTier()
                 if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
                     procTierForSwp = procTier
+                    -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                    --     CastCursorAOESpell(AI.GetPosition("target"))
+                    -- end
                     -- AI.SayRaid("SWP under procTier " .. procTier)
                     return
                 end
             end
         end
 
-        if AI.CastSpell("mind flay", "target") then
-            return
-        end
-    elseif AI.CastSpell("mind sear", "target") then
+        AI.CastSpell("mind flay", "target")
+    elseif AI.DoCastSpellChain("target", "shadow word: death", "mind sear") then
         return
     end
 end
@@ -243,10 +250,6 @@ local function doDps(isAoE)
         return
     end
 
-    -- if AI.GetTargetStrength() >= 2 then
-    --     AI.CastSpell("inner focus")
-    -- end
-
     if not isAoE then
         if AI.GetTargetStrength() >= 1 and not AI.HasMyDebuff("Vampiric Touch", "target") and
             AI.CastSpell("Vampiric Touch", "target") then
@@ -258,29 +261,31 @@ local function doDps(isAoE)
         return
     end
 
-    if isAoE and AI.CastSpell("mind sear", "target") then
-        return
+    if isAoE then
+        if AI.DoCastSpellChain("target", "shadow word: death", "mind sear") then
+            return
+        end
     else
         if AI.CastSpell("Shadow Word: Death", "target") then
-            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                CastCursorAOESpell(AI.GetPosition("target"))
-            end
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
 
         if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 and
             not AI.HasMyDebuff("devouring plague", "target") and AI.CastSpell("devouring plague", "target") then
-            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                CastCursorAOESpell(AI.GetPosition("target"))
-            end
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
 
         if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 then
             if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
-                if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                    CastCursorAOESpell(AI.GetPosition("target"))
-                end
+                -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                --     CastCursorAOESpell(AI.GetPosition("target"))
+                -- end
                 return
             end
 
@@ -288,9 +293,9 @@ local function doDps(isAoE)
                 local procTier = getProcTier()
                 if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
                     procTierForSwp = procTier
-                    if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                        CastCursorAOESpell(AI.GetPosition("target"))
-                    end
+                    -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                    --     CastCursorAOESpell(AI.GetPosition("target"))
+                    -- end
                     -- AI.SayRaid("SWP under procTier " .. procTier)
                     return
                 end

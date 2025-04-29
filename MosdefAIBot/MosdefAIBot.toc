@@ -9,6 +9,7 @@ Util.lua
 BaseFunctions.lua
 BotBase.lua
 SpellEffectCalculator.lua
+PathFinding.lua
 classes\ShamanAI.lua
 classes\WarlockAI.lua
 classes\MageAI.lua

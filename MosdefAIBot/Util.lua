@@ -51,10 +51,16 @@ function MaloWUtils_PrintEditable(...)
 end
 
 function MalowUtils_PrintScrollable(text)
-    local myFrame = CreateFrame("Frame", "MyFrame", UIParent)
-    myFrame:SetSize(800, 500)
-    myFrame:SetFrameStrata("DIALOG")
-    myFrame:SetPoint("CENTER", UIParent, "CENTER")
+    local time = GetTime()
+    local myFrame = CreateFrame("Frame", "MyFrame" .. time, UIParent, "UIPanelDialogTemplate")
+    myFrame:SetSize(650, 400)
+    -- myFrame:SetFrameStrata("DIALOG")
+    myFrame:SetPoint("CENTER", UIParent)
+    myFrame:EnableMouse(true)
+    myFrame:SetMovable(true)
+    myFrame:RegisterForDrag("LeftButton");
+    myFrame:SetScript("OnDragStart", myFrame.StartMoving);
+    myFrame:SetScript("OnDragStop", myFrame.StopMovingOrSizing);
     myFrame:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -69,40 +75,34 @@ function MalowUtils_PrintScrollable(text)
         }
     })
 
-    -- Create the close button
-    local closeButton = CreateFrame("Button", "MyFrameCloseButton", myFrame, "GameMenuButtonTemplate")
-    closeButton:SetPoint("TOPRIGHT", myFrame, "TOPRIGHT", -7, -7)
-    closeButton:SetSize(20, 20)
-    closeButton:SetNormalTexture("Interface/Buttons/UI-Panel-CloseButton")
-    closeButton:SetPushedTexture("Interface/Buttons/UI-Panel-CloseButton-Down")
-    closeButton:SetHighlightTexture("Interface/Buttons/UI-Panel-CloseButton-Highlight")
-    closeButton:SetText("X")
-    closeButton:SetScript("OnClick", function()
-        myFrame:Hide()
-    end)
+    local ScrollFrame = CreateFrame("ScrollFrame", "MyScrollFrame" .. time, myFrame, "UIPanelScrollFrameTemplate");
+    ScrollFrame:SetPoint("TOPLEFT", myFrame, "TOPLEFT", 20, -30);
+    ScrollFrame:SetPoint("BOTTOMRIGHT", myFrame, "BOTTOMRIGHT", -20, 20);
 
     -- Create the edit box
-    local editBox = CreateFrame("EditBox", "MyFrameEditBox", myFrame)
-    editBox:SetPoint("TOPLEFT", myFrame, 20, -10)
-    editBox:SetWidth(700)
+    local editBox = CreateFrame("EditBox", "MyFrameEditBox" .. time, ScrollFrame)
+    editBox:SetPoint("TOPLEFT", ScrollFrame, 5, -5)
+    editBox:SetPoint("BOTTOMRIGHT", ScrollFrame, -5, 5)
+    editBox:SetWidth(ScrollFrame:GetSize())
     editBox:SetText(text or "Lorem Ipsom");
     editBox:SetFontObject("GameFontNormal")
     editBox:SetMultiLine(true)
     editBox:SetAutoFocus(false)
-
+    ScrollFrame:SetScrollChild(editBox);
     -- Show the frame
     myFrame:Show()
-    myFrame:EnableMouse(true)
-    myFrame:SetMovable(true)
-end
+    myFrame:SetScript("OnLeave", function()
+        editBox:ClearFocus()
+    end)
 
+end
 
 function MalowUtils_ShowNearbyObjects(distanceFilter)
     local time = GetTime()
-    
-    local f = CreateFrame("Frame", "MyFrame"..time, UIParent, "UIPanelDialogTemplate")
-    f:SetSize(650, 400)
-    --f:SetFrameStrata("DIALOG")
+
+    local f = CreateFrame("Frame", "MyFrame" .. time, UIParent, "UIPanelDialogTemplate")
+    f:SetSize(800, 400)
+    -- f:SetFrameStrata("DIALOG")
     f:SetPoint("CENTER", UIParent)
     f:EnableMouse(true)
     f:SetMovable(true)
@@ -126,17 +126,16 @@ function MalowUtils_ShowNearbyObjects(distanceFilter)
     })
     f.title:SetText("Nearby Objects")
 
-    
-    local ScrollFrame = CreateFrame("ScrollFrame", "MyScrollFrame"..time, f, "UIPanelScrollFrameTemplate");
+    local ScrollFrame = CreateFrame("ScrollFrame", "MyScrollFrame" .. time, f, "UIPanelScrollFrameTemplate");
     ScrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -30);
-    ScrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 20);      
-    
+    ScrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 20);
+
     -- Create the edit box
-    local editBox = CreateFrame("EditBox", "MyFrameEditBox"..time, ScrollFrame)
+    local editBox = CreateFrame("EditBox", "MyFrameEditBox" .. time, ScrollFrame)
     editBox:SetPoint("TOPLEFT", ScrollFrame, 5, -5)
     editBox:SetPoint("BOTTOMRIGHT", ScrollFrame, -5, 5)
     editBox:SetWidth(ScrollFrame:GetSize())
-    editBox:SetText(text or "Lorem Ipsom");
+    editBox:SetText("Lorem Ipsom");
     editBox:SetFontObject("GameFontNormal")
     editBox:SetMultiLine(true)
     editBox:SetAutoFocus(false)
@@ -148,23 +147,32 @@ function MalowUtils_ShowNearbyObjects(distanceFilter)
     f:SetScript("OnUpdate", function(self, elapsed)
         total = total + elapsed
         if total >= 1 then
-            local nearbyObjects = GetNearbyObjects()
+            local nearbyObjects = AI.GetNearbyObjects()
             local s = ""
-            for i, o in ipairs(nearbyObjects) do                                
-                if not distanceFilter or AI.GetDistanceTo(o.x,o.y) <= distanceFilter and not strcontains(o.name, "dark rune") and not strcontains(o.name, "invisible") then
-                    -- s = s .. "name: " .. strpad(o.name, 50) .. "\n"
-                    s = s .. "name: " .. strpad(o.name, 30) .. " x:" .. o.x .. " y:" .. o.y .. " z:" .. o.z .. "\n"
+            for i, o in ipairs(nearbyObjects) do
+                if not distanceFilter or AI.GetDistanceTo(o.x, o.y) <= distanceFilter then
+                    if o.name and not strcontains(o.name, "dark rune") and not strcontains(o.name, "invisible") then
+                        s =
+                            s .. "t:"..o.objectType .. " id:" .. o.objectEntry .. " n: " .. strpad(o.name, 30) .. " x:" .. o.x .. " y:" ..
+                                o.y .. " z:" .. o.z .. "\n"
+                    end
+                    if o.objectType == 6 then
+                        s = s .. "spellName:" .. o.spellName .. " spellId " .. o.spellId .. " r " .. o.radius ..
+                                " bytes:" .. o.bytes .. " caster:" .. o.casterGUID .. "\n"
+                    end
                 end
-                
+
             end
             editBox:SetText(s)
             total = 0
         end
     end)
 
-    f:SetScript("OnLeave", function() editBox:ClearFocus() end)
+    f:SetScript("OnLeave", function()
+        editBox:ClearFocus()
+    end)
     f:Show()
-    
+
 end
 
 function MaloWUtils_SplitStringOnSpace(s)
@@ -279,4 +287,34 @@ end
 
 function strstartswith(fs, substr)
     return MaloWUtils_StrStartsWith(fs, substr)
+end
+
+function ternary(cond, left, right)
+    if cond then
+        return left
+    else
+        return right
+    end
+end
+
+function splitstr(text, pattern)
+    local t = {}
+    for w in string.gmatch(text, "([^" .. pattern .. "]+)") do
+        table.insert(t, w)
+    end
+    return t
+end
+
+function normalizeAngle(angle)
+    local pi2 = math.pi * 2
+    -- if angle > pi2 then
+    --     angle = angle - pi2
+    -- elseif angle < 0.0 then
+    --     angle = angle + pi2
+    -- end
+    local nAngle = math.fmod(angle, pi2)
+    if nAngle < 0.0 then
+        nAngle = nAngle + pi2
+    end
+    return angle
 end

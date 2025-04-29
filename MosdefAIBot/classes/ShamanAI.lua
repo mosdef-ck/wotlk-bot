@@ -1,9 +1,8 @@
 local isAIEnabled = false
 local primaryTank = nil
 local primaryManaPot = "crazy alchemist's potion"
-local panicPct = 20
-local manaPctThreshold = 20
-local manaTideTreshold = 70
+local panicPct = 35
+local manaPctThreshold = 10
 
 local function ApplyWeaponEnchants(mainHandSpell, offHandSpell)
     if AI.IsInDungeonOrRaid() then
@@ -65,6 +64,25 @@ local function autoPurge()
     return false
 end
 
+local function doAutoDpsRestoration()
+    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+        AI.HasBuff("drink") or AI.IsMoving() then
+        return
+    end
+
+    if not AI.do_PriorityTarget() then
+        AssistUnit(primaryTank)
+    end
+
+    if not AI.IsValidOffensiveUnit("target") then
+        return
+    end
+
+    if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS() then
+        AI.DoCastSpellChain("target", "flame shock", "lava burst", "lightning bolt")        
+    end
+end
+
 local function doOnUpdate_RestorationShaman()
 
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
@@ -78,7 +96,7 @@ local function doOnUpdate_RestorationShaman()
     local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("chain heal")
     local tank = AI.GetPrimaryTank()
 
-    if AI.IsUnitValidFriendlyTarget(tank, "chain heal") then
+    if AI.IsUnitValidFriendlyTarget(tank, "healing wave") and AI.IsInCombat() then
         local missingHealth = AI.GetMissingHealth(tank)
         local tankHpPct = AI.GetUnitHealthPct(tank)
         -- before we heal the tank, if we have a more crucial target to heal instead, let's heal them before we heal the tank(provided the tank is healthy enough)
@@ -150,7 +168,7 @@ local function doOnUpdate_RestorationShaman()
 
     if AI.USE_MANA_REGEN and AI.IsInCombat() then
         -- mana pot and mana ride
-        if AI.GetUnitPowerPct("player") <= manaTideTreshold and AI.GetTargetStrength() > 3 and
+        if AI.GetUnitPowerPct("player") <= AI.Config.manaTideThreshold and AI.GetTargetStrength() > 3 and
             AI.CastSpell("mana tide totem") then
             return
         end
@@ -173,6 +191,10 @@ local function doOnUpdate_RestorationShaman()
     -- keep earthliving weapon up
     if ApplyWeaponEnchants("Earthliving weapon") then
         return
+    end
+
+    if AI.AUTO_DPS then
+        doAutoDpsRestoration()
     end
 end
 
@@ -314,6 +336,7 @@ function AI.doOnLoad_Shaman()
         -- set the callback to be detected by AIBotBase and automatically invoked
         if spec == "Restoration" then
             AI.doOnUpdate_Shaman = doOnUpdate_RestorationShaman
+            AI.doAutoDps = doAutoDpsRestoration
         elseif spec == "Elemental" then
             AI.doOnUpdate_Shaman = doOnUpdate_ElementalShaman
             AI.DO_DPS = doDpsElemental

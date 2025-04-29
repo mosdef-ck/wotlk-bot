@@ -34,7 +34,7 @@ local noth = MosDefBossModule:new({
             AI.do_PriorityTarget = oldPriorityTargetFn
         end
         AI.ALLOW_AUTO_REFACE = true
-        AI.PRE_DO_DPS =nil
+        AI.PRE_DO_DPS = nil
     end,
     onUpdate = function(self)
         if AI.IsTank() then
@@ -58,7 +58,7 @@ local noth = MosDefBossModule:new({
                 (AI.CleanseRaid("Cleanse", "Poison", "Disease", "Magic") or AI.CleanseRaid("Remove Curse", "Curse")) then
                 return
             end
-        end        
+        end
         return false
     end,
     lastBlinkTime = 0
@@ -194,12 +194,22 @@ AI.RegisterBossModule(faerlina)
 ---- Grobbulus
 local grobbulusBossMod = MosDefBossModule:new({
     name = "Grobbulus",
-    centerX = 0.61136817932129,
-    centerY = 0.45411524176598,
-    onStart = function()
+    creatureId = {15931},    
+    startx = nil,
+    starty = nil,
+    startz = nil,
+    onStart = function(self)
         if AI.IsHealer() then
             AI.AUTO_CLEANSE = false
         end
+        if not strcontains(UnitName("focus"), "grobbulus") then
+            TargetUnit("Grobbulus")
+            FocusUnit("target")
+        end
+        if AI.IsWarlock() and not AI.HasBuff("demonic circle: summon") then
+            AI.MustCastSpell("demonic circle: summon")
+        end
+        self.startx, self.starty, self.startz = AI.GetPosition()
     end,
     onStop = function()
         if AI.IsHealer() then
@@ -211,11 +221,13 @@ local grobbulusBossMod = MosDefBossModule:new({
 })
 
 function grobbulusBossMod:SPELL_AURA_APPLIED(args)
-    if (args.spellName:lower() == "mutating injection" or args.spellId == 28169) and args.target:lower() ==
-        UnitName("player"):lower() then
-        if not AI.IsHealer() then
-            local tX, tY = AI.GetPosition(AI.Config.tank)
-            AI.SetMoveToPosition(tX, tY, 0.006)
+    if (args.spellName:lower() == "mutating injection" or args.spellId == 28169) then
+        if args.target:lower() == UnitName("player"):lower() then
+            local x, y, z = AI.GetPosition(AI.GetPrimaryTank())
+            AI.SetMoveTo(x, y, z)
+        end
+        if AI.IsPriest() then
+            AI.MustCastSpell("power word: shield", args.target)
         end
     end
 end
@@ -223,11 +235,13 @@ end
 function grobbulusBossMod:SPELL_AURA_REMOVED(args)
     if (args.spellName:lower() == "mutating injection" or args.spellId == 28169) and args.target:lower() ==
         UnitName("player"):lower() then
-        if not AI.IsHealer() then
-            AI.SetMoveToPosition(self.centerX, self.centerY)
-            if AI.IsWarlock() then
-                AI.CastSpell("demonic circle: teleport")
-            end
+        print("mutation expired")
+        AI.SetMoveTo(self.startx, self.starty, self.startz)
+        if AI.IsWarlock() then
+            AI.CastSpell("demonic circle: teleport")
+        end
+        if AI.IsMage() then
+            AI.CastSpell("blink")
         end
     end
 end
@@ -1018,15 +1032,15 @@ local kelthuzad = MosDefBossModule:new({
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
                 TargetUnit("Soul Weaver")
-                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 1) then
+                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 40 then
                     return true
                 end
                 TargetUnit("soldier of the frozen wastes")
-                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 1) then
+                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 40 then
                     return true
                 end
                 TargetUnit("Unstoppable Abomination")
-                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 1) then
+                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 40 then
                     return true
                 end
             end
@@ -1135,7 +1149,7 @@ function kelthuzad:SPELL_CAST_START(args)
                     if not AI.IsCasting("focus") then
                         return true
                     end
-                
+
                     if AI.CanCastSpell("wind shear", "focus") then
                         AI.StopCasting()
                     end

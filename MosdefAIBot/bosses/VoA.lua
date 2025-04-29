@@ -2,7 +2,9 @@ local rad45 = 0.785398
 local rad90 = 1.570796
 local rad22_5 = 0.3926991
 local rad10 = 0.1745329
-local pi2 = math.pi *2
+local rad5 = rad10 / 2
+local rad025 = rad5 / 2
+local pi2 = math.pi * 2
 local oldPriorityTargetFn = nil
 
 local stoneWarder = MosDefBossModule:new({
@@ -78,7 +80,7 @@ local emalon = MosDefBossModule:new({
     name = "Emalon the Storm Watcher",
     creatureId = {33993},
     onStart = function(self)
-        AI.DISABLE_DRAIN = true
+        -- AI.DISABLE_DRAIN = true
         if UnitName("target") ~= "Emalon the Storm Watcher" then
             TargetUnit("emalon")
         end
@@ -108,7 +110,6 @@ local emalon = MosDefBossModule:new({
         end
     end,
     onEnd = function(self)
-        AI.DISABLE_DRAIN = false
     end,
     onUpdate = function(self)
         if AI.IsPriest() then
@@ -118,7 +119,6 @@ local emalon = MosDefBossModule:new({
             end
         end
     end,
-    cinderSpots = {}
 })
 
 function emalon:SPELL_CAST_START(args)
@@ -144,18 +144,17 @@ local koralon = MosDefBossModule:new({
     name = "Koralon the Flame Watcher",
     creatureId = {35013},
     onStart = function(self)
+        AI.Config.startHealOverrideThreshold = 95
         if not AI.IsValidOffensiveUnit() then
             TargetUnit("koralon")
         end
         local tX, tY = AI.GetPosition(AI.GetPrimaryTank())
-        local r = 13
+        local r = 10
         local theta = AI.CalcFacing(tX, tY, AI.GetPosition("player"))
         if AI.IsTank() then
-            AI.RegisterPendingAction(function()
-                return AI.CastSpell("hand of salvation", AI.GetPrimaryHealer())
-            end, null)
+            AI.MustCastSpell("hand of salvation", AI.GetPrimaryHealer())
         end
-        if AI.IsHealer() or AI.IsDps() then
+        if not AI.IsTank() then
             AI.RegisterPendingAction(function()
                 if AI.IsHealer() then
                     AI.SetMoveTo(tX + r * math.cos(theta), tY + r * math.sin(theta))
@@ -179,18 +178,18 @@ local koralon = MosDefBossModule:new({
     onStop = function(self)
     end,
     onUpdate = function(self)
-        for i = #self.cinderSpots, 1, -1 do
-            if GetTime() > self.cinderSpots[i].time + 20 then
-                table.remove(self.cinderSpots, i)
-            end
+        if AI.HasDebuff("flaming cinder") and not AI.HasMoveTo() and not AI.IsTank() then
+            local p = self:findSafeSpot()
+            --print("safe spot "..table2str(p))
+            if p then
+                AI.SetMoveTo(p.x, p.y)
+            end 
         end
     end,
-    cinderSpots = {},
-    isSpotSafeFromOtherCinders = function(x, y, cinderlist)
-        local pX, pY = AI.GetPosition("player")
-        for i, o in ipairs(cinderlist) do
-            if AI.CalcDistance(x,y, o.x, o.y) <= 8 then
-                return false                            
+    isSpotSafeFromCinders = function(x, y, cinderlist)
+        for i, o in ipairs(cinderlist) do            
+            if AI.CalcDistance(x, y, o.x, o.y) <= (o.radius *2) then --add 2.0 to the radius to account for weird aoes that still hit you despite being the radius away
+                return false
             end
         end
         return true
@@ -199,51 +198,59 @@ local koralon = MosDefBossModule:new({
         local dist = 100
         local point = nil
         for i, d in ipairs(pointList) do
-            if AI.GetDistanceTo(d.x, d.y) < dist then
+            if AI.GetDistanceTo(d.x, d.y) <= dist then
                 point = d
                 dist = AI.GetDistanceTo(d.x, d.y)
             end
         end
         return point
+    end,
+    findSafeSpot = function(self)
+        local tankX, tankY = AI.GetPosition(AI.GetPrimaryTank())
+        local cinders = AI.FindNearbyDynamicObjects("flaming cinder")
+        --print(table2str(cinders))
+        local x, y, z = AI.GetPosition("player")
+        local theta = AI.CalcFacing(tankX, tankY, x, y)
+        local points = {}        
+        for angle = theta - math.pi, theta + math.pi, rad5 do
+            local nAngle = normalizeAngle(angle)
+            for r = 1, 12, 1 do
+                local nX, nY = tankX + r * math.cos(nAngle), tankY + r * math.sin(nAngle)
+                if self.isSpotSafeFromCinders(nX, nY, cinders) then
+                    table.insert(points, {
+                        x = nX,
+                        y = nY,
+                        z = z
+                    })
+                end
+            end
+        end
+        if #points > 0 then
+            return self.findClosestPointInList(points)
+        end
+        return nil
     end
 })
 
 function koralon:SPELL_AURA_APPLIED(args)
-    if args.spellName == "Flaming Cinder" then
-        local tX, tY = AI.GetPosition(args.target)
-        table.insert(self.cinderSpots, {
-            x = tX,
-            y = tY,
-            time = GetTime()
-        })
+    if strcontains(args.spellName, "flaming cinder") and AI.IsPriest() then
+    end
+end
 
-        if args.target == UnitName("player") and not AI.HasMoveTo() and not AI.IsTank() then
-            local tX, tY = AI.GetPosition(AI.GetPrimaryTank())
-            local x, y = AI.GetPosition("player")
-            local theta = AI.CalcFacing(tX, tY, x, y)
-            local points = {}
-            for angle = theta, theta + pi2, (rad10/2) do
-                if angle > pi2 then
-                    angle = angle - pi2
-                elseif angle < 0 then
-                    angle = angle + pi2
-                end
-                for r = 3, 13, 1 do
-                    local nX, nY = tX + r * math.cos(angle), tY + r * math.sin(angle)
-                    if self.isSpotSafeFromOtherCinders(nX, nY, self.cinderSpots) then
-                        table.insert(points, {
-                            x = nX,
-                            y = nY
-                        })
-                    end
-                end
-            end
-            if #points > 0 then
-                local p = self.findClosestPointInList(points)
-                AI.SetMoveTo(p.x, p.y)
+function koralon:SPELL_DAMAGE(args)
+    if args.spellName:lower() == "meteor fists" then
+        if AI.IsDps() and not AI.HasMoveTo() then
+            local x, y = AI.GetPosition(AI.GetPrimaryTank())
+            if AI.GetDistanceTo(x, y) > 12 then
+                local p = self:findSafeSpot()
+                if p then
+                    AI.SetMoveTo(p.x, p.y)
+                end                                
             end
         end
-        
+        if AI.IsPriest() and UnitName(args.target) ~= UnitName(AI.GetPrimaryTank()) then
+            AI.MustCastSpell("power word: shield", args.target)
+        end
     end
 end
 

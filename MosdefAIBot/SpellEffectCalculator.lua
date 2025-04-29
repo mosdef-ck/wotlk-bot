@@ -164,12 +164,12 @@ mb_spellEffectBaseValues["regrowth"][10] = 1491
 mb_spellEffectBaseValues["regrowth"][11] = 2099
 mb_spellEffectBaseValues["regrowth"][12] = 2744
 
---lifebloom
+-- lifebloom
 mb_spellEffectBaseValues["lifebloom"] = {}
 mb_spellEffectBaseValues["lifebloom"].coefficient = 0.3857
 mb_spellEffectBaseValues["lifebloom"][3] = 500
 
---wild growth
+-- wild growth
 mb_spellEffectBaseValues["wild growth"] = {}
 mb_spellEffectBaseValues["wild growth"].coefficient = 0.1382
 mb_spellEffectBaseValues["wild growth"][1] = 770
@@ -182,7 +182,8 @@ function AI.GetSpellEffect(spell)
     local spellRank = tonumber(string.sub(rank, 5))
     local spellValues = mb_spellEffectBaseValues[spell]
     if spellValues == nil or spellValues[spellRank] == nil then
-        AI.SayRaid(spell .. "(Rank " .. spellRank .. ") is not supported in SpellEffectCalculator, please add it in SpellEffectCalculator.lua at the top.")
+        AI.SayRaid(spell .. "(Rank " .. spellRank ..
+                       ") is not supported in SpellEffectCalculator, please add it in SpellEffectCalculator.lua at the top.")
         return nil
     end
     local baseValue = spellValues[spellRank]
@@ -199,6 +200,9 @@ function AI.GetSpellEffect(spell)
     end
     if AI.IsDruid() and AI.GetMySpecName() == "Restoration" and spell:lower() == "nourish" then
         classModifier = 1.20
+    end
+    if AI.HasBuff("resilence of nature") then
+        classModifier = classModifier + 0.20 -- an additional 20% from resilience of nature
     end
     local spellEffect = (baseValue + coefficient * spellPower) * 1.06 * classModifier -- Count on having Improved Devotion Aura, or Tree Form on the raid
     return spellEffect

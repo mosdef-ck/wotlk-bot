@@ -79,8 +79,17 @@ function AI.SayWhisper(msg, player)
     SendChatMessage(msg, "WHISPER", nil, player)
 end
 
-function AI.SendAddonMessage(cmd, params)
-    SendAddonMessage(AI.CHAT_PREFIX, cmd .. "|" .. tostring(params or ""), "RAID")
+function AI.SendAddonMessage(cmd, ...)
+    local argsStr = ""
+    local acount = select('#', ...)
+    for i = 1, acount, 1 do
+        if i < acount then
+            argsStr = argsStr .. tostring(select(i, ...)) .. ','
+        else
+            argsStr = argsStr .. tostring(select(i, ...))
+        end
+    end
+    SendAddonMessage(AI.CHAT_PREFIX, cmd .. "|" .. argsStr, "RAID")
 end
 
 function AI.IsCasting(unit)
@@ -235,7 +244,7 @@ function AI.HasDebuff(spell, unit)
 end
 
 function AI.HasMyDebuff(spell, unit)
-    return AI.GetMyDebuffDuration(spell, unit or "player") > 0
+    return AI.GetMyDebuffDuration(spell, unit or "target") > 0
 end
 
 function AI.GetBuffDuration(spell, unit)
@@ -449,7 +458,7 @@ end
 AI.UnitHasDebuffOfType = UnitHasDebuffOfType
 
 function AI.CleanseSelf(spell, ...)
-    if UnitHasDebuffOfType("player", ...) and AI.IsUnitValidFriendlyTarget("player", spell) then
+    if UnitHasDebuffOfType("player", ...) then
         return AI.CastSpell(spell, "player")
     end
     return false
@@ -540,14 +549,14 @@ function AI.StopMoving()
 end
 
 function AI.CanInterrupt()
-    if not AI.CanCast() or UnitIsDeadOrGhost("player") or not AI.IsValidOffensiveUnit("target") then
+    if UnitIsDeadOrGhost("player") or not AI.IsValidOffensiveUnit("target") then
         return false
     end
     local spell, _, _, _, _, endTime, _, _, notInterruptible = UnitCastingInfo("target")
     if spell == nil then
         spell, _, _, _, _, _, _, notInterruptible = UnitChannelInfo("target")
     end
-    if spell == nil or notInterruptible then
+    if spell == nil then
         return false
     end
     return true
@@ -794,7 +803,7 @@ end
 function AI.IsFacingTowards(x, y)
     local desiredFacing = AI.GetFacingForPosition(x, y)
     local facing = GetPlayerFacing()
-    return math.abs(desiredFacing - facing) <= 0.05
+    return math.abs(desiredFacing - facing) <= 0.1745329
 end
 
 function AI.IsPointWithinCone(x, y, x2, y2, theta, coneAngleRads)
@@ -829,6 +838,10 @@ end
 
 function AI.IsMoving()
     return GetUnitSpeed("player") ~= 0
+end
+
+function AI.GetSpeed(unit)
+    return GetUnitSpeed(unit or "player")
 end
 
 function AI.GetUnitCreatureId(unit)
@@ -949,32 +962,40 @@ local function adornObject(obj)
         0x00800000, 0x01000000
     if obj ~= nil and type(obj.unitFlags) == "number" then
         obj.isStunned = bit.band(obj.unitFlags, stunnedFlag) ~= 0
+        obj.stunned = obj.isStunned
         obj.isPacified = bit.band(obj.unitFlags, pacifiedFlag) ~= 0
+        obj.pacified = obj.isPacified
         obj.isConfused = bit.band(obj.unitFlags, confusedFlag) ~= 0
+        obj.confused = obj.isConfused
         obj.isFleeing = bit.band(obj.unitFlags, fleeingFlag) ~= 0
+        obj.fleeing = obj.isFleeing
         obj.isPossessed = bit.band(obj.unitFlags, possessedFlag) ~= 0
+        obj.possessed = obj.isPossessed
     end
     if obj ~= nil and type(obj.health) == "number" then
         obj.isDead = obj.health == 0
+        obj.dead = obj.isDead
     end
 
-    obj.HasAura = function(self, spell)
-        local auras = self:auras()
-        for i, a in ipairs(auras) do
-            if type(spell) == "number" and a.spellId == spell then
-                return true
+    if obj.objectType == AI.ObjectType.Unit or obj.objectType == AI.ObjectType.Player then
+        obj.HasAura = function(self, spell)
+            local auras = self:auras()
+            for i, a in ipairs(auras) do
+                if type(spell) == "number" and a.spellId == spell then
+                    return true
+                end
+                if type(spell) == "string" and spell:lower() == a.name:lower() then
+                    return true
+                end
             end
-            if type(spell) == "string" and spell:lower() == a.name:lower() then
-                return true
-            end
+            return false
         end
-        return false
     end
     return obj
 end
 
-function AI.GetNearbyObjects(range)
-    local objs = GetNearbyObjects(range)
+function AI.GetNearbyObjects(typeFilter)
+    local objs = GetNearbyObjects(typeFilter or nil)
     for i, o in ipairs(objs) do
         adornObject(o)
         o.distance = AI.GetDistanceTo(o.x, o.y)
@@ -985,15 +1006,45 @@ function AI.GetNearbyObjects(range)
     return objs
 end
 
-function AI.FindNearbyObjectsByName(name)
-    local objs = AI.GetNearbyObjects(200)
+function AI.FindNearbyObjectsOfTypeAndName(typeFilter, ...)
+    local objs = AI.GetNearbyObjects(typeFilter)
     local result = {}
+    local count = select('#', ...)
+    local hasFilter = count > 0
     for i, o in ipairs(objs) do
-        if strcontains(o.name:lower(), name:lower()) then
+        if hasFilter then 
+            for i = 1, select('#', ...), 1 do
+                local name = select(i, ...)
+                if (o.name and strcontains(o.name, name) ) or (o.spellName and strcontains(o.spellName, name) ) then
+                    table.insert(result, o)
+                end
+            end
+        else
             table.insert(result, o)
         end
     end
     return result
+end
+
+function AI.FindNearbyUnitsByName(...)
+    local objs = AI.GetNearbyObjects(AI.ObjectTypeFlag.Units)
+    local result = {}
+    for i, o in ipairs(objs) do
+        for i = 1, select('#', ...), 1 do
+            local name = select(i, ...)
+            if o.name and strcontains(o.name, name) then
+                table.insert(result, o)
+            end
+        end
+    end
+    return result
+end
+
+function AI.FindNearbyDynamicObjects(...)
+    return AI.FindNearbyObjectsOfTypeAndName(AI.ObjectTypeFlag.DynamicObject, ...)
+end
+function AI.FindNearbyGameObjects(...)
+    return AI.FindNearbyObjectsOfTypeAndName(AI.ObjectTypeFlag.Gameobject, ...)
 end
 
 function AI.FindUnitsWithinXOf(unit, r)
@@ -1001,10 +1052,10 @@ function AI.FindUnitsWithinXOf(unit, r)
     if type(unitName) ~= "string" then
         return {}
     end
-    local unitInQuestion = AI.FindNearbyObjectsByName(unitName)
+    local unitInQuestion = AI.FindNearbyUnitsByName(unitName)
     local result = {}
     if #unitInQuestion > 0 then
-        local nearbyObjs = AI.GetNearbyObjects(200)
+        local nearbyObjs = AI.GetNearbyObjects(AI.ObjectTypeFlag.Units)
         for i, o in ipairs(nearbyObjs) do
             if o.guid ~= unitInQuestion[1].guid and AI.CalcDistance(o.x, o.y, unitInQuestion[1].x, unitInQuestion[1].y) <=
                 r then
@@ -1015,21 +1066,20 @@ function AI.FindUnitsWithinXOf(unit, r)
     return result
 end
 
-function AI.FindYWithinXOf(haystack, needle, r)
-
+function AI.FindUnitYWithinXOf(haystack, needle, r)
     local unitInQuestion
     if type(haystack) == "string" then
         local unitName = UnitName(haystack or "player") or haystack
         if type(unitName) ~= "string" then
             return {}
         end
-        unitInQuestion = AI.FindNearbyObjectsByName(unitName)
+        unitInQuestion = AI.FindNearbyUnitsByName(unitName)
     else
         unitInQuestion = haystack
     end
     local result = {}
     if #unitInQuestion > 0 then
-        local nearbyObjs = AI.FindNearbyObjectsByName(needle)
+        local nearbyObjs = AI.FindNearbyUnitsByName(needle)
         for i, o in ipairs(nearbyObjs) do
             if o.guid ~= unitInQuestion[1].guid and strcontains(o.name:lower(), needle:lower()) and
                 AI.CalcDistance(o.x, o.y, unitInQuestion[1].x, unitInQuestion[1].y) <= r then
@@ -1046,6 +1096,17 @@ function AI.GetObjectInfo(unit)
         adornObject(info)
     end
     return info
+end
+
+function AI.GetObjectInfoByGUID(guid)
+    if type(guid) == "string" then
+        local info = GetObjectInfoFromGUID(guid)
+        if info then
+            adornObject(info)
+            return info
+        end
+    end
+    return nil
 end
 
 function AI.IsPlayerInControl()
@@ -1074,9 +1135,36 @@ function AI.DoTargetChain(...)
     local count = select('#', ...)
     if count > 0 then
         for i = 1, count, 1 do
-            TargetUnit(select(i, ...))
-            if AI.IsValidOffensiveUnit() and strcontains((UnitName("target") or ""):lower(), select(i, ...):lower()) then
+            local name = select(i, ...)
+            if strcontains(UnitName("target"), name) and AI.IsValidOffensiveUnit() then
                 return true
+            end
+            local targets = AI.FindNearbyUnitsByName(select(i, ...))
+            if #targets > 0 then
+                for i, o in ipairs(targets) do
+                    if not o.isDead then
+                        o:Target()
+                        if AI.IsValidOffensiveUnit() then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+function AI.DoCastSpellChain(unit, ...)
+    local count = select('#', ...)
+    if count > 0 then
+        for i = 1, count, 1 do
+            local spell = select(i, ...)
+            if not AI.HasMyDebuff(spell, unit) then
+                local success = AI.CastSpell(spell, unit)
+                if success then
+                    return true
+                end
             end
         end
     end
@@ -1096,17 +1184,59 @@ function AI.GetInterruptSpell()
         spell = "shadow shear"
     elseif AI.IsShaman() then
         spell = "wind shear"
+    elseif AI.IsPaladin() then
+        spell = "Hammmer of Justice"
+    elseif AI.IsWarlock() then
+        spell = "spell lock"
     end
     return spell
 end
 
-function AI.GetClosestAlly()
+function AI.DoInterrupt()
+    local interrupt = AI.GetInterruptSpell()
+    print("DoInterrupt " .. (interrupt or ""))
+    if interrupt and AI.CanInterrupt() then
+        if AI.CanCastSpell(interrupt, "target", true) then
+            print("stopping casting to interrupt")
+            AI.StopCasting()
+        else
+            if not AI.UseInventorySlot(6) then
+                AI.UseContainerItem("saronite bomb")
+            end
+        end
+        if CastCursorAOESpell(AI.GetPosition("target")) or AI.CastSpell(interrupt, "target") then
+            print("interrupted " .. (UnitName("target") or "unk"))
+            return true
+        end
+    end
+    return false
+end
+
+function AI.DoStaggeredInterrupt()
+    local delay = 0
+    if AI.IsShaman() then
+        delay = 0.2
+    elseif AI.IsMage() then
+        delay = 0.3
+    elseif AI.IsWarlock() then
+        delay = 0.5
+    end
+    local interrupt = AI.GetInterruptSpell()
+    -- print("staggered interrupt "..(interrupt or ""))
+    if interrupt then
+        AI.RegisterOneShotAction(function()
+            return AI.DoInterrupt()
+        end, delay, "INTERRUPT_TARGET")
+    end
+end
+
+function AI.GetClosestAlly(filter)
     local allies = AI.GetRaidOrPartyMemberUnits()
     local spots = {}
     local closestAlly = nil
     local distToAlly = 200
     for i, ally in ipairs(allies) do
-        if UnitGUID(ally) ~= UnitGUID("player") then
+        if UnitGUID(ally) ~= UnitGUID("player") and (not filter or filter(ally) )then
             local dist = AI.GetDistanceToUnit(ally)
             if dist <= distToAlly then
                 distToAlly = dist

@@ -14,6 +14,8 @@ MosDefBossModule = {
             self.events = {}
         end
         table.insert(self.events, evt)
+    end,
+    ON_ADDON_MESSAGE = function(self)
     end
 }
 
@@ -349,7 +351,7 @@ function sartharion:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
         print("vesperon disciple appears")
         self.portalOpen = true
         if AI.IsDps() then
-            local portal = AI.FindNearbyObjectsByName("twilight portal")
+            local portal = AI.FindNearbyUnitsByName("twilight portal")
             if #portal > 0 then
                 if portal[1].distance > 3 then
                     AI.SetMoveTo(portal[1].x, portal[1].y, 0.5, function()
@@ -368,7 +370,7 @@ function sartharion:CHAT_MSG_MONSTER_EMOTE(s, t)
         print("vesperon disciple appears")
         self.portalOpen = true
         if AI.IsDps() then
-            local portal = AI.FindNearbyObjectsByName("twilight portal")
+            local portal = AI.FindNearbyUnitsByName("twilight portal")
             if #portal > 0 then
                 if portal[1].distance > 3 then
                     AI.SetMoveTo(portal[1].x, portal[1].y, 0.5, function()

@@ -84,9 +84,9 @@ local function doLifeTap()
 
         if isLifeTapping and AI.CastSpell("life tap") then
             if AI.IsInCombat() then
-                if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                    CastCursorAOESpell(AI.GetPosition("target"))
-                end
+                -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                --     CastCursorAOESpell(AI.GetPosition("target"))
+                -- end
             end
             return true
         end
@@ -162,8 +162,8 @@ local function doAutoDpsDestro()
         end
     end
 
-    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and not AI.HasMyDebuff(AI.Config.curseToUse, "target") and
-        AI.CastSpell(AI.Config.curseToUse, "target") then
+    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and
+        not AI.HasMyDebuff(AI.Config.curseToUse, "target") and AI.CastSpell(AI.Config.curseToUse, "target") then
         return
     end
 
@@ -215,8 +215,8 @@ local function doAutoDpsAffliction()
         return
     end
 
-    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and not AI.HasMyDebuff(AI.Config.curseToUse, "target") and
-        AI.CastSpell(AI.Config.curseToUse, "target") then
+    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and
+        not AI.HasMyDebuff(AI.Config.curseToUse, "target") and AI.CastSpell(AI.Config.curseToUse, "target") then
         return
     end
 
@@ -272,7 +272,7 @@ end
 
 local function doBuffs()
     if not AI.IsInCombat() and AI.IsInDungeonOrRaid() and not AI.HasBuff("fel armor") and AI.CastSpell("fel armor") then
-            return true        
+        return true
     end
     return false
 end
@@ -343,8 +343,8 @@ local function doDpsDestro(isAoE)
         return
     end
 
-    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and not AI.HasMyDebuff(AI.Config.curseToUse, "target") and
-        AI.CastSpell(AI.Config.curseToUse, "target") then
+    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and
+        not AI.HasMyDebuff(AI.Config.curseToUse, "target") and AI.CastSpell(AI.Config.curseToUse, "target") then
         return
     end
 
@@ -355,9 +355,9 @@ local function doDpsDestro(isAoE)
 
     if isAoE then
         if AI.GetDistanceToUnit("target") <= 7 and AI.CastSpell("shadowflame") then
-            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                CastCursorAOESpell(AI.GetPosition("target"))
-            end
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
 
@@ -369,9 +369,9 @@ local function doDpsDestro(isAoE)
         -- end
     end
     local sbTravelTime = math.floor(AI.GetDistanceToUnit("target") / 20.0);
-    if GetTime() > sbImpactTime and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <= sbTravelTime and
-        AI.CastSpell("shadow bolt", "target") then
-        sbImpactTime = GetTime() + sbTravelTime + 3; --SB speed is 20
+    if GetTime() > sbImpactTime and AI.GetTargetStrength() >= 3 and AI.GetDebuffDuration("shadow mastery", "target") <=
+        sbTravelTime and AI.CastSpell("shadow bolt", "target") then
+        sbImpactTime = GetTime() + sbTravelTime + 3; -- SB speed is 20
         return
     end
 
@@ -381,9 +381,9 @@ local function doDpsDestro(isAoE)
     end
     if AI.HasDebuff("immolate", "target") and not AI.HasMyBuff("backdraft", "player") and
         AI.CastSpell("Conflagrate", "target") then
-            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                CastCursorAOESpell(AI.GetPosition("target"))
-            end
+        -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+        --     CastCursorAOESpell(AI.GetPosition("target"))
+        -- end
         return
     end
     if AI.CastSpell("chaos bolt", "target") then
@@ -393,20 +393,22 @@ local function doDpsDestro(isAoE)
 end
 
 local function doDpsAffliction(isAoE)
-    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() or
+    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or
         AI.AUTO_DPS then
+        return
+    end
+
+    if not AI.IsValidOffensiveUnit("target") then
         return
     end
 
     PetAttack()
 
-    if AI.GetTargetStrength() >= 2 and UnitChannelInfo("player") == "Drain Soul" and
-        AI.GetMyDebuffDuration("haunt", "target") <= 3 then
-        AI.StopCasting()
-    end
+    local hauntImpactTime = math.floor(AI.GetDistanceToUnit("target") / 20.0)
 
-    if not AI.CanCast() then
-        return
+    if AI.GetTargetStrength() >= 2 and UnitChannelInfo("player") == "Drain Soul" and
+        AI.CanCastSpell("haunt", "target", true) and AI.GetMyDebuffDuration("haunt", "target") <= hauntImpactTime then
+        AI.StopCasting()
     end
 
     if shouldDrainSoul() and AI.GetTargetStrength() < 3 and AI.GetUnitHealthPct("target") <= 10 and
@@ -414,13 +416,13 @@ local function doDpsAffliction(isAoE)
         return
     end
 
-    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and not AI.HasMyDebuff(AI.Config.curseToUse, "target") and
-        AI.CastSpell(AI.Config.curseToUse, "target") then
+    if not AI.DISABLE_WARLOCK_CURSE and AI.GetTargetStrength() >= 3 and
+        not AI.HasMyDebuff(AI.Config.curseToUse, "target") and AI.CastSpell(AI.Config.curseToUse, "target") then
         return
     end
 
     if isAoE then
-        if AI.CastSpell("seed of corruption", "target") then
+        if AI.DoCastSpellChain("target", "Unstable corruption", "seed of corruption") then
             return
         end
         -- if coroutine.resume(SoCFn) then
@@ -428,14 +430,21 @@ local function doDpsAffliction(isAoE)
         -- end
     end
 
-    local hauntImpactTime = math.floor(AI.GetDistanceToUnit("target") / 20.0)
+    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("haunt", "target") <= hauntImpactTime and
+        AI.CastSpell("haunt", "target") then
+        return
+    end
 
-    if AI.GetTargetStrength() >= 2 and AI.HasMyDebuff("shadow mastery", "target") and
-        AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.HasMyDebuff("haunt", "target") then
+    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("unstable affliction", "target") <= 2 and
+        AI.CastSpell("unstable affliction", "target") then
+        return
+    end
+
+    if AI.GetTargetStrength() >= 2 and AI.HasMyDebuff("shadow mastery", "target") then
         if not AI.HasMyDebuff("corruption", "target") and AI.CastSpell("corruption", "target") then
-            if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                CastCursorAOESpell(AI.GetPosition("target"))
-            end
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
             return
         end
 
@@ -443,28 +452,17 @@ local function doDpsAffliction(isAoE)
             local procTier = getProcTier()
             if procTier > 0 and procTier > corruptionProcTier and AI.CastSpell("corruption", "target") then
                 corruptionProcTier = procTier
-                if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                    CastCursorAOESpell(AI.GetPosition("target"))
-                end
+                -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                --     CastCursorAOESpell(AI.GetPosition("target"))
+                -- end
                 -- AI.SayRaid("corruption under procTier " .. procTier)
                 return
             end
         end
     end
 
-    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("haunt", "target") <= hauntImpactTime and
-        AI.CastSpell("haunt", "target") then
-        return
-    end
-
-    if AI.GetTargetStrength() >= 2 and AI.GetMyDebuffDuration("unstable affliction", "target") <= 3 and
-        AI.CastSpell("unstable affliction", "target") then
-        return
-    end
-
-    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 and
-        AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.GetMyDebuffDuration("haunt", "target") > 5 and
-        AI.CastSpell("drain soul", "target") then
+    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 -- and AI.GetDebuffCount("shadow embrace", "target") >= 3 
+    and AI.GetMyDebuffDuration("haunt", "target") > 5 and AI.CastSpell("drain soul", "target") then
         return
     end
 
