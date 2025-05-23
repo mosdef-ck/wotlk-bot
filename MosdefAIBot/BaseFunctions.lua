@@ -88,7 +88,9 @@ function AI.SendAddonMessage(cmd, ...)
         else
             argsStr = argsStr .. tostring(select(i, ...))
         end
-    end
+    end 
+    local command = cmd .. "|" .. argsStr
+    -- print(command)
     SendAddonMessage(AI.CHAT_PREFIX, cmd .. "|" .. argsStr, "RAID")
 end
 
@@ -295,6 +297,11 @@ end
 
 function AI.HasMyBuff(spell, unit)
     return AI.GetMyBuffDuration(spell, unit) > 0
+end
+
+function AI.HasBuffOrDebuff(spell, unit)
+    local nunit = unit or "player"
+    return AI.HasBuff(spell, nunit) or AI.HasDebuff(spell, unit)
 end
 
 function AI.GetTargetStrength()
@@ -940,16 +947,25 @@ function AI.GetPrimaryHealer()
     return nil
 end
 
-function AI.IsDpsPosition(i)
-    local units
-    if i == 1 then
-        units = AI.Config.dps1
-    elseif i == 2 then
-        units = AI.Config.dps2
-    else
-        units = AI.Config.dps3
+function AI.IsDpsPosition(...)
+    local dpsUnits = {}
+    for i = 1, select('#', ...), 1 do
+        local index = select(i, ...)
+        if index == 1 then
+            for i, n in ipairs(AI.Config.dps1) do
+                table.insert(dpsUnits, n)
+            end        
+        elseif index == 2 then
+            for i, n in ipairs(AI.Config.dps2) do
+                table.insert(dpsUnits, n)
+            end
+        elseif index == 3 then
+            for i, n in ipairs(AI.Config.dps3) do
+                table.insert(dpsUnits, n)
+            end
+        end
     end
-    for i, unit in ipairs(units) do
+    for i, unit in ipairs(dpsUnits) do
         if UnitName("player"):lower() == unit:lower() then
             return true
         end
@@ -994,8 +1010,8 @@ local function adornObject(obj)
     return obj
 end
 
-function AI.GetNearbyObjects(typeFilter)
-    local objs = GetNearbyObjects(typeFilter or nil)
+function AI.GetNearbyObjects(typeFilter, ...)
+    local objs = GetNearbyObjects(typeFilter or nil, ...)
     for i, o in ipairs(objs) do
         adornObject(o)
         o.distance = AI.GetDistanceTo(o.x, o.y)
@@ -1007,37 +1023,13 @@ function AI.GetNearbyObjects(typeFilter)
 end
 
 function AI.FindNearbyObjectsOfTypeAndName(typeFilter, ...)
-    local objs = AI.GetNearbyObjects(typeFilter)
-    local result = {}
-    local count = select('#', ...)
-    local hasFilter = count > 0
-    for i, o in ipairs(objs) do
-        if hasFilter then 
-            for i = 1, select('#', ...), 1 do
-                local name = select(i, ...)
-                if (o.name and strcontains(o.name, name) ) or (o.spellName and strcontains(o.spellName, name) ) then
-                    table.insert(result, o)
-                end
-            end
-        else
-            table.insert(result, o)
-        end
-    end
-    return result
+    local objs = AI.GetNearbyObjects(typeFilter, ...)
+    return objs
 end
 
 function AI.FindNearbyUnitsByName(...)
-    local objs = AI.GetNearbyObjects(AI.ObjectTypeFlag.Units)
-    local result = {}
-    for i, o in ipairs(objs) do
-        for i = 1, select('#', ...), 1 do
-            local name = select(i, ...)
-            if o.name and strcontains(o.name, name) then
-                table.insert(result, o)
-            end
-        end
-    end
-    return result
+    local objs = AI.GetNearbyObjects(AI.ObjectTypeFlag.Units, ...)
+    return objs
 end
 
 function AI.FindNearbyDynamicObjects(...)
@@ -1236,7 +1228,7 @@ function AI.GetClosestAlly(filter)
     local closestAlly = nil
     local distToAlly = 200
     for i, ally in ipairs(allies) do
-        if UnitGUID(ally) ~= UnitGUID("player") and (not filter or filter(ally) )then
+        if UnitGUID(ally) ~= UnitGUID("player") and (not filter or filter(ally)) then
             local dist = AI.GetDistanceToUnit(ally)
             if dist <= distToAlly then
                 distToAlly = dist

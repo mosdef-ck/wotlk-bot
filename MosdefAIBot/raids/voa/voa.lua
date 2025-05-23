@@ -9,20 +9,21 @@ local oldPriorityTargetFn = nil
 
 local stoneWarder = MosDefBossModule:new({
     name = "Archavon Warder",
-    creatureId = {32353}
-})
-
-function stoneWarder:SPELL_AURA_APPLIED(args)
-    if not AI.IsTank() and args.target == UnitName("player") and args.spellName:lower() == "rock shower" then
-        for i, unit in ipairs(AI.GetRaidOrPartyMemberUnits()) do
-            if UnitIsPlayer(unit) and not AI.HasDebuff("rock shower", unit) and not AI.IsTanking(unit, "target") then
-                local x, y = AI.GetPosition(unit)
-                AI.SetMoveToPosition(x, y)
-                break
-            end
+    creatureId = {32353},
+    onUpdate = function(self)
+        if AI.HasDebuff("rock shower") then
+            local allies = AI.GetRaidOrPartyMemberUnits()
+            for i,a in ipairs(allies) do
+                if not AI.HasDebuff("rock shower", a) and not AI.HasMoveTo() then
+                    local ax,ay = AI.GetPosition(a)
+                    AI.MoveTo(ax, ay)
+                end        
+            end    
         end
+    end,
+    onStop = function(self)
     end
-end
+})
 
 AI.RegisterBossModule(stoneWarder)
 
@@ -185,6 +186,11 @@ local koralon = MosDefBossModule:new({
                 AI.SetMoveTo(p.x, p.y)
             end 
         end
+        -- if AI.IsHealer() and self.meteorFistsTarget then
+        --     if AI.IsShaman() and AI.DoCastSpellChain(self.meteorFistsTarget, "riptide", "chain heal") then
+        --         return true
+        --     end
+        -- end
     end,
     isSpotSafeFromCinders = function(x, y, cinderlist)
         for i, o in ipairs(cinderlist) do            
@@ -214,7 +220,7 @@ local koralon = MosDefBossModule:new({
         local points = {}        
         for angle = theta - math.pi, theta + math.pi, rad5 do
             local nAngle = normalizeAngle(angle)
-            for r = 1, 12, 1 do
+            for r = 1, 10, 1 do
                 local nX, nY = tankX + r * math.cos(nAngle), tankY + r * math.sin(nAngle)
                 if self.isSpotSafeFromCinders(nX, nY, cinders) then
                     table.insert(points, {
@@ -229,28 +235,49 @@ local koralon = MosDefBossModule:new({
             return self.findClosestPointInList(points)
         end
         return nil
-    end
+    end,
+    meteorFistsTarget = nil,
 })
 
 function koralon:SPELL_AURA_APPLIED(args)
     if strcontains(args.spellName, "flaming cinder") and AI.IsPriest() then
     end
+
+    if strcontains(args.spellName, "meteor fists") then
+        self.meteorFistsTarget = args.target
+        if AI.IsDps() and not AI.HasMoveTo() then
+            local x, y = AI.GetPosition(AI.GetPrimaryTank())
+            if AI.GetDistanceTo(x, y) > 10 then
+                local p = self:findSafeSpot()
+                if p then
+                    AI.SetMoveTo(p.x, p.y)
+                end                                
+            end
+        end            
+    end
 end
+
+function koralon:SPELL_AURA_REMOVED(args)
+    if strcontains(args.spellName, "meteor fists") then
+        self.meteorFistsTarget = nil
+    end
+end
+
 
 function koralon:SPELL_DAMAGE(args)
     if args.spellName:lower() == "meteor fists" then
         if AI.IsDps() and not AI.HasMoveTo() then
             local x, y = AI.GetPosition(AI.GetPrimaryTank())
-            if AI.GetDistanceTo(x, y) > 12 then
+            if AI.GetDistanceTo(x, y) > 10 then
                 local p = self:findSafeSpot()
                 if p then
                     AI.SetMoveTo(p.x, p.y)
                 end                                
             end
         end
-        if AI.IsPriest() and UnitName(args.target) ~= UnitName(AI.GetPrimaryTank()) then
+        if AI.IsPriest() then
             AI.MustCastSpell("power word: shield", args.target)
-        end
+        end   
     end
 end
 

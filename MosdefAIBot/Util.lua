@@ -97,7 +97,7 @@ function MalowUtils_PrintScrollable(text)
 
 end
 
-function MalowUtils_ShowNearbyObjects(distanceFilter)
+function MalowUtils_ShowNearbyObjects(distanceFilter, ...)
     local time = GetTime()
 
     local f = CreateFrame("Frame", "MyFrame" .. time, UIParent, "UIPanelDialogTemplate")
@@ -141,7 +141,29 @@ function MalowUtils_ShowNearbyObjects(distanceFilter)
     editBox:SetAutoFocus(false)
     ScrollFrame:SetScrollChild(editBox);
 
-    -- Show the frame    
+    -- Show the frame 
+    local args = {}
+    for i = 1, select('#', ...) do
+        local arg = select(i, ...)
+        if type(arg) == "string" then
+            args[i] = string.lower(arg)
+        end
+    end
+
+    local matchesName = function(o)
+        if #args == 0 then
+            return true
+        end
+        if not o.name then
+            return true
+        end
+        for i, name in ipairs(args) do
+            if strcontains(o.name, name) then
+                return true
+            end
+        end
+        return false
+    end
 
     local total = 0
     f:SetScript("OnUpdate", function(self, elapsed)
@@ -150,11 +172,10 @@ function MalowUtils_ShowNearbyObjects(distanceFilter)
             local nearbyObjects = AI.GetNearbyObjects()
             local s = ""
             for i, o in ipairs(nearbyObjects) do
-                if not distanceFilter or AI.GetDistanceTo(o.x, o.y) <= distanceFilter then
+                if not distanceFilter or AI.GetDistanceTo(o.x, o.y) <= distanceFilter and matchesName(o) then
                     if o.name and not strcontains(o.name, "dark rune") and not strcontains(o.name, "invisible") then
-                        s =
-                            s .. "t:"..o.objectType .. " id:" .. o.objectEntry .. " n: " .. strpad(o.name, 30) .. " x:" .. o.x .. " y:" ..
-                                o.y .. " z:" .. o.z .. "\n"
+                        s = s .. "t:" .. o.objectType .. " id:" .. o.objectEntry .. " n: " .. strpad(o.name, 30) ..
+                                " x:" .. o.x .. " y:" .. o.y .. " z:" .. o.z .. "\n"
                     end
                     if o.objectType == 6 then
                         s = s .. "spellName:" .. o.spellName .. " spellId " .. o.spellId .. " r " .. o.radius ..
@@ -305,6 +326,18 @@ function splitstr(text, pattern)
     return t
 end
 
+function splitstr2(text, sep)
+    local pattern = "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)"
+    local v1, v2 = string.match(text, pattern)
+    return v1, v2
+end
+
+function splitstr3(text, sep)
+    local pattern = "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)"
+    local v1, v2, v3 = string.match(text, pattern)
+    return v1, v2, v3
+end
+
 function normalizeAngle(angle)
     local pi2 = math.pi * 2
     -- if angle > pi2 then
@@ -317,4 +350,31 @@ function normalizeAngle(angle)
         nAngle = nAngle + pi2
     end
     return angle
+end
+
+function findClosestPointInList(pointList, ref)
+    local dist = 100
+    local point = nil
+    for i, d in ipairs(pointList) do
+        if not ref then
+            if AI.GetDistanceTo(d.x, d.y) < dist then
+                point = d
+                dist = AI.GetDistanceTo(d.x, d.y)
+            end
+        else
+            if AI.CalcDistance(ref.x, ref.y, d.x, d.y) < dist then
+                point = d
+                dist = AI.CalcDistance(ref.x, ref.y, d.x, d.y)
+            end
+        end
+    end
+    return point
+end
+
+function table_removeif(t, f)
+    for i = #t, 1, -1 do
+        if f(t[i]) then
+            table.remove(t, i)
+        end
+    end
 end

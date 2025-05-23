@@ -79,12 +79,12 @@ local function doAutoDpsRestoration()
     end
 
     if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS() then
-        AI.DoCastSpellChain("target", "flame shock", "lava burst", "lightning bolt")        
+        AI.DoCastSpellChain("target", "lightning bolt")
     end
 end
 
 local function doOnUpdate_RestorationShaman()
-
+    
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or not AI.CanCast() then
         return
@@ -102,7 +102,7 @@ local function doOnUpdate_RestorationShaman()
         -- before we heal the tank, if we have a more crucial target to heal instead, let's heal them before we heal the tank(provided the tank is healthy enough)
         if healTar and UnitName(healTar):lower() ~= tank then
             local healTarPct = AI.GetUnitHealthPct(healTar)
-            if healTarPct <= panicPct and tankHpPct >= 50 and doHealTarget(healTar, missingHp, "chain heal") then
+            if healTarPct <= panicPct and tankHpPct >= panicPct and doHealTarget(healTar, missingHp, "chain heal") then
                 -- if healTarPct <= panicPct and tankHpPct >= 50 and AI.CastSpell("lesser healing wave", healTar) then
                 return
             end
@@ -134,11 +134,6 @@ local function doOnUpdate_RestorationShaman()
             --     AI.CastSpell("lesser healing wave", primaryTank) then
             --     return
             -- end
-        end
-
-        -- keep earth shield on the tank
-        if AI.IsInDungeonOrRaid() and not AI.HasMyBuff("earth shield", tank) and AI.CastSpell("earth shield", tank) then
-            return
         end
     end
 
@@ -185,6 +180,11 @@ local function doOnUpdate_RestorationShaman()
 
     -- maintain water shield
     if AI.IsInDungeonOrRaid() and not AI.HasBuff("water shield", "player") and AI.CastSpell("water shield") then
+        return
+    end
+
+    -- keep earth shield on the tank
+    if AI.IsInDungeonOrRaid() and not AI.HasMyBuff("earth shield", tank) and AI.CastSpell("earth shield", tank) then
         return
     end
 

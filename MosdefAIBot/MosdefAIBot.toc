@@ -9,6 +9,7 @@ Util.lua
 BaseFunctions.lua
 BotBase.lua
 SpellEffectCalculator.lua
+BossModule.lua
 PathFinding.lua
 classes\ShamanAI.lua
 classes\WarlockAI.lua
@@ -16,9 +17,13 @@ classes\MageAI.lua
 classes\PriestAI.lua
 classes\PaladinAI.lua
 classes\DruidAI.lua
-zones\ZoneModule.lua
-bosses\BossModule.lua
-bosses\Naxxramas.lua
-bosses\VoA.lua
-bosses\EoE.lua
-bosses\Ulduar.lua
+zones\zonemodule.lua
+raids\naxxramas\naxxramas.lua
+raids\ulduar\ulduar.lua
+raids\ulduar\algalon.lua
+raids\ulduar\yoggsaron.lua
+raids\ulduar\hodir.lua
+raids\ulduar\mimiron.lua
+raids\voa\voa.lua
+raids\eoe.lua
+Testing.lua

@@ -17,6 +17,7 @@ AI.DISABLE_DRAIN = false
 AI.DISABLE_THREAT_MANAGEMENT = false
 AI.USE_MANA_REGEN = true
 AI.DISABLE_WARLOCK_CURSE = false
+AI.DISABLE_PRIEST_DISPERSION = false
 
 AI.BossModules = {}
 AI.ZoneModules = {}
@@ -30,7 +31,7 @@ local isGreenlit = true
 local isInCombat = false
 
 -- whether the bot 'ticks' or takes any action
-local isAIEnabled = false
+local isAIEnabled = true
 
 local autoEnableIfInRaid = true
 
@@ -41,6 +42,7 @@ local lastPlayerEnterWorld = nil
 local previousZoneName = nil
 
 local cachedOnUpdateCallbacks = nil
+local lastCallbackCheckTime = GetTime()
 
 local findEnabledBossModule
 
@@ -68,13 +70,15 @@ local executeDpsMethod = nil
 local objectAvoidance = nil
 
 local function onUpdate()
+
     if not isAIEnabled or not isGreenlit then
         return
     end
-    if not cachedOnUpdateCallbacks then
+
+    if not cachedOnUpdateCallbacks or GetTime() > lastCallbackCheckTime + 2 then
         cachedOnUpdateCallbacks = {}
         for func in pairs(AI) do
-            if MaloWUtils_StrStartsWith(func, "doOnUpdate") then
+            if strcontains(func, "doOnUpdate") then
                 table.insert(cachedOnUpdateCallbacks, AI[func])
             end
         end
@@ -358,14 +362,14 @@ local function onAddOnChatMessage(from, message)
     else
         local bossMod = findEnabledBossModule()
         if bossMod and type(bossMod.ON_ADDON_MESSAGE) == 'function' then
-            bossMod:ON_ADDON_MESSAGE(cmd, params)
+            bossMod:ON_ADDON_MESSAGE(from, cmd, params)
         end
     end
 
 end
 
 local function handleFacingWrongWay()
-    if AI.ALLOW_AUTO_REFACE and not AI.HasMoveToPosition() and not AI.IsMoving() then
+    if AI.ALLOW_AUTO_REFACE and not AI.HasCTM() then
         AI.SetFacingCoords(AI.GetPosition("target"))
     end
 end
@@ -397,13 +401,12 @@ local function onEvent(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         AI.isInCombat = false
         unloadBossModules()
-        AI.ResetMoveToPosition()
-        AI.StopMoving()
+        AI.ResetMoveToPosition()        
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastPlayerEnterWorld = GetTime()
         AI.ResetMoveToPosition()
     elseif event == "UI_ERROR_MESSAGE" then
-        if arg1 == "You are facing the wrong way!" or arg1 == "Target needs to be in front of you." then
+        if strcontains(arg1, "wrong way") or strcontains(arg1, "in front of you") then
             handleFacingWrongWay()
         end
     elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
@@ -515,32 +518,33 @@ end
 -- #auto movement
 
 function AI.SetMoveToPosition(tx, ty, tz, dist, onArrival)
-    local minDistance = dist or 0.7
+    local minDistance = dist or 0.5
     if AI.IsInVehicle() then
         minDistance = dist or 5
     end
     local x, y, cz = AI.GetPosition()
     local currentPos = AI.PathFinding.Vector3.new(x, y, cz):to2D()
-    -- if currentPos:distanceTo({
-    --     x = tx,
-    --     y = ty
-    -- }) > minDistance then
-    goToPath = {{
+    if currentPos:distanceTo({
         x = tx,
-        y = ty,
-        z = tz or cz,
-        minDistance = minDistance,
-        onArrival = onArrival,
-        startTime = GetTime(),
-        endTime = nil
-    }}
-    goToPathCurrentWp = 1
-    -- print("SetMoveTo "..x.." y:"..y.." minDist:"..minDistance)
-    hasReachedGoToPosition = false
-    positionSetTime = GetTime()
-    AI.StopMoving()
-    if IsFollowing() then
-        StopFollowing()
+        y = ty
+    }) > minDistance then
+        goToPath = {{
+            x = tx,
+            y = ty,
+            z = tz or cz,
+            minDistance = minDistance,
+            onArrival = onArrival,
+            startTime = GetTime(),
+            endTime = nil
+        }}
+        goToPathCurrentWp = 1
+        -- print("SetMoveTo "..x.." y:"..y.." minDist:"..minDistance)
+        hasReachedGoToPosition = false
+        positionSetTime = GetTime()
+        AI.StopMoving()
+        if IsFollowing() then
+            StopFollowing()
+        end
     end
     -- print(table2str(goToPath))
     -- else
@@ -556,9 +560,9 @@ function AI.SetMoveToPath(path, dist, onArrival)
         return false
     else
         -- AI.StopMoving()
-        if IsFollowing() then
-            StopFollowing()
-        end
+        -- if IsFollowing() then
+        --     StopFollowing()
+        -- end
         local minDistance = dist or 0.7
         if AI.IsInVehicle() then
             minDistance = dist or 5
@@ -583,8 +587,9 @@ function AI.SetMoveToPath(path, dist, onArrival)
             goToPathCurrentWp = 1
             hasReachedGoToPosition = false
             positionSetTime = GetTime()
+            -- print("go to path set")
         else
-            print("path distance differential was too small to navigate")
+            -- print("path distance differential was too small to navigate")
         end
     end
     return true
@@ -595,11 +600,16 @@ function AI.SetMoveTo(...)
 end
 
 function AI.HasMoveToPosition()
-    return goToPath ~= nil and #goToPath > 0
+    return goToPath ~= nil and #goToPath > 0 and not hasReachedGoToPosition
 end
 
 function AI.HasMoveTo()
     return AI.HasMoveToPosition()
+end
+
+function AI.HasCTM()
+    local ctmX, ctmY, ctmZ = GetClickToMove();
+    return ctmX ~= nil and ctmY ~= nil
 end
 
 function AI.ResetMoveToPosition()
@@ -713,6 +723,17 @@ function AI.SetObjectAvoidanceTarget(guidOrObj, minDistance)
     return false
 end
 
+function AI.GetObjectAvoidanceTarget()
+    if AI.HasObjectAvoidance() then
+        if objectAvoidance.targetVectorGUID then
+            return objectAvoidance.targetVectorGUID
+        else
+            return objectAvoidance.targetVector
+        end
+    end
+    return nil
+end
+
 function AI.ClearObjectAvoidanceTarget()
     if AI.HasObjectAvoidance() then
         objectAvoidance.targetVector = nil
@@ -724,19 +745,22 @@ local objectAvoidancePathGenerator = coroutine.create(function()
     while true do
         if objectAvoidance then
             local px, py, pz = AI.GetPosition()
-            local polygon = objectAvoidance.polygon or AI.PathFinding.createCircularPolygon({
-                x = px,
-                y = py,
-                z = pz
-            }, 50)
+            local polygon = ternary(objectAvoidance.polygon ~= nil, objectAvoidance.polygon,
+                AI.PathFinding.createCircularPolygon({
+                    x = px,
+                    y = py,
+                    z = pz
+                }, 50))
 
             local obstacles = {}
             for i, guid in ipairs(objectAvoidance.objGuids) do
                 local obj
                 if type(guid) == "string" then
                     obj = AI.GetObjectInfoByGUID(guid)
-                else
+                elseif guid.guid then
                     obj = AI.GetObjectInfoByGUID(guid.guid)
+                else
+                    obj = guid
                 end
                 if obj then
                     if type(guid) == "table" then
@@ -775,12 +799,12 @@ local objectAvoidancePathGenerator = coroutine.create(function()
             local safeDist = ternary(objectAvoidance.safeDistance ~= nil, objectAvoidance.safeDistance,
                 objectAvoidance.gridSize)
             local path = nil
-            local iterations = 250
+            local iterations = 300
             if targetVector then
-                local gridSize = 1.0
+                local gridSize = 3.0
                 if AI.CalcDistance(px, py, targetVector.x, targetVector.y) > 40 then
-                    gridSize = 3.0
-                elseif AI.CalcDistance(px, py, targetVector.x, targetVector.y) <= 20 then
+                    gridSize = 5
+                elseif AI.CalcDistance(px, py, targetVector.x, targetVector.y) <= 10 then
                     gridSize = 0.5
                 end
                 local facing = AI.CalcFacing(targetVector.x, targetVector.y, px, py)
@@ -788,18 +812,15 @@ local objectAvoidancePathGenerator = coroutine.create(function()
                     targetVector.y + (objectAvoidance.targetVectorMinDistance * math.sin(facing))
                 -- print('obj-avoidance generating safe path to targetVector')
 
-                path = CalculatePathWhileAvoidingPFP(GetCurrentMapID(), AI.PathFinding.Vector3.new(px, py, pz),
+                path = CalculatePathWhileAvoidingAStar(GetCurrentMapID(), AI.PathFinding.Vector3.new(px, py, pz),
                     AI.PathFinding.Vector3.new(nTx, nTy, targetVector.z), obstacles, gridSize, iterations)
                 if type(path) ~= "table" or #path == 0 then
                     print('objAvoidance:: failed to generate safe path to targetVector')
                 end
             end
             if type(path) ~= "table" or #path == 0 then
-                path = FindSafeLocationInPolygonGreedy(GetCurrentMapID(), AI.PathFinding.Vector3.new(px, py, pz),
+                path = FindSafeLocationInPolygonAStar(GetCurrentMapID(), AI.PathFinding.Vector3.new(px, py, pz),
                     obstacles, polygon, objectAvoidance.gridSize, safeDist, iterations)
-                -- path = FindSafeLocationInPolygonAStar(GetCurrentMapID(), AI.PathFinding.Vector3.new(px, py, pz),
-                --     obstacles, polygon, objectAvoidance.gridSize, safeDist, ternary(objectAvoidance.gridSize > 1.0,
-                --         iterations, iterations))
             end
 
             coroutine.yield(path)
@@ -818,32 +839,37 @@ local function doAutoMovementUpdate()
     local totalWp = #goToPath
 
     local dist = AI.GetDistanceTo(wp.x, wp.y)
-    -- print("dist to MoveTo:" .. dist .. " totalWp: " .. totalWp);
+    -- print("dist to MoveTo:" .. dist .. "gotToPath# " .. goToPathCurrentWp .. " totalWp: " .. totalWp);
     local diff = 1
-    -- if goToPathCurrentWp < totalWp then
-    --     diff = 0.5
-    -- end
+    if goToPathCurrentWp >= totalWp then
+        diff = 0.5
+    end
     if AI.GetSpeed() > 7 then
         diff = 3
     end
     local bossMod = findEnabledBossModule()
 
+    local ctmX, ctmY, ctmZ = GetClickToMove();
     if dist <= diff then
-        -- reached coordinates
+        -- reached coordinates1
         if goToPathCurrentWp >= totalWp then
             if AI.IsMoving() then
                 AI.StopMoving()
             end
             wp.endTime = GetTime()
             hasReachedGoToPosition = true
+            goToPath = nil
             if type(wp.onArrival) == "function" then
                 wp.onArrival(bossMod, nil, wp, true)
+            else
+                if AI.IsDps() and AI.IsValidOffensiveUnit() then
+                    AI.SetFacingUnit("target")
+                end
             end
-            goToPath = nil
             -- SetCVar('autoInteract', 0)
             -- print("final destination  wp " .. goToPathCurrentWp)
             return true
-        else
+        elseif goToPathCurrentWp < totalWp then
             -- print("reached wp " .. goToPathCurrentWp .. " moving on to next wp")
             goToPathCurrentWp = goToPathCurrentWp + 1
             local oldWp = wp
@@ -855,16 +881,17 @@ local function doAutoMovementUpdate()
     end
 
     hasReachedGoToPosition = false
-    if (GetCVar('autoInteract') ~= 1) then
-        SetCVar('autoInteract', 1)
-    end
+    SetCVar('autoInteract', 1)
+    -- end
 
-    ClickToMove(wp.x, wp.y, wp.z)
+    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.5 or math.abs(ctmY - wp.y) > 0.5) or tickTime > lastCTMTick + 0.5 then
+        ClickToMove(wp.x, wp.y, wp.z)
+        lastCTMTick = tickTime
+    end
     return false
 end
 
 function AI.doOnUpdate_BotBase()
-
     --    
     if desiredPlayerFacing ~= nil then
         local currentFacing = GetPlayerFacing()
@@ -917,7 +944,7 @@ function AI.doOnUpdate_BotBase()
                 local resumeAttempt, path = coroutine.resume(objectAvoidancePathGenerator)
                 -- print("resumeAttempt, path " .. tostring(resumeAttempt), path, coroutine.status(objectAvoidancePathGenerator))
                 if resumeAttempt then
-                    if path and type(path) == "table" then
+                    if path and type(path) == "table" and #path > 0 then
                         AI.SetMoveToPath(path)
                     else
                         -- if AI.HasMoveTo() then
@@ -955,7 +982,8 @@ function AI.doOnUpdate_BotBase()
         end
         -- fish/great feast
         if tickTime > lastFishFeastCheckTime and (not AI.HasBuff("drink") or not AI.HasBuff("food")) and
-            (AI.GetBuffDuration("well fed") < 3400 or AI.GetUnitPowerPct() < 100 or AI.GetUnitHealthPct() < 100) then
+            (AI.GetBuffDuration("well fed") < 3400 or AI.GetUnitPowerPct() < 85 or AI.GetUnitHealthPct() < 90) and
+            not AI.IsCasting() then
             local feasts = AI.FindNearbyGameObjects("fish feast", "great feast")
             if #feasts > 0 and feasts[1].distance <= 20 then
                 if AI.GetDistanceTo(feasts[1].x, feasts[1].y) <= 5.5 then
@@ -1137,135 +1165,6 @@ function AI.RegisterOneShotAction(f, delay, id)
     table.sort(registeredPendingActions, function(a, b)
         return a.createTime < b.createTime
     end)
-end
-
-function AI.TestPathFinding()
-    local mapId = GetCurrentMapID()
-    local allies = AI.GetRaidOrPartyMemberUnits()
-    local obstacles = {}
-    for i, ally in ipairs(allies) do
-        if UnitName(ally) ~= UnitName("player") then
-            local info = AI.GetObjectInfo(ally)
-            table.insert(obstacles, {
-                x = info.x,
-                y = info.y,
-                z = info.z,
-                radius = 10
-            })
-        end
-    end
-    local cx, cy, cz = AI.GetPosition()
-    local tx, ty, tz = AI.GetPosition("target");
-    -- MalowUtils_PrintScrollable("generating path " .. table2str({
-    --     mapId = mapId,
-    --     cx = cx,
-    --     cy = cy,
-    --     cz = cz,
-    --     tx = tx,
-    --     ty = ty,
-    --     tz = tz,
-    --     obstacles = obstacles
-    -- }))
-
-    local gridSize = 0.5
-    local steps = 500
-    if AI.CalcDistance(cx, cy, tx, ty) > 40 then
-        -- gridSize = 3
-    end
-
-    local path = CalculatePathWhileAvoidingPFP(mapId, AI.PathFinding.Vector3.new(cx, cy, cz),
-        AI.PathFinding.Vector3.new(tx, ty, tz), obstacles, gridSize, steps)
-    if path and type(path) == "table" then
-        print(table2str(path))
-        AI.SetMoveToPath(path)
-    else
-        print("failed to generate AStar path")
-    end
-end
-
-function AI.TestObjectAvoidance()
-    local allies = AI.GetRaidOrPartyMemberUnits()
-    local guids = {}
-    for i, ally in ipairs(allies) do
-        if UnitName(ally) ~= UnitName("player") then
-            table.insert(guids, UnitGUID(ally))
-        end
-    end
-    return AI.SetObjectAvoidance({
-        guids = guids,
-        radius = 10,
-        safeDistance = 3,
-        gridSize = 1
-    })
-end
-
-function AI.TestDetourNavigation()
-    local mapId = GetCurrentMapID()
-    local cx, cy, cz = AI.GetPosition()
-    local tx, ty, tz = AI.GetPosition("target");
-    print("generating path " .. table2str({
-        mapId = mapId,
-        cx = cx,
-        cy = cy,
-        cz = cz,
-        tx = tx,
-        ty = ty,
-        tz = tz
-    }))
-    local path = CalculatePathToDetour(mapId, AI.PathFinding.Vector3.new(cx, cy, cz),
-        AI.PathFinding.Vector3.new(tx, ty, tz))
-
-    if path and type(path) == "table" then
-        print(table2str(path))
-        AI.SetMoveToPath(path)
-    else
-        print("failed to generate path")
-    end
-end
-
-function AI.TestDetourNavigationObjectAvoidance()
-    local mapId = GetCurrentMapID()
-    local allies = AI.GetRaidOrPartyMemberUnits()
-    local obstacles = {}
-    for i, ally in ipairs(allies) do
-        if UnitName(ally) ~= UnitName("player") then
-            local info = AI.GetObjectInfo(ally)
-            table.insert(obstacles, {
-                x = info.x,
-                y = info.y,
-                z = info.z,
-                radius = 10
-            })
-        end
-    end
-    local cx, cy, cz = AI.GetPosition()
-    local tx, ty, tz = AI.GetPosition("target");
-    -- MalowUtils_PrintScrollable("generating path " .. table2str({
-    --     mapId = mapId,
-    --     cx = cx,
-    --     cy = cy,
-    --     cz = cz,
-    --     tx = tx,
-    --     ty = ty,
-    --     tz = tz,
-    --     obstacles = obstacles
-    -- }))
-    local gridSize = 3.5
-    local steps = 500
-    if AI.CalcDistance(cx, cy, tx, ty) > 40 then
-        gridSize = 7
-    end
-
-    local path = CalculatePathWhileAvoidingAStar(mapId, AI.PathFinding.Vector3.new(cx, cy, cz),
-        AI.PathFinding.Vector3.new(tx, ty, tz), obstacles, gridSize, steps)
-    if path and type(path) == "table" then
-        print(table2str(path))
-        AI.SetMoveToPath(path, 0.7, function()
-            print("Will Current path intersect obstacles " .. tostring(AI.IsCurrentPathSafeFromObstacles(obstacles)))
-        end)
-    else
-        print("failed to generate AStar path")
-    end
 end
 
 f:RegisterEvent("ADDON_LOADED")

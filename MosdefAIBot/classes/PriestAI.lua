@@ -213,7 +213,7 @@ local function doOnUpdate_ShadowPriest()
         if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") < 40 and AI.CastSpell("shadowfiend", "target") then
             return
         end
-        if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 40 and AI.CastSpell("Dispersion") then
+        if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 40 and not AI.DISABLE_PRIEST_DISPERSION and AI.CastSpell("Dispersion") then
             return
         end
     end
@@ -262,7 +262,10 @@ local function doDps(isAoE)
     end
 
     if isAoE then
-        if AI.DoCastSpellChain("target", "shadow word: death", "mind sear") then
+        if AI.GetTargetStrength() >= 2 and AI.DoCastSpellChain("target", "shadow word: pain") then
+            return            
+        end
+        if AI.DoCastSpellChain("target", "mind sear") then
             return
         end
     else

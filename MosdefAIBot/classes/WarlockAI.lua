@@ -422,7 +422,10 @@ local function doDpsAffliction(isAoE)
     end
 
     if isAoE then
-        if AI.DoCastSpellChain("target", "Unstable corruption", "seed of corruption") then
+        if AI.GetTargetStrength() >= 2 and AI.DoCastSpellChain("target", "unstable affliction") then
+            return
+        end
+        if AI.DoCastSpellChain("target", "seed of corruption") then
             return
         end
         -- if coroutine.resume(SoCFn) then
