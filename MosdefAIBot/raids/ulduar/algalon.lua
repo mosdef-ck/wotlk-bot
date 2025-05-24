@@ -6,6 +6,9 @@ local algalon = MosDefBossModule:new({
             AI.ALLOW_AUTO_REFACE = false
         end
         AI.DISABLE_PRIEST_DISPERSION = true
+        -- AI.Config.startHealOverrideThreshold = 90
+        AI.Config.manaTideThreshold = 20
+
         AI.PRE_DO_DPS = function(isAoE)
             if GetTime() < self.bigBangTime + 8 then
                 -- prevent dps when big bang to ensure proper movement
@@ -34,7 +37,7 @@ local algalon = MosDefBossModule:new({
             if not AI.IsTank() then
                 local stars = AI.FindNearbyUnitsByName("collapsing star")
                 for i, o in ipairs(stars) do
-                    if not o.isDead and o.raidTargetIndex and o.distance > 10 then
+                    if not o.isDead and o.raidTargetIndex then
                         o:Target()
                         return true
                     end
@@ -54,17 +57,18 @@ local algalon = MosDefBossModule:new({
         AI.ALLOW_AUTO_REFACE = true
     end,
     onUpdate = function(self)
+        local tick = GetTime()
         if not AI.IsTank() then
             local stars = AI.FindNearbyUnitsByName("collapsing star")
             local blackHoles = self:GetBlackHoles()
             local riskyStars = {}
             for i, o in ipairs(stars) do
-                if o.distance <= 15 and not o.isDead and o.health <= 10000 then
-                    o.radius = 13
+                if o.distance <= 15 and not o.isDead and o.health <= 15000 then
+                    o.radius = 15
                     table.insert(riskyStars, o)
                 end
             end
-            if GetTime() > self.lastCosmicSmashTime + 5 and #riskyStars > 0 and not AI.HasMoveTo() then
+            if GetTime() > self.lastCosmicSmashTime + 4.5 and #riskyStars > 0 and not AI.HasMoveTo() then
                 local obstacles = self:GetObstacles(true)
                 local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 30, obstacles, 5)
                 if p then
@@ -78,27 +82,63 @@ local algalon = MosDefBossModule:new({
                 end
             end
         end
+        if AI.IsHealer() then
+            if AI.GetDistanceToUnit(AI.GetPrimaryTank()) > 30 and AI.GetUnitHealthPct(AI.GetPrimaryTank()) > 50 and
+                not AI.IsCasting() and not AI.HasMoveTo() then
+                local obstacles = self:GetObstacles(true)
+                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 30, obstacles, 5)
+                if p then
+                    print('moving to tank')
+                    if not AI.PathFinding.MoveSafelyTo(p, obstacles) then
+                        print('failed to move to tank')
+                    end
+                else
+                    print('no safe spot from dying collapsing star')
+                end
+            end
+        end
 
+        if AI.IsPriest() and tick < self.bigBangTime + 8 and (tick - self.bigBangTime) > 5 then
+            print('tanking big bang with dispersion')
+            if not AI.HasDebuff("weakened soul") and AI.CanCastSpell("power word: shield", "player", true) and
+                AI.CastSpell("power word: shield") then
+                -- print("casting power word: shield")
+                return true
+            end
+            if not AI.HasBuff("dispersion") and AI.CanCastSpell("dispersion", nil, true) and AI.CastSpell("dispersion") then
+                print("no dispersion, casting it")
+                return true
+            end
+        end
+
+        if self.blackHoleToUse then
+            local holes = self:GetBlackHoles()
+            local isValid = false
+            if holes then
+                for i, o in ipairs(holes) do
+                    if o.guid == self.blackHoleToUse.guid then
+                        isValid = true
+                        break
+                    end
+                end
+
+                if not isValid then
+                    print('black hole is invalid, moving to new one')
+                    self.blackHoleToUse = holes[1]
+                end
+            end
+            if not AI.HasMoveTo() then
+                self:MoveSafelyToSpotWithin(1, self.blackHoleToUse.x, self.blackHoleToUse.y, self.blackHoleToUse.z,
+                    false, true)
+            end
+        end
     end,
     cachedBlackHoles = nil,
     bigBangTime = 0,
     isPhasedPunched = false,
-    lastCosmicSmashTime = 0
+    lastCosmicSmashTime = 0,
+    blackHoleToUse = nil
 })
-
-function algalon:ON_ADDON_MESSAGE(from, cmd, params)
-    if from ~= UnitName("player") and cmd == "move-to" then
-        if not AI.IsTank() then
-            print("received move-to from " .. from .. " with params: " .. params)
-            local p = AI.PathFinding.Vector3.new(splitstr3(params, ","))
-            local obstacles = self:GetObstacles(true)
-            table_removeif(obstacles, function(o)
-                return strcontains(o.name, "stalker asteroid")
-            end)
-            AI.PathFinding.MoveSafelyTo(p, obstacles)
-        end
-    end
-end
 
 function algalon:MoveSafelyToSpotWithin(r, tx, ty, tz, ignoreBlackHoles, force)
     local x, y = AI.GetPosition()
@@ -118,30 +158,73 @@ function algalon:MoveSafelyToSpot(tx, ty, tz, ignoreBlackholes, force)
     local obstacles = self:GetObstacles(not ignoreBlackholes)
     if not AI.PathFinding.MoveSafelyTo(endp, obstacles) and force then
         AI.SetMoveTo(tx, ty)
+        return true
+    else
+        return true
     end
     return false
+end
+
+function algalon:ON_ADDON_MESSAGE(from, cmd, params)
+    if from ~= UnitName("player") and cmd == "move-to" then
+        if not AI.IsTank() then
+            print("received move-to from " .. from .. " with params: " .. params)
+            local p = AI.PathFinding.Vector3.new(splitstr3(params, ","))
+            local obstacles = self:GetObstacles(true)
+            table_removeif(obstacles, function(o)
+                return strcontains(o.name, "stalker asteroid")
+            end)
+            if not AI.PathFinding.MoveSafelyTo(p, obstacles) then
+                for r = 20, 40, 5 do
+                    p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), r, self:GetObstacles(true), 3)
+                    if p then
+                        if AI.PathFinding.MoveSafelyTo(p, obstacles) then
+                            return
+                        else
+                            print('failed to move safely r:' .. r)
+                        end
+                    else
+                        print('no safe spot r:' .. r)
+                    end
+                end
+            end
+        end
+    end
 end
 
 function algalon:CHAT_MSG_RAID_BOSS_EMOTE(s)
     if strcontains(s, "cosmic smash") then
         self.lastCosmicSmashTime = GetTime()
         print("cosmic smash coming")
-        AI.StopMoving()
+        if not AI.IsTank() then
+            AI.StopMoving()
+        end
         AI.RegisterOneShotAction(function(self)
-            if AI.IsHealer() or AI.IsTank() then
+            if AI.IsHealer() then
                 local obstacles = self:GetObstacles(true)
-                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 30, obstacles, 3)
-                if p then
-                    table_removeif(obstacles, function(o)
-                        return strcontains(o.name, "stalker asteroid")
-                    end)
-                    AI.PathFinding.MoveSafelyTo(p, obstacles)
-                    if AI.IsHealer() then
-                        AI.SendAddonMessage("move-to", p.x, p.y, p.z)
+                table_removeif(obstacles, function(o)
+                    return strcontains(o.name, "stalker asteroid")
+                end)
+                for r = 30, 40, 5 do
+                    local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), r, self:GetObstacles(true), 3)
+                    if p then
+                        if not AI.IsHealer() then
+                            AI.StopCasting()
+                        end
+                        if AI.PathFinding.MoveSafelyTo(p, obstacles) then
+                            if AI.IsHealer() then
+                                AI.SendAddonMessage("move-to", p.x, p.y, p.z)
+                            end
+                            break
+                        else
+                            print('failed to move safely r:' .. r)
+                        end
+                    else
+                        print('no safe spot found r:' .. r)
                     end
                 end
             end
-        end, 1)
+        end, 0.5)
     end
 end
 
@@ -167,18 +250,18 @@ function algalon:GetObstacles(includeHoles)
     local collapsingStars = AI.FindNearbyUnitsByName("collapsing star")
     local obstacles = {}
     for i, o in ipairs(asteroids) do
-        o.radius = 13
+        o.radius = 15
         table.insert(obstacles, o)
     end
     if includeHoles and holes then
         for i, o in ipairs(holes) do
-            o.radius = 13
+            o.radius = 10
             table.insert(obstacles, o)
         end
     end
     for i, o in ipairs(collapsingStars) do
         if not o.isDead and o.health <= 10000 then
-            o.radius = 13
+            o.radius = 10
             table.insert(obstacles, o)
         end
     end
@@ -187,32 +270,43 @@ end
 
 function algalon:SPELL_AURA_APPLIED(args)
     if strcontains(args.spellName, "black hole") and args.target == UnitName("player") then
-        -- AI.RegisterOneShotAction(function(self)
-        -- print("i'm in the black hole, moving away from black holes")
-        local obstacles = self.cachedBlackHoles
-        if not obstacles then
-            obstacles = {}
-            local x, y, z = AI.GetPosition()
-            table.insert(obstacles, {
-                x = x,
-                y = y,
-                z = z
-            })
+        if self.blackHoleToUse then
+            self.blackHoleToUse = nil
+        end
+        if GetTime() > self.lastCosmicSmashTime + 5 then
+            if AI.IsMage() then
+                AI.MustCastSpell("invisibility")
+            end
+            if AI.IsPriest() then
+                AI.MustCastSpell("fade")
+            end
+        end
+        AI.RegisterOneShotAction(function(self)
+            -- print("i'm in the black hole, moving away from black holes")
+            local obstacles = self.cachedBlackHoles
+            if not obstacles then
+                obstacles = {}
+                local x, y, z = AI.GetPosition()
+                table.insert(obstacles, {
+                    x = x,
+                    y = y,
+                    z = z
+                })
 
-        end
-        if obstacles then
-            for i, o in ipairs(obstacles) do
-                o.guid = nil
-                o.radius = 10
             end
-            local p = AI.PathFinding.FindSafeSpotInCircle("player", 20, obstacles, 3)
-            if p then
-                AI.SetMoveTo(p.x, p.y)
-            else
-                AI.PathFinding.MoveToSafeLocationWithinPolygon(nil, obstacles, 3)
+            if obstacles then
+                for i, o in ipairs(obstacles) do
+                    o.guid = nil
+                    o.radius = 10
+                end
+                local p = AI.PathFinding.FindSafeSpotInCircle("player", 20, obstacles, 3)
+                if p then
+                    AI.SetMoveTo(p.x, p.y)
+                else
+                    AI.PathFinding.MoveToSafeLocationWithinPolygon(nil, obstacles, 3)
+                end
             end
-        end
-        -- end, 0.2)
+        end, 0.5)
 
     end
 end
@@ -229,18 +323,16 @@ end
 function algalon:SPELL_CAST_START(args)
     if strcontains(args.spellName, "big bang") then
         self.bigBangTime = GetTime()
-        print("algalon casting big bang")
-        AI.ClearObjectAvoidance()
-        if AI.IsPriest() then
-            -- local tx, ty = AI.GetPosition("target")            
-            AI.RegisterOneShotAction(function(self)
-                print('tanking big bang with dispersion')
-                AI.StopCasting()
-                AI.MustCastSpell("power word: shield", "player")
-                AI.MustCastSpell("dispersion")
-                self.cachedBlackHoles = self:GetBlackHoles()
-            end, 5)
-        else
+        -- print("algalon casting big bang")
+        -- AI.ClearObjectAvoidance()
+        local stars = AI.FindNearbyUnitsByName("collapsing star")
+        for i, o in ipairs(stars) do
+            if not o.isDead and o.raidTargetIndex then
+                o:Target()
+                SetRaidTarget("target", 0)
+            end
+        end
+        if not AI.IsPriest() then
             local holes = self:GetBlackHoles()
             self.cachedBlackHoles = holes
             if not AI.IsTank() then
@@ -249,7 +341,24 @@ function algalon:SPELL_CAST_START(args)
                         if not AI.IsHealer() or not AI.IsCasting() then
                             local holes = self:GetBlackHoles()
                             if holes then
-                                self:MoveSafelyToSpotWithin(1, holes[1].x, holes[1].y, holes[1].z, false, true)
+                                local asteroids = AI.FindNearbyUnitsByName("stalker asteroid")
+                                if #asteroids == 0 then
+                                    self.blackHoleToUse = holes[1]
+
+                                else
+                                    local bestHole = nil
+                                    for i, o in ipairs(holes) do
+                                        if AI.CalcDistance(o.x, o.y, asteroids[1].x, asteroids[1].y) > 15 then
+                                            bestHole = o
+                                            break
+                                        end
+                                    end
+                                    if bestHole then
+                                        self.blackHoleToUse = bestHole
+                                    else
+                                        self.blackHoleToUse = holes[1]
+                                    end
+                                end
                                 self.cachedBlackHoles = holes
                                 return true
                             end

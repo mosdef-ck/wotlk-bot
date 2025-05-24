@@ -76,16 +76,17 @@ function AI.PathFinding.MoveSafelyTo(target, obstacles, onArrive)
     end
     local dest = AI.PathFinding.Vector3.new(x, y, z)
     local dist = AI.GetDistanceTo(x, y)
-    local gridSize = 5
+    local gridSize = 3.5
     if dist <= 10 then
         gridSize = 0.5
     end
     local mapId = GetCurrentMapID()
-    local iterations = 200
+    local iterations = 300
     local path = CalculatePathWhileAvoidingAStar(mapId, AI.PathFinding.Vector3.new(AI.GetPosition()),
         AI.PathFinding.Vector3.new(x, y, z), obstacles, gridSize, iterations)
     if type(path) == "table" then
         AI.SetMoveToPath(path, 0, onArrive)
+        print("successfully MoveSafelyTo  target")
         return true
     end
     return false

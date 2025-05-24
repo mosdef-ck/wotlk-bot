@@ -556,7 +556,7 @@ end
 
 function AI.SetMoveToPath(path, dist, onArrival)
     if not path or type(path) ~= "table" or #path == 0 then
-        -- print("no path given to move to")
+        print("no path given to move to")
         return false
     else
         -- AI.StopMoving()
@@ -589,7 +589,7 @@ function AI.SetMoveToPath(path, dist, onArrival)
             positionSetTime = GetTime()
             -- print("go to path set")
         else
-            -- print("path distance differential was too small to navigate")
+            print("path distance differential was too small to navigate")
         end
     end
     return true
@@ -884,7 +884,7 @@ local function doAutoMovementUpdate()
     SetCVar('autoInteract', 1)
     -- end
 
-    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.5 or math.abs(ctmY - wp.y) > 0.5) or tickTime > lastCTMTick + 0.5 then
+    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.3 or math.abs(ctmY - wp.y) > 0.3) or tickTime > lastCTMTick + 0.5 then
         ClickToMove(wp.x, wp.y, wp.z)
         lastCTMTick = tickTime
     end
@@ -1034,11 +1034,11 @@ end
 function AI.MustCastSpell(spell, target)
     local tick = GetTime()
     local cd = GetSpellCooldown(spell)
-    if cd == nil or cd == 0 or (tick - cd) < 3 then
+    if cd == nil or cd == 0 or (tick - cd) < 5 then
         AI.RegisterPendingAction(function()
-            if AI.CanCastSpell(spell, target, true) then
+            -- if AI.CanCastSpell(spell, target, true) then
                 AI.StopCasting()
-            end
+            -- end
             return AI.CastSpell(spell, target)
         end, null, spell)
     end

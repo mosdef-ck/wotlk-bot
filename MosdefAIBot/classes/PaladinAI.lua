@@ -62,7 +62,7 @@ local function doAutoDps()
         return
     end
 
-    if AI.DoCastSpellChain("target", "Hammer of the Righteous", "Shield of Righteousness", "judgement of wisdom") then
+    if AI.DoCastSpellChain("target", "Hammer of the Righteous", "Shield of Righteousness", "judgement of light") then
         return
     end
     if AI.GetTargetStrength() >= 3 and not AI.HasBuff("divine plea") and AI.CastSpell("divine plea") then
@@ -92,11 +92,11 @@ local function doDps(isAoE)
         return
     end
 
-    if AI.GetDistanceToUnit("target") <= 8 and AI.CastSpell("Consecration") then
+    if AI.GetDistanceToUnit("target") <= 10 and AI.CastSpell("Consecration") then
         return
     end
 
-    if AI.DoCastSpellChain("target", "Hammer of the Righteous", "Shield of Righteousness", "judgement of wisdom") then
+    if AI.DoCastSpellChain("target", "Hammer of the Righteous", "Shield of Righteousness", "judgement of light") then
         return
     end
 
