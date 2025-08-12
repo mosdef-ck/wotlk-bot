@@ -26,8 +26,7 @@ local azjobNerub = MosdefZoneModule:new({
     onEnter = function(self)
         oldPriorityTarget = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
-            TargetUnit("web wrap")
-            return AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "web wrap"
+            return AI.DoTargetChain("web wrap")
         end
     end,
     onLeave = function(self)
@@ -43,19 +42,21 @@ local oculus = MosdefZoneModule:new({
     oldMountMethod = nil,
     onEnter = function(self)
         self.oldMountMethod = AI.DO_MOUNT
-        AI.PRE_DO_DPS = function(isAoE)
-            if AI.IsPossessing() then
-                local pet = UnitName("playerpet"):lower()
-                if pet == "ruby drake" and AI.CastVehicleSpellOnTarget("searing wrath", "target") then
-                    return
-                elseif pet == "amber drake" and AI.CastVehicleSpellOnTarget("shock lance", "target") then
-                    return
-                elseif pet == "emerald drake" and AI.CastVehicleSpellOnTarget("leeching poison", "target") then
-                    return
+        if not AI.PRE_DO_DPS then
+            AI.PRE_DO_DPS = function(isAoE)
+                if AI.IsPossessing() then
+                    local pet = UnitName("playerpet"):lower()
+                    if pet == "ruby drake" then
+                        AI.CastVehicleSpellOnTarget("searing wrath", "target")
+                    elseif pet == "amber drake" then
+                        AI.CastVehicleSpellOnTarget("shock lance", "target")
+                    elseif pet == "emerald drake" then
+                        AI.CastVehicleSpellOnTarget("leeching poison", "target")
+                    end
+                    return true
                 end
-                return true
+                return false
             end
-            return false
         end
 
         AI.DO_MOUNT = function()
@@ -70,7 +71,7 @@ local oculus = MosdefZoneModule:new({
     end,
     onLeave = function(self)
         -- print("leaving Oculus, resetting mount method and pre DPS function")
-        AI.PRE_DO_DPS = nil
+        -- AI.PRE_DO_DPS = nil
         if self.oldMountMethod ~= nil then
             AI.DO_MOUNT = self.oldMountMethod
         end
@@ -104,6 +105,8 @@ local toc = MosdefZoneModule:new({
             end
             return false
         end
+
+        AI.AUTO_PURGE = false
     end,
     onLeave = function(self)
         AI.PRE_DO_DPS = nil

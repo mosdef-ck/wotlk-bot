@@ -131,7 +131,7 @@ local function onUpdate()
 end
 
 local function onAddOnLoad()
-    if IsInRaid() and autoEnableIfInRaid then
+    if UnitInRaid("player") and autoEnableIfInRaid then
         isAIEnabled = true
     end
     --- invokes any 'doOnLoad_' funcs that have been registered by any addon
@@ -175,6 +175,7 @@ end
 
 local function loadBossModule(creatureId)
 
+    -- print("loading boss module for creatureId: " .. tostring(creatureId))
     if UnitIsDeadOrGhost("player") then
         return
     end
@@ -401,6 +402,30 @@ local function onAddOnChatMessage(from, message)
                 end
             end
         end
+    elseif cmd == "shadow-fury" then
+        if AI.IsWarlock() then
+            AssistUnit(from)
+            AI.RegisterPendingAction(function()
+                if not AI.IsValidOffensiveUnit("target") then
+                    return true
+                end
+                if AI.IsCasting() and AI.CanCastSpell("shadowfury", nil, true) then
+                    AI.StopCasting()
+                end
+                return AI.CastAOESpell("shadowfury", "target")
+            end, 0, "SHADOW_FURY")
+        end
+    elseif cmd == "eat-drink" then
+        RunMacroText("/use honeymint tea")
+        RunMacroText("/use Mead Basted Caribou")
+    elseif strcontains(cmd, "rdf-teleport") then
+        RunMacroText("/run LFGTeleport(IsInLFGDungeon())")
+        -- if IsInLFGDungeon() then
+        --     RunMacroText("/run LFGTeleport(IsInLFGDungeon())")
+        -- else
+        --     RunMacroText("/click LFDRoleCheckPopupAcceptButton")
+        --     RunMacroText("/click LFDDungeonReadyDialogEnterDungeonButton")
+        -- end
     elseif cmd == "use-trinkets" then
         if from ~= UnitName("player") and AI.IsDps() then
             -- print("received use-trinkets from " .. from)
@@ -569,12 +594,12 @@ local function onEvent(self, event, ...)
                       " subZone: " .. (subzone or ""))
         end
         for i, mod in ipairs(AI.ZoneModules) do
-            if mod.active == true and (mod.zoneName ~= zoneName or mod.zoneId ~= zoneId or mod.subzone == subzone) then
-                -- print("leaving zone " .. mod.zoneName)
+            if mod.active == true and (mod.zoneId ~= zoneId or (mod.subzone and mod.subzone == subzone)) then
+                print("leaving zone " .. mod.zoneName or mod.zoneId)
                 mod:onLeave()
                 mod.active = false
             end
-            if (mod.zoneName == zoneName or mod.zoneId == zoneId or mod.subzone == subzone) and not mod.active then
+            if (mod.zoneId == zoneId or (mod.subzone and mod.subzone == subzone)) and not mod.active then
                 previousZoneName = zoneName
                 mod.active = true
                 mod:onEnter()
@@ -807,7 +832,7 @@ function AI.ShouldMoveTo(x, y, z)
         nx = x.x or 0
     end
     local finalDestX, finalDestY, finalDestZ = AI.GetMoveToFinalDestination()
-    return not AI.HasMoveTo() or (math.abs(finalDestX - nx) > 0.1 or math.abs(finalDestY - ny) > 0.1)
+    return not AI.HasMoveTo() or (math.abs(finalDestX - nx) > 0.3 or math.abs(finalDestY - ny) > 0.3)
 end
 
 function AI.IsCurrentPathSafeFromObstacles(obstacles)
@@ -1001,7 +1026,7 @@ local function doAutoMovementUpdate()
     local ctmX, ctmY, ctmZ = GetClickToMove();
     local dist = AI.GetDistanceTo(wp.x, wp.y)
     local speed = AI.GetSpeed()
-    if speed > maxSpeedObserved then
+    if speed > 0 then
         maxSpeedObserved = speed
     end
     -- print("dist to MoveTo:" .. dist .. " goToPath# " .. goToPathCurrentWp .. " totalWp: " .. totalWp .. " ctmX: " ..
@@ -1014,7 +1039,7 @@ local function doAutoMovementUpdate()
         diff = 2.5
     end
     local bossMod = findEnabledBossModule()
-    
+
     if dist <= diff then
         -- reached coordinates1
         if goToPathCurrentWp >= totalWp then
@@ -1050,7 +1075,7 @@ local function doAutoMovementUpdate()
     -- end
 
     if ctmX == nil or (math.abs(ctmX - wp.x) > 0.25 or math.abs(ctmY - wp.y) > 0.251) then
-    -- if ctmX == nil then
+        -- if ctmX == nil then
         ClickToMove(wp.x, wp.y, wp.z)
     end
     return false
@@ -1263,13 +1288,29 @@ end
 -- generic mount function, customizable
 function AI.DO_MOUNT(flyMount)
     if flyMount then
-        if AI.IsPriest() then
-            RunMacroText("/use magnificent flying carpet")
-        else
-            RunMacroText("/use bronze drake")
+        if AI.IsPaladin() then
+            RunMacroText("/use snowy gryphon")
+        elseif AI.IsHealer() then
+            RunMacroText("/use tawny wind rider")
+        elseif AI.IsPriest() then
+            RunMacroText("/use snowy gryphon")
+        elseif AI.IsWarlock() then
+            RunMacroText("/use tawny wind rider")
+        elseif AI.IsMage() then
+            RunMacroText("/use tawny wind rider")
         end
     else
-        RunMacroText("/use amani war bear")
+        if AI.IsPaladin() then
+            RunMacroText("/use charger")
+        elseif AI.IsHealer() then
+            RunMacroText("/use great white kodo")
+        elseif AI.IsPriest() then
+            RunMacroText("/use swift palomino")
+        elseif AI.IsWarlock() then
+            RunMacroText("/use dreadsteed")
+        elseif AI.IsMage() then
+            RunMacroText("/use swift blue raptor")
+        end
     end
 end
 
@@ -1406,17 +1447,63 @@ f:SetScript("OnEvent", onEvent)
 -- Listen for events
 RegisterCustomEventHandler("smsg_spell_cast_go", function(spellId, spellName, casterGuid, targetGuid, src, dest)
     local bossMod = findEnabledBossModule()
+    local caster = AI.GetObjectInfoByGUID(casterGuid)
+    local target = AI.GetObjectInfoByGUID(targetGuid)
+    local args = {
+        spellId = spellId,
+        spellName = spellName,
+        casterGuid = casterGuid,
+        targetGuid = targetGuid,
+        caster = caster ~= nil and caster.name or nil,
+        target = target ~= nil and target.name or nil,
+        src = src or {},
+        dest = dest or {}
+    }
     if bossMod and bossMod["SMSG_SPELL_CAST_GO"] and type(bossMod["SMSG_SPELL_CAST_GO"]) == "function" then
         -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
         bossMod["SMSG_SPELL_CAST_GO"](bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    if bossMod and bossMod["SMSG_SPELL_CAST_GO2"] and type(bossMod["SMSG_SPELL_CAST_GO2"]) == "function" then
+        -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+        bossMod["SMSG_SPELL_CAST_GO2"](bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    local zone = findZoneModule()
+    if zone ~= nil and type(zone.SMSG_SPELL_CAST_GO) == 'function' then
+        zone:SMSG_SPELL_CAST_GO(bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    if zone ~= nil and type(zone.SMSG_SPELL_CAST_GO2) == 'function' then
+        zone:SMSG_SPELL_CAST_GO2(bossMod, args)
     end
     -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
 end)
 RegisterCustomEventHandler("smsg_spell_cast_start", function(spellId, spellName, casterGuid, targetGuid, src, dest)
     local bossMod = findEnabledBossModule()
+    local caster = AI.GetObjectInfoByGUID(casterGuid)
+    local target = AI.GetObjectInfoByGUID(targetGuid)
+    local args = {
+        spellId = spellId,
+        spellName = spellName,
+        casterGuid = casterGuid,
+        targetGuid = targetGuid,
+        caster = caster ~= nil and caster.name or nil,
+        target = target ~= nil and target.name or nil,
+        src = src or {},
+        dest = dest or {}
+    }
     if bossMod and bossMod["SMSG_SPELL_CAST_START"] and type(bossMod["SMSG_SPELL_CAST_START"]) == "function" then
         -- print("smsg_spell_cast", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
         bossMod["SMSG_SPELL_CAST_START"](bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    if bossMod and bossMod["SMSG_SPELL_CAST_START2"] and type(bossMod["SMSG_SPELL_CAST_START2"]) == "function" then
+        -- print("smsg_spell_cast_start", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+        bossMod["SMSG_SPELL_CAST_START2"](bossMod, args)
+    end
+    local zone = findZoneModule()
+    if zone ~= nil and type(zone.SMSG_SPELL_CAST_START) == 'function' then
+        zone:SMSG_SPELL_CAST_START(bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    if zone ~= nil and type(zone.SMSG_SPELL_CAST_START2) == 'function' then
+        zone:SMSG_SPELL_CAST_START2(args)
     end
     -- print("smsg_spell_cast_start", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
 end)

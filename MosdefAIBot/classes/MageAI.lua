@@ -1,6 +1,7 @@
 local isAIEnabled = false
 local primaryTank = nil
 local panicPct = 20
+local lastIcyVeinsCastTime = 0
 
 local function doSpellSteal()
     if AI.IsInCombat() and (AI.HasStealableBuff("target") and AI.CastSpell("spellsteal", "target")) or
@@ -45,7 +46,7 @@ local function doAutoDpsArcane()
         return
     end
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -80,7 +81,7 @@ local function doAutoDpsArcane()
 end
 
 local function doOnUpdate_MageAI()
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -119,19 +120,22 @@ local function doOnUpdate_MageAI()
         if (AI.HasBuff("flame of the heavens") or AI.HasBuff("Bloodlust")) then
             if AI.HasBuff("bloodlust") then
                 AI.CastSpell("mirror image")
+                if not AI.HasBuff("icy veins") and GetTime() > lastIcyVeinsCastTime + 5 then
+                    if AI.CastSpell("icy veins") then
+                        AI.CastSpell("cold snap")
+                        lastIcyVeinsCastTime = GetTime()
+                    end
+                end
+                AI.UseInventorySlot(10)
                 AI.UseInventorySlot(13)
                 AI.UseInventorySlot(14)
                 AI.CastSpell("presence of mind")
                 AI.CastSpell("arcane power")
                 AI.CastSpell("combustion")
-                AI.CastSpell("berserking")                
-                AI.UseContainerItem(AI.GetAvailableDpsPotion())
-                if not AI.HasBuff("icy veins") then
-                    AI.CastSpell("icy veins")
-                    AI.CastSpell("cold snap")
-                end
+                AI.CastSpell("berserking")
+                AI.UseContainerItem(AI.GetAvailableDpsPotion())                
             end
-            AI.UseInventorySlot(10)
+            AI.UseInventorySlot(10)            
         end
 
     end
@@ -157,7 +161,7 @@ end
 
 local function doDpsArcane(isAoE)
 
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -190,7 +194,7 @@ end
 
 local function doDpsFireMage(isAoE)
 
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -244,7 +248,7 @@ local function doAutoDpsFire()
         return
     end
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -298,7 +302,7 @@ local function doAutoDpsFire()
 end
 
 local function doDpsFrost(isAOE)
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -312,9 +316,9 @@ local function doDpsFrost(isAOE)
     end
 
     if isAOE then
-        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
-            return
-        end
+        -- if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
+        --     return
+        -- end
 
         if AI.CastAOESpell("blizzard", "target") then
             return
@@ -323,11 +327,12 @@ local function doDpsFrost(isAOE)
         if AI.GetTargetStrength() >= 2 and not HasPetSpells() and AI.CastSpell("summon water elemental") then
             return
         end
-        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
-            return
+        if AI.HasBuff("fireball!") then
+            RunMacro("fireball-proc")
         end
 
-        if not AI.DISABLE_DEEP_FREEZE and AI.CanCastSpell("deep freeze", "target", true) and AI.HasBuff("fingers of frost") and not AI.IsUnitCC("target") then
+        if not AI.DISABLE_DEEP_FREEZE and AI.CanCastSpell("deep freeze", "target", true) and
+            AI.HasBuff("fingers of frost") and not AI.IsUnitCC("target") then
             RunMacro("fingers-of-frost")
         end
 
@@ -340,7 +345,7 @@ local function doAutoDpsFrost()
         return
     end
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted() or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -356,7 +361,7 @@ local function doAutoDpsFrost()
     if not AI.DISABLE_PET_AA then
         PetAttack()
     end
-    
+
     if AI.AUTO_AOE then
         if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
             return
@@ -368,10 +373,11 @@ local function doAutoDpsFrost()
         if AI.GetTargetStrength() >= 2 and not HasPetSpells() and AI.CastSpell("summon water elemental") then
             return
         end
-        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
-            return
+        if AI.HasBuff("fireball!") then
+            RunMacro("fireball-proc")
         end
-        if not AI.DISABLE_DEEP_FREEZE and AI.CanCastSpell("deep freeze", "target", true) and AI.HasBuff("fingers of frost") and not AI.IsUnitCC("target") then
+        if not AI.DISABLE_DEEP_FREEZE and AI.CanCastSpell("deep freeze", "target", true) and
+            AI.HasBuff("fingers of frost") and not AI.IsUnitCC("target") then
             RunMacro("fingers-of-frost")
         end
         AI.CastSpell("frostbolt", "target")

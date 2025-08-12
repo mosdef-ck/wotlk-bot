@@ -29,11 +29,12 @@ AI.ObjectTypeFlag = {
 
 setfenv(1, AI.Config)
 -- the main tank to pay close attention to
-tank = "mosdefptank"
+--tank = "mosdefptank"
+tank="yahiko"
 
-healers = { "mosdefrsham", "mosdefrdruid" }
+healers = { "mosdefrsham", "mosdefrdruid", "kakuzu" }
 
-dpsers = { "mosdefswp", "mosdeflocka", "mosdefelsham", "mosdeffmage" }
+dpsers = { "mosdefswp", "mosdeflocka", "mosdefelsham", "mosdeffmage", "hidan", "deidara", "nagato"}
 
 -- the mana potion to use first before popping mana cd like mana tide or innervate
 manaPotion = "Runic Mana Potion"
@@ -51,22 +52,26 @@ dpsPotion = "potion of wild magic"
 dpsPotion2 = "potion of speed"
 
 
-dps1 = { "mosdefswp" }
+dps1 = { "mosdefswp", "hidan"}
 
-dps2 = { "mosdeflocka" }
+dps2 = { "mosdeflocka", "nagato" }
 
-dps3 = { "mosdefelsham", "mosdeffmage" }
+dps3 = { "mosdefelsham", "mosdeffmage", "deidara" }
 
 startHealOverrideThreshold = 100
 
 useHealingWaveOnToons = false
 
 
-focusMagicTarget = "mosdeflocka"
+--focusMagicTarget = "mosdeflocka"
+focusMagicTarget = "nagato"
+-- focusMagicTarget = "mosdefswp"
 
 -- curseToUse = "curse of the elements"
 curseToUse = "curse of doom"
 
 starFormationRadius = 15
 
-judgmentToUse = "judgement of wisdom"
+judgementToUse = "judgement of wisdom"
+
+useMindBlast = false

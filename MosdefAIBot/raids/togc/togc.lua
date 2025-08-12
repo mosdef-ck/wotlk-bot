@@ -431,10 +431,12 @@ local jaraxxus = MosDefBossModule:new({
         AI.Config.starFormationRadius = 15
         AI.Config.startHealOverrideThreshold = 90
         AI.do_PriorityTarget = function()
-            if AI.IsDps() then
-                return AI.DoTargetChain("nether portal", "mistress", "infernal volcano")
-            elseif AI.IsTank() then
-                return AI.DoTargetChain("mistress", "felflame infernal")
+            if AI.GetUnitHealthPct("focus") > 10 then
+                if AI.IsDps() then
+                    return AI.DoTargetChain("nether portal", "mistress", "infernal volcano")
+                elseif AI.IsTank() then
+                    return AI.DoTargetChain("mistress", "felflame infernal")
+                end
             end
             return false
         end
@@ -466,7 +468,7 @@ local jaraxxus = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         if AI.IsHealer() and self.incinerateTarget then
-            if UnitHealth(AI.GetPrimaryTank()) > 25000 and
+            if UnitHealth(AI.GetPrimaryTank()) > 20000 and
                 ((AI.HasBuff("tidal waves") and AI.CastSpell("healing wave", self.incinerateTarget)) or
                     AI.CastSpell("chain heal", self.incinerateTarget)) then
                 return true
@@ -734,6 +736,9 @@ local factionsChampions = MosDefBossModule:new({
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
             AI.UseContainerItem("lesser flask of resistance")
         end
+        if AI.IsPriest() then
+            CancelUnitBuff("player", "vampiric embrace")
+        end
     end,
     onStop = function(self)
         AI.do_PriorityTarget = nil
@@ -773,7 +778,8 @@ local factionsChampions = MosDefBossModule:new({
             AI.DoStaggeredInterrupt()
         end
 
-        if AI.IsPriest() and self:IsHealerTarget(UnitName("target")) and  AI.HasPurgeableBuff("target") and AI.CastSpell("dispel magic", "target") then
+        if AI.IsPriest() and self:IsHealerTarget(UnitName("target")) and AI.HasPurgeableBuff("target") and
+            AI.CastSpell("dispel magic", "target") then
             -- print("dispelling " .. UnitName("target"))
             return true
         end
@@ -853,7 +859,7 @@ function factionsChampions:SPELL_AURA_APPLIED(args)
         strcontains(args.spellName, "divine shield") or strcontains(args.spellName, "ice block")) and
         not strcontains(args.target, "mosdef") and AI.IsPriest() then
         AI.RegisterPendingAction(function()
-            --print("heroism or hand of protection cast on champions, dispelling")
+            -- print("heroism or hand of protection cast on champions, dispelling")
             TargetUnit(args.target)
             return AI.CastAOESpell("mass dispel", "target")
         end, 0, "mass_dispel_" .. args.spellName)
@@ -904,6 +910,7 @@ local twinValk = MosDefBossModule:new({
             AI.ALLOW_AUTO_REFACE = false
         end
         if not AI.IsTank() then
+            print('will move to essence')        
             AI.RegisterOneShotAction(function()
                 local darkEssence = AI.FindNearbyUnitsByName("dark essence")
                 local lightEssence = AI.FindNearbyUnitsByName("light essence")
@@ -915,7 +922,6 @@ local twinValk = MosDefBossModule:new({
                     AI.SetMoveTo(lightEssence[1].x, lightEssence[1].y)
                 end
             end, 5)
-
         end
     end,
     onStop = function(self)
@@ -1093,7 +1099,7 @@ function twinValk:ON_ADDON_MESSAGE(from, cmd, params)
             if essence.distance <= essenceInteractRadius then
                 print("essence is close, interacting")
                 essence:InteractWith()
-                if nextEssence then
+                if nextEssence and AI.IsDps() then
                     AI.SetMoveTo(nextEssence.x, nextEssence.y)
                 end
             elseif AI.IsDps() then
@@ -1155,14 +1161,6 @@ local anub = MosDefBossModule:new({
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("flask of the frost wyrm") and not AI.IsTank() then
             AI.UseContainerItem("flask of the frost wyrm")
         end
-        -- AI.DISABLE_PET_AA = true
-        if AI.IsDps() then
-            AI.RegisterPendingAction(function(self)
-                AI.UseInventorySlot(13)
-                AI.UseInventorySlot(14)
-                return AI.UseInventorySlot(10)
-            end, 5, "PROC_TRINKERTS")
-        end
     end,
     onStop = function(self)
         AI.do_PriorityTarget = nil
@@ -1170,10 +1168,12 @@ local anub = MosDefBossModule:new({
         AI.DISABLE_DRAIN = false
     end,
     onUpdate = function(self)
-        if AI.IsTank() and strcontains(UnitName("target"), "burrower") and (AI.HasDebuff("permafrost", "target") or AI.HasDebuff(66193, "target")) and AI.CastSpell("hammer of justice", "target") then
+        if AI.IsTank() and strcontains(UnitName("target"), "burrower") and
+            (AI.HasDebuff("permafrost", "target") or AI.HasDebuff(66193, "target")) and
+            AI.CastSpell("hammer of justice", "target") then
             return true
         end
-        if AI.IsHealer() and self.p2 then            
+        if AI.IsHealer() and self.p2 then
             local tank = AI.GetPrimaryTank()
             local spell = AI.HasBuff("tidal waves") and "healing wave" or "chain heal"
             if UnitHealth(tank) <= 35000 and AI.CastSpell(spell, tank) then

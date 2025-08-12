@@ -45,14 +45,32 @@ local archavon = MosDefBossModule:new({
         end
         if AI.IsTank() and AI.HasBuff("enrage", "target") and AI.CastSpell("Hand of Reckoning", "target") then
             return true
-        end
-        if AI.IsShaman() and AI.IsValidOffensiveUnit() and AI.GetUnitHealthPct("target") < 90 and
-            AI.CastSpell("fire elemental totem") then
-            return true
-        end
+        end        
         return false
     end
 })
+
+function archavon:CHAT_MSG_MONSTER_EMOTE(s, t)
+    print("archavon:CHAT_MSG_MONSTER_EMOTE", s, t) 
+    local str = "lunges for (%w+)"
+    local match = strmatch(s, str)
+    if match and UnitExists(match) then
+        if AI.IsPriest() then
+            AI.StopCasting()
+            AI.MustCastSpell("power word: shield", match)
+        end
+        if AI.IsHealer() then
+            AI.MustCastSpell("healing wave", match)
+        end
+        if AI.IsPaladin() then
+            AI.MustCastSpell("sacred shield", match)
+        end
+    end
+end
+
+function archavon:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
+   print("archavon:CHAT_MSG_RAID_BOSS_EMOTE", s, t) 
+end
 
 function archavon:SPELL_AURA_APPLIED(args)
     if args.spellName:lower() == "rock shards" then

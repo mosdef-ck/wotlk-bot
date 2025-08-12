@@ -46,46 +46,18 @@ local oldPriorityTargetFn = nil
 
 local heraldVolazjModule = MosDefBossModule:new({
     name = "Herald Volazj",
+    creatureId = {29311},
     onStart = function()
-        AI.Print("Engaging Herald Volazj")
-        oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
-            for i = 1, 3 do
-                if UnitName("target") == "Herald Volazj" then
-                    ClearTarget()
-                    TargetNearestEnemy()
-                end
+            if not AI.IsValidOffensiveUnit() then
+                TargetNearestEnemy()
             end
-
-            if AI.IsValidOffensiveUnit("target") then
-                return true
-            end
-
-            TargetUnit("Herald Volazj")
-
-            if AI.IsValidOffensiveUnit("target") then
-                return true
-            end
-
-            return false
         end
         -- AI.toggleAutoDps(true)
     end,
     onStop = function()
-        AI.Print("Herald Volazj is dead!")
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
-        AI.toggleAutoDps(false)
     end,
-    onUpdate = function()
-        -- return not AI.IsHealer()
-        local class = AI.GetClass():lower()
-        if class == "shaman" and AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() ~= "Herald Volazj" and
-            AI.CastSpell("fire elemental totem") then
-            return true
-        end
-        return false
+    onUpdate = function()       
     end
 })
 
@@ -99,10 +71,8 @@ local ichoron = MosDefBossModule:new({
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
-                TargetUnit("Ichor Globule")
-                if AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 2) then
-                    return true
-                end
+                AI.DoTargetChain("Ichor Globule")
+                return AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 20
             end
             return false
         end
@@ -118,83 +88,6 @@ local ichoron = MosDefBossModule:new({
 })
 
 AI.RegisterBossModule(ichoron)
-
--- grand magus
-local grandMagus = MosDefBossModule:new({
-    name = "Grand Magus Telestra",
-    creatureId = {26731},
-    onStart = function(self)
-    end,
-    onEnd = function(self)
-    end,
-    onUpdate = function(self)
-        if AI.IsWarlock() and UnitExists("focus") and AI.IsValidOffensiveUnit("focus") and
-            not AI.HasMyDebuff("Fear", "focus") and AI.CastSpell("fear", "focus") then
-            -- AI.SayRaid("Fearing " .. UnitName("focus"))
-            return true
-        end
-        return false
-    end
-})
-
-function grandMagus:SPELL_CAST_START(args)
-    if args.spellName == "Critter" then
-        TargetUnit(args.caster)
-        FocusUnit("target")
-        if AI.IsWarlock() and not AI.HasMyDebuff("fear", "focus") then
-            AI.RegisterPendingAction(function()
-                if UnitName("focus") ~= "Grand Magus Telestra" then
-                    TargetUnit("Grand Magus Telestra")
-                    FocusUnit("target")
-                end
-                if AI.CanCastSpell("fear", "focus") then
-                    AI.StopCasting()
-                end
-                return AI.CastSpell("fear", "focus")
-            end, null, "CC_THE_CCER")
-        end
-    end
-end
-function grandMagus:UNIT_SPELLCAST_START(caster, spellName)
-    if spellName == "Critter" then
-        TargetUnit(caster)
-        FocusUnit("target")
-        if AI.IsWarlock() and not AI.HasMyDebuff("fear", "focus") then
-            AI.RegisterPendingAction(function()
-                if UnitName("focus") ~= "Grand Magus Telestra" then
-                    TargetUnit("Grand Magus Telestra")
-                    FocusUnit("target")
-                end
-                if AI.CanCastSpell("fear", "focus") then
-                    AI.StopCasting()
-                end
-                return AI.CastSpell("fear", "focus")
-            end, null, "CC_THE_CCER")
-        end
-    end
-end
-
-AI.RegisterBossModule(grandMagus)
-
---
-local anomalous = MosDefBossModule:new({
-    name = "Anomalus",
-    creatureId = {26763},
-    onStart = function(self)
-        oldPriorityTargetFn = AI.do_PriorityTarget
-        AI.do_PriorityTarget = function()
-            TargetUnit("chaotic rift")
-            return AI.IsValidOffensiveUnit("target") and CheckInteractDistance("target", 4)
-        end
-    end,
-    onStop = function(self)
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
-    end
-})
-
-AI.RegisterBossModule(anomalous)
 
 -- Keristrasza
 local Keristrasza = MosDefBossModule:new({
@@ -214,6 +107,14 @@ local Keristrasza = MosDefBossModule:new({
     end
 })
 
+function Keristrasza:SPELL_AURA_APPLIED(args)
+    if strcontains(args.spellName, "Crystallize") and AI.IsPriest() and AI.GetDebuffCount("intense cold") >= 5 then
+        AI.RegisterPendingAction(function(self)
+            return AI.CastAOESpell("mass dispel", "player")
+        end)
+    end
+end
+
 AI.RegisterBossModule(Keristrasza)
 
 -- Oculus
@@ -221,45 +122,58 @@ local leyguardian = MosDefBossModule:new({
     name = "Ley-Guardian Eregos",
     creatureId = {27656},
     onStart = function(self)
-        TargetUnit("ley")
-        FocusUnit("target")
+        AI.FindNearbyUnitsByName("ley-guardian")[1]:Focus()
+        AI.do_PriorityTarget = function()
+            return AI.DoTargetChain("Ley-Guardian")
+        end
         AI.PRE_DO_DPS = function(isAoe)
             if AI.IsPossessing() then
                 local pet = UnitName("playerpet"):lower()
-                if pet == "ruby drake" and AI.IsValidOffensiveUnit() and AI.CastVehicleSpellOnTarget("searing wrath", "target") then
-                    return true
+                if pet == "ruby drake" then
+                    AI.DoTargetChain("Ley-Guardian")
+                    if AI.IsValidOffensiveUnit() and AI.CastVehicleSpellOnTarget("searing wrath", "target") then
+                        return true
+                    end
                 elseif pet == "amber drake" then
-                    if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "ley") then
-                        if AI.GetMyDebuffCount("shock charge", "target") < 10 and not AI.IsCasting("playerpet") and
-                            AI.CastVehicleSpellOnTarget("temporal rift", "target") then
-                            return true
+                    AI.DoTargetChain("Ley-Guardian")
+                    if AI.IsValidOffensiveUnit() then
+                        -- StopFollowing()
+                        if AI.GetMyDebuffCount("shock charge", "target") < 10 and not AI.IsChanneling("playerpet") then
+                            print("shock charge count " .. AI.GetMyDebuffCount("shock charge", "target"))
+                            if AI.CastVehicleSpellOnTarget("temporal rift", "target") then
+                                print("casting temporal rift")
+                                return true
+                            end
                         elseif AI.GetMyDebuffCount("shock charge", "target") >= 10 then
                             if AI.IsChanneling("playerpet") or AI.IsChanneling() then
+                                print("stopping channeling")
                                 AI.StopCasting()
                             end
                             if AI.CastVehicleSpellOnTarget("shock lance", "target") then
+                                print("casting shock lance")
                                 return true
                             end
                         end
-                    elseif AI.CastVehicleSpellOnTarget("shock lance", "target") then
-                        return true
                     end
-                elseif pet == "emerald drake" and AI.IsValidOffensiveUnit() and not AI.IsCasting("playerpet") then
-                    if AI.GetMyDebuffCount("leeching poison", "target") > 2 then
-                        local mostHurt = AI.GetMostDamagedFriendlyPet()
-                        if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 90 then
-                            if UnitName("target") ~= UnitName(mostHurt) then
-                                TargetUnit(mostHurt)
+                elseif pet == "emerald drake" then
+                    -- StopFollowing()                    
+                    if not AI.IsChanneling("playerpet") then
+                        AI.DoTargetChain("Ley-Guardian")
+                        if AI.GetMyDebuffCount("leeching poison", "target") > 2 then
+                            local mostHurt = AI.GetMostDamagedFriendlyPet()
+                            if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 60 and
+                                not strcontains(UnitName("target"), UnitName(mostHurt)) then
+                                if AI.CastVehicleSpellOnTarget("dream funnel", mostHurt) then
+                                    return true
+                                end
                             end
-                            if AI.CastVehicleSpellOnTarget("dream funnel", "target") then
-                                TargetLastEnemy()
-                                return true
-                            end
+                        elseif (AI.GetMyDebuffCount("leeching poison", "target") > 2 and
+                            AI.CastVehicleSpellOnTarget("touch the nightmare", "target")) or
+                            AI.CastVehicleSpellOnTarget("leeching poison", "target") then
+                            return true
                         end
-                    elseif (AI.GetMyDebuffCount("leeching poison", "target") > 2 and AI.CastVehicleSpellOnTarget("touch of nightmare", "target")) or AI.CastVehicleSpellOnTarget("leeching poison", "target") then
                         return true
                     end
-                    return true
                 end
             end
         end
@@ -268,19 +182,19 @@ local leyguardian = MosDefBossModule:new({
     onStop = function(self)
     end,
     onUpdate = function()
+        local pet = UnitName("playerpet"):lower()
+        AI.FindNearbyUnitsByName("ley-guardian")[1]:Focus()
         if not AI.IsPossessing() then
             return false
         end
-        if AI.IsValidOffensiveUnit("focus") and MaloWUtils_StrContains(UnitName("focus"), "Ley") then
-            local pet = UnitName("playerpet"):lower()
+        if AI.IsValidOffensiveUnit("target") then
             if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "focus") > 2 then
                 local mostHurt = AI.GetMostDamagedFriendlyPet()
-                if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 70 then
+                if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 90 then
                     if UnitName("target") ~= mostHurt then
                         TargetUnit(mostHurt)
                     end
                     if AI.CastVehicleSpellOnTarget("dream funnel", "target") then
-                        TargetUnit("Ley")
                         return true
                     end
                 end
@@ -295,15 +209,18 @@ function leyguardian:SPELL_AURA_APPLIED(args)
         if AI.IsDpsPosition(1) then
             delay = 0
         elseif AI.IsDpsPosition(2) then
-            delay = 1
-        else
             delay = 2
+        else
+            delay = 3
         end
         AI.RegisterPendingAction(function()
-            print("time stopping leyguardian")            
-            if AI.IsValidOffensiveUnit("focus") and not AI.HasDebuff("stop time", "focus") and not AI.HasPossessionSpellCooldown("stop time") then
-                AI.StopCasting()
-                return AI.UsePossessionSpell("stop time")
+            AI.FindNearbyUnitsByName("ley-guardian")[1]:Focus()
+            if not AI.HasPossessionSpellCooldown("stop time") then
+                print("time stopping leyguardian")
+                if AI.IsCasting("playerpet") or AI.IsChanneling("playerpet") then
+                    AI.StopCasting()
+                end
+                return AI.CastVehicleSpellOnTarget("stop time", "player")
             end
             return true
         end, delay, "TIME_STOP")

@@ -245,7 +245,8 @@ function AI.TestSafeLocationInPolygon()
         gridSize = 5
     end
 
-    local path = FindSafeLocationInPolygonAStar(mapId, AI.PathFinding.Vector3.new(cx, cy, cz), obstacles, polygon, gridSize, 1.0, steps)
+    local path = FindSafeLocationInPolygonAStar(mapId, AI.PathFinding.Vector3.new(cx, cy, cz), obstacles, polygon,
+        gridSize, 1.0, steps)
     if path and type(path) == "table" then
         print(table2str(path))
         AI.SetMoveToPath(path, 0.7, function()
@@ -253,9 +254,8 @@ function AI.TestSafeLocationInPolygon()
         end)
     else
         print("failed to generate AStar path")
-    end    
+    end
 end
-
 
 function AI.TestNavigateClouds()
     RunMacroText("/say .cast 70766")
@@ -290,4 +290,27 @@ function AI.TestNavigateClouds()
 
     JumpOrAscendStart()
     AI.SetMoveToPath(wps)
+end
+
+function AI.TestBloodQueenPathing()
+    local flameKiteWp1 = {AI.PathFinding.Vector3.new(4614.0141601563, 2789.9033203125, 400.13821411133),
+                          AI.PathFinding.Vector3.new(4601.3940429688, 2797.3210449219, 400.13665771484),
+                          AI.PathFinding.Vector3.new(4586.1357421875, 2796.5583496094, 400.13702392578),
+                          AI.PathFinding.Vector3.new(4588.408203125, 2790.8203125, 400.13562011719),
+                          AI.PathFinding.Vector3.new(4597.654296875, 2789.1013183594, 400.13671875)}
+
+    local flameKiteWp2 = {AI.PathFinding.Vector3.new(4580.189453125, 2792.396484375, 400.13793945313),
+                          AI.PathFinding.Vector3.new(4571.3754882813, 2773.2924804688, 400.13824462891),
+                          AI.PathFinding.Vector3.new(4576.5073242188, 2748.380859375, 400.13809204102),
+                          AI.PathFinding.Vector3.new(4584.2192382813, 2752.8449707031, 400.13809204102),
+                          AI.PathFinding.Vector3.new(4585.8740234375, 2760.6655273438, 400.13711547852)}
+
+    local flameKiteWp3 = {AI.PathFinding.Vector3.new(4609.0229492188, 2745.013671875, 400.13714599609),
+                          AI.PathFinding.Vector3.new(4586.5673828125, 2742.0473632813, 400.13714599609),
+                          AI.PathFinding.Vector3.new(4587.8442382813, 2750.728515625, 400.13714599609),
+                          AI.PathFinding.Vector3.new(4600.1879882813, 2750.86328125, 400.13714599609),
+                          AI.PathFinding.Vector3.new(4600.0249023438, 2750.5217285156, 400.13711547852),
+                          AI.PathFinding.Vector3.new(4594.3720703125, 2755.861328125, 400.13711547852)}
+    local nextKiteIdx = 1
+    AI.SetMoveToPath(flameKiteWp3)
 end

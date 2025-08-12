@@ -96,7 +96,7 @@ local function manageThreat()
 end
 
 local function doOnUpdate_ShadowPriest()
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
@@ -174,7 +174,7 @@ local function doAutoDps()
         return
     end
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
@@ -206,15 +206,15 @@ local function doAutoDps()
         end
 
 
-        -- if AI.CanCastSpell("shadow word: death", "target", true) then
-        --     RunMacro("mindblast-swd")
-        -- end
+        if AI.CanCastSpell("shadow word: death", "target", true) then
+            RunMacro("mindblast-swd")
+        end
 
-        if AI.DoCastSpellChain("target", "mind blast") then
+        if AI.Config.useMindBlast and AI.DoCastSpellChain("target", "mind blast") then
             return
         end
 
-        if UnitHealth("target") > 50000 and AI.GetMyBuffCount("shadow weaving") == 5 and AI.HasBuff("shadowy insight") then
+        if UnitHealth("target") > 50000 and AI.GetMyBuffCount("shadow weaving") == 5 then
             if AI.DoCastSpellChain("target", "Shadow Word: Pain") then
                 return
             end
@@ -241,7 +241,7 @@ end
 
 local function doDps(isAoE)
 
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() or AI.AUTO_DPS then
         return
     end
@@ -272,15 +272,15 @@ local function doDps(isAoE)
             return
         end
 
-        -- if AI.CanCastSpell("shadow word: death", "target", true) then
-        --     RunMacro("mindblast-swd")
-        -- end
+        if AI.CanCastSpell("shadow word: death", "target", true) then
+            RunMacro("mindblast-swd")
+        end
 
-        if AI.DoCastSpellChain("target", "mind blast") then
+        if AI.Config.useMindBlast and AI.DoCastSpellChain("target", "mind blast") then
             return
         end
 
-        if UnitHealth("target") > 50000 and AI.GetMyBuffCount("shadow weaving") == 5 and AI.HasBuff("shadowy insight") then
+        if UnitHealth("target") > 50000 and AI.GetMyBuffCount("shadow weaving") == 5 then
             if AI.DoCastSpellChain("target", "Shadow Word: Pain") then
                 return
             end

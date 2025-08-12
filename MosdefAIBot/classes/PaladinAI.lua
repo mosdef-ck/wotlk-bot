@@ -26,7 +26,7 @@ end
 
 local function doAutoDps()
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -53,7 +53,7 @@ local function doAutoDps()
         return
     end
 
-    if AI.DoCastSpellChain("target", "Hammer of the Righteous", AI.Config.judgmentToUse or "judgement of light") then
+    if AI.DoCastSpellChain("target", "Hammer of the Righteous", AI.Config.judgementToUse or "judgement of light") then
         return
     end
 
@@ -71,7 +71,7 @@ end
 
 local function doDps(isAoE)
 
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.AUTO_DPS then
         return
     end
@@ -93,7 +93,7 @@ local function doDps(isAoE)
         return
     end
 
-    if AI.DoCastSpellChain("target", "Hammer of the Righteous", AI.Config.judgmentToUse or "judgement of light") then
+    if AI.DoCastSpellChain("target", "Hammer of the Righteous", AI.Config.judgementToUse or "judgement of light") then
         return
     end
 
@@ -111,7 +111,7 @@ local function doDps(isAoE)
 end
 
 local function doOnUpdate_ProtPaladin()
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end

@@ -50,7 +50,7 @@ function MaloWUtils_PrintEditable(...)
     myFrame:Show()
 end
 
-function MalowUtils_PrintScrollable(text)
+function MalowUtils_PrintScrollable(...)
     local time = GetTime()
     local myFrame = CreateFrame("Frame", "MyFrame" .. time, UIParent, "UIPanelDialogTemplate")
     myFrame:SetSize(650, 400)
@@ -80,11 +80,15 @@ function MalowUtils_PrintScrollable(text)
     ScrollFrame:SetPoint("BOTTOMRIGHT", myFrame, "BOTTOMRIGHT", -20, 20);
 
     -- Create the edit box
+    local txt = select(1, ...)
+    for i = 2, select('#', ...) do
+        txt = txt .. ", " .. select(i, ...)
+    end
     local editBox = CreateFrame("EditBox", "MyFrameEditBox" .. time, ScrollFrame)
     editBox:SetPoint("TOPLEFT", ScrollFrame, 5, -5)
     editBox:SetPoint("BOTTOMRIGHT", ScrollFrame, -5, 5)
     editBox:SetWidth(ScrollFrame:GetSize())
-    editBox:SetText(text or "Lorem Ipsom");
+    editBox:SetText(txt or "Lorem Ipsom");
     editBox:SetFontObject("GameFontNormal")
     editBox:SetMultiLine(true)
     editBox:SetAutoFocus(false)
@@ -328,18 +332,21 @@ function splitstr(text, pattern)
 end
 
 function splitstr2(text, sep)
-    local pattern = "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)"
+    local nsep = sep or ","
+    local pattern = "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)"
     local v1, v2 = string.match(text, pattern)
     return v1, v2
 end
 
 function splitstr3(text, sep)
-    local pattern = "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)"
+    local nsep = sep or ","
+    local pattern = "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)"
     local v1, v2, v3 = string.match(text, pattern)
     return v1, v2, v3
 end
 function splitstr4(text, sep)
-    local pattern = "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)"
+    local nsep = sep or ","
+    local pattern = "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)"
     local v1, v2, v3, v4 = string.match(text, pattern)
     return v1, v2, v3, v4
 end
@@ -387,10 +394,10 @@ end
 
 function normalizeObstacleRadius(radius)
     local plrInfo = AI.GetObjectInfo("player")
-    local boundingRadius = plrInfo.boundingRadius or 0.5
-    local scale = 1.2
+    -- local boundingRadius = plrInfo.boundingRadius or 0.5
+    local scale = 1.1
     if plrInfo.objectScale and plrInfo.objectScale > scale then
         scale = plrInfo.objectScale    
     end
-    return (radius + boundingRadius) * scale
+    return (radius * scale)
 end

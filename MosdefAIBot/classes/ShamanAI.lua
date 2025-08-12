@@ -10,7 +10,7 @@ local function ApplyWeaponEnchants(mainHandSpell, offHandSpell)
         if not hasMainHandEnchant then
             local link = GetInventoryItemLink("player", 16)
             if link then
-                local name, _, _, _, _, _, _, _, type = GetItemInfo(GetInventoryItemLink("player", 16))
+                local name, _, _, _, _, _, type = GetItemInfo(GetInventoryItemLink("player", 16))
                 if type and (strcontains(type, "mace") or strcontains(type, "staves")) and AI.CastSpell(mainHandSpell) then
                     return true
                 end
@@ -69,7 +69,7 @@ local function autoPurge()
 end
 
 local function doAutoDpsRestoration()
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
@@ -89,7 +89,7 @@ end
 
 local function doOnUpdate_RestorationShaman()
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") then
         return
     end
@@ -97,7 +97,7 @@ local function doOnUpdate_RestorationShaman()
     useHealthStone()
 
     -- otherwise heal the raid
-    local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("chain heal")
+    local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("chain heal")    
     local tank = AI.GetPrimaryTank()
 
     if AI.IsUnitValidFriendlyTarget(tank, "healing wave") and AI.IsInCombat() and not AI.HasDebuff("ice tomb", tank) then
@@ -198,7 +198,7 @@ local function doOnUpdate_RestorationShaman()
     end
 
     -- keep earth shield on the tank
-    if AI.IsInDungeonOrRaid() and not AI.HasMyBuff("earth shield", tank) and AI.CastSpell("earth shield", tank) then
+    if AI.IsInDungeonOrRaid() and not AI.HasMyBuff("earth shield", tank) and AI.IsUnitValidFriendlyTarget(tank, "earth shield") and AI.CastSpell("earth shield", tank) then
         return
     end
 
@@ -232,7 +232,7 @@ local function doOnTargetStartCasting_Shaman()
 end
 
 local function doOnUpdate_ElementalShaman()
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or not AI.CanCast() or AI.IsMoving() then
         return
     end
@@ -269,7 +269,7 @@ local function doOnUpdate_ElementalShaman()
 end
 
 local function doDpsElemental(isAoE)
-    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() then
+    if IsMounted()  or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
 
@@ -313,7 +313,7 @@ end
 
 local function doAutoDpsElemental()
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
         AI.HasBuff("drink") or AI.IsMoving() then
         return
     end

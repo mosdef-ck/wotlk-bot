@@ -134,17 +134,16 @@ local function doBuffs()
         if AI.GetBuffDuration("fel armor") < 60 and AI.CastSpell("fel armor") then
             return true
         end
-        if not AI.HasMyBuff("life tap") and not AI.HasBuff("teleport momentum") and AI.CastSpell("life tap(rank 1)") then
-            return true
-        end
+        -- if not AI.HasMyBuff("life tap") and not AI.HasBuff("teleport momentum") and AI.CastSpell("life tap(rank 1)") then
+        --     return true
+        -- end
     end
     return false
 end
 
 local function doUpdate_Warlock()
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") then
+    if not isAIEnabled or IsMounted() or not AI.CanCast() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") then
         return
     end
 
@@ -193,11 +192,21 @@ local function doUpdate_Warlock()
         PetFollow()
         PetPassiveMode()
     end
+
+    if AI.IsInCombat() and not AI.DISABLE_WARLOCK_CURSE and (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) then
+        local isDoom = strcontains(AI.Config.curseToUse, "curse of doom")
+        local spell = (isDoom and UnitHealth("target") >= 1000000) and "curse of doom" or AI.Config.curseToUse
+        if isDoom and UnitHealth("target") < 1000000 then
+            spell = "curse of agony"
+        end
+        if AI.DoCastSpellChain("target", spell) then
+            return
+        end
+    end
 end
 
 local function doDpsDestro(isAoE)
-    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") then
+    if IsMounted() or not AI.CanCast() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") then
         return
     end
 
@@ -207,26 +216,11 @@ local function doDpsDestro(isAoE)
 
     if not AI.DISABLE_PET_AA then
         PetAttack()
-        RunMacroText("/cast firebolt")
     end
 
     if shouldDrainSoul() and AI.GetTargetStrength() < 3 and UnitHealth("target") <= 20000 and
         AI.CastSpell("drain soul", "target") then
         return
-    end
-
-    if not AI.DISABLE_WARLOCK_CURSE and (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and
-        not AI.HasMyDebuff(AI.Config.curseToUse, "target") then
-        local isDoom = AI.Config.curseToUse == "curse of doom"
-        if not isDoom or UnitHealth("target") <= 1000000 then
-            if AI.DoCastSpellChain("target", "curse of agony") then
-                return
-            end
-        else
-            if AI.DoCastSpellChain("target", "curse of doom") then
-                return
-            end
-        end
     end
 
     -- if AI.GetTargetStrength() > 3 and not AI.HasDebuff("curse of doom", "target") and
@@ -245,6 +239,9 @@ local function doDpsDestro(isAoE)
         if AI.CastAOESpell("rain of fire", "target") then
             return
         end
+        -- if AI.CastSpell("seed of corruption", "target") then
+        --     return
+        -- end
     end
 
     -- local sbTravelTime = math.floor(AI.GetDistanceToUnit("target") / 20.0);
@@ -276,8 +273,7 @@ local function doAutoDpsDestro()
         return
     end
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") then
+    if not isAIEnabled or IsMounted() or not AI.CanCast() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") then
         return
     end
 
@@ -291,26 +287,11 @@ local function doAutoDpsDestro()
 
     if not AI.DISABLE_PET_AA then
         PetAttack()
-        RunMacroText("/cast firebolt")
     end
 
     if shouldDrainSoul() and AI.GetTargetStrength() < 3 and UnitHealth("target") <= 20000 and
         AI.CastSpell("drain soul", "target") then
         return
-    end
-
-    if not AI.DISABLE_WARLOCK_CURSE and (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and
-        not AI.HasMyDebuff(AI.Config.curseToUse, "target") then
-        local isDoom = AI.Config.curseToUse == "curse of doom"
-        if not isDoom or UnitHealth("target") <= 1000000 then
-            if AI.DoCastSpellChain("target", "curse of agony") then
-                return
-            end
-        else
-            if AI.DoCastSpellChain("target", "curse of doom") then
-                return
-            end
-        end
     end
 
     if AI.AUTO_AOE then
@@ -324,6 +305,9 @@ local function doAutoDpsDestro()
         if AI.CastAOESpell("rain of fire", "target") then
             return
         end
+        -- if AI.CastSpell("seed of corruption", "target") then
+        --     return
+        -- end
     end
 
     -- local sbTravelTime = math.floor(AI.GetDistanceToUnit("target") / 20.0);
@@ -351,7 +335,7 @@ local function doAutoDpsDestro()
 end
 
 local function doDpsAffliction(isAoE)
-    if IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.AUTO_DPS then
+    if IsMounted() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.AUTO_DPS then
         return
     end
 
@@ -372,20 +356,6 @@ local function doDpsAffliction(isAoE)
     if shouldDrainSoul() and AI.GetTargetStrength() < 3 and UnitHealth("target") <= 15000 and
         AI.CastSpell("drain soul", "target") then
         return
-    end
-
-    if not AI.DISABLE_WARLOCK_CURSE and (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and
-        not AI.HasMyDebuff(AI.Config.curseToUse, "target") then
-        local isDoom = AI.Config.curseToUse == "curse of doom"
-        if not isDoom or UnitHealth("target") <= 1000000 then
-            if AI.DoCastSpellChain("target", "curse of agony") then
-                return
-            end
-        else
-            if AI.DoCastSpellChain("target", "curse of doom") then
-                return
-            end
-        end
     end
 
     if isAoE then
@@ -445,8 +415,7 @@ local function doAutoDpsAffliction()
         return
     end
 
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") then
+    if not isAIEnabled or IsMounted() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") then
         return
     end
 
@@ -471,20 +440,6 @@ local function doAutoDpsAffliction()
     if shouldDrainSoul() and AI.GetTargetStrength() < 3 and UnitHealth("target") <= 15000 and
         AI.CastSpell("drain soul", "target") then
         return
-    end
-
-    if not AI.DISABLE_WARLOCK_CURSE and (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and
-        not AI.HasMyDebuff(AI.Config.curseToUse, "target") then
-        local isDoom = AI.Config.curseToUse == "curse of doom"
-        if not isDoom or UnitHealth("target") <= 1000000 then
-            if AI.DoCastSpellChain("target", "curse of agony") then
-                return
-            end
-        else
-            if AI.DoCastSpellChain("target", "curse of doom") then
-                return
-            end
-        end
     end
 
     if AI.AUTO_AOE then
@@ -572,7 +527,7 @@ function AI.doOnLoad_Warlock()
             primaryTank = AI.Config.tank
             primaryHealer = AI.Config.healer
             panicPct = AI.Config.panicHpPct
-            AI.Config.curseToUse = AI.Config.curseToUse or "curse of the elements"
+            AI.Config.curseToUse = AI.Config.curseToUse or "curse of doom"
             AI.Print({
                 primaryTank = primaryTank,
                 panicPct = panicPct

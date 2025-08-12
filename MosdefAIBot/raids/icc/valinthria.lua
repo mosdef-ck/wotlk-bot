@@ -91,7 +91,7 @@ local valithria = MosDefBossModule:new({
             SetFollowTarget(UnitGUID(AI.GetPrimaryHealer()))
         end
     end,
-    dreamWalkerDps = "Mosdefswp",
+    dreamWalkerDps = "Mosdeflocka",
     cloudList = {},
     nextCloud = nil,
     startP = AI.PathFinding.Vector3.new(4235.9560546875, 2481.4431152344, 364.87030029297),
@@ -102,7 +102,8 @@ local valithria = MosDefBossModule:new({
     flySpeed = 14,
     timeWhenReachedCloud = nil,
     lastPortalOpenTime = 0,
-    companionAtPortal = false
+    companionAtPortal = false,
+    prePortalTime = 0,
 })
 
 function valithria:GetObstacles()
@@ -221,8 +222,8 @@ end
 
 function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID, src, dest)
     -- portal pre-effect
-    if (spellId == 72480 or spellId == 72481 or spellId == 72482) and AI.IsHealer() and AI.GetUnitHealthPct("focus") <=
-        90 then
+    if (spellId == 72480 or spellId == 72481 or spellId == 72482) and AI.IsHealer() and (AI.GetUnitHealthPct("focus") <=
+        90 or AI.GetDebuffDuration("twisted nightmares") <= 10) then
         self.nextCloud = nil
         self.cloudList = {}
         self.companionAtPortal = false
@@ -242,6 +243,7 @@ function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID
                 return true
             end
             -- end
+            self.prePortalTime = GetTime()
         end, 10, "VALITHRIA_PRE_PORTAL_OPEN")
     end
 
@@ -287,12 +289,13 @@ function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID
         if not AI.IsHealer() then
             SetFollowTarget(UnitGUID(AI.GetPrimaryHealer()))
         end
+        local delay = AI.GetDebuffDuration("twisted nightmares") < 5 and 0.5 or 1
         AI.RegisterPendingAction(function(self)
             -- to stop us from continually ascending
             AscendStop()
             -- jump to launch the toon to flight(makes it faster to start flying to nightmare orbs)        
             if AI.IsHealer() and
-                (AI.GetUnitHealthPct(AI.GetPrimaryTank()) >= 50 or AI.GetDistanceToUnit(AI.GetPrimaryTank()) >= 35) then
+                (AI.GetUnitHealthPct(AI.GetPrimaryTank()) >= 30 or AI.GetDistanceToUnit(AI.GetPrimaryTank()) >= 35) then
                 local delay = AI.GetDebuffCount("twisted nightmares") > 20 and 5 or 0
                 -- AI.RegisterPendingAction(function(self)
                 --     -- don't start moving  towards clouds until our fellow dps buddy is close enough to us
@@ -308,15 +311,14 @@ function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID
                 self:MoveToClouds()
                 return true
             end
-        end, 1)
+        end, delay)
     end
 
     if (spellId == 71179 or spellId == 70704) and not AI.IsTank() and not AI.HasBuffOrDebuff("dream state") then
-        -- don't dodge mana void
-        -- if (AI.IsHealer() or strcontains(UnitName("player"), self.dreamWalkerDps)) and GetTime() <
-        --     self.lastPortalOpenTime + 5 then
-        --     return
-        -- end
+        -- don't dodge if we waiting to use portal
+        if (AI.IsHealer() or strcontains(UnitName("player"), self.dreamWalkerDps)) and GetTime() < self.prePortalTime + 5 then
+            return
+        end
         if AI.GetDistanceTo(dest.x, dest.y) <= 7 then
             print("avoid this", spellId, spellName, casterGUID, targetGUID, table2str(src), table2str(dest))
 
@@ -358,7 +360,9 @@ function valithria:GoToNextCloud()
         print("exhausted cloud list moving back to engage point")
         local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 10, self:GetObstacles(), 1)
         local tx, ty, tz = AI.GetPosition(AI.GetPrimaryTank())
-        AI.SetMoveTo(p.x, p.y, 373.0)
+        AI.SetMoveTo(p.x, p.y, 373.0, 0, function()
+            AI.MustCastSpell("healing stream totem", nil)            
+        end)
         AI.SendAddonMessage("move-back-to-engage")
     end
 end
@@ -369,11 +373,11 @@ function valithria:GenerateCloudsToMoveTo()
     local me = self
     table_removeif(clouds, function(c)
         -- return c.z < 380.0 or c.z > 388.0
-        return c:GetDistanceTo(me.portalP.x, me.portalP.y) > 35
+        return c:GetDistanceTo(me.portalP.x, me.portalP.y) > 40
     end)
     local cloudGuids = {}
     -- try to grab a max of 5 clouds per dream state
-    local maxCount = 4
+    local maxCount = 5
     -- if AI.GetDebuffCount("twisted nightmares") > 20 then
     --     maxCount = 2
     -- end
@@ -386,8 +390,8 @@ function valithria:GenerateCloudsToMoveTo()
             table_removeif(clouds, function(c)
                 return c == nextCloud
             end)
-            nextCloud = self:FindNextClosestCloudTo(nextCloud, clouds)
-            -- nextCloud = #clouds > 0 and clouds[#clouds] or nil
+            -- nextCloud = self:FindNextClosestCloudTo(nextCloud, clouds)
+            nextCloud = #clouds > 0 and clouds[#clouds] or nil
         end
     end
     return cloudGuids

@@ -59,9 +59,9 @@ end
 
 function AI.GetNumPartyOrRaidMembers()
     if UnitInRaid("player") then
-        return GetNumRaidMembers()
+        return GetNumRaidMembers()+1
     else
-        return GetNumPartyMembers()
+        return GetNumPartyMembers()+1
     end
     return 1
 end
@@ -116,8 +116,8 @@ function AI.IsOnGCD()
     -- end
 
     -- return GetSpellCooldown(getGCDSpell(AI.GetClass("player"))) - curPing > 0
-    return GetTime() - lastCastTime < 0.3
-    -- return false
+    -- return GetTime() - lastCastTime < 0.3
+    return false
 end
 
 function AI.CanCast()
@@ -781,7 +781,7 @@ end
 
 function AI.CastVehicleSpellOnDestination(spellName, dest)
     if not AI.HasPossessionSpellCooldown(spellName) then
-        local casterGuid = UnitGUID("playerpet")
+        local casterGuid = UnitExists("playerpet") and UnitGUID("playerpet") or UnitGUID("player")
         local spellId = AI.FindPossessionSpellId(spellName)
         if spellId then
             local targetDest;
@@ -800,8 +800,8 @@ function AI.CastVehicleSpellOnDestination(spellName, dest)
 end
 
 function AI.CastVehicleSpellOnTarget(spellName, target)
-    if not AI.HasPossessionSpellCooldown(spellName) then
-        local casterGuid = UnitGUID("playerpet")
+    if not AI.IsCasting("playerpet") and not AI.HasPossessionSpellCooldown(spellName) then
+        local casterGuid = UnitExists("playerpet") and UnitGUID("playerpet") or UnitGUID("player")
         local spellId = AI.FindPossessionSpellId(spellName)
         if spellId then
             local targetGuid;
@@ -818,7 +818,8 @@ function AI.CastVehicleSpellOnTarget(spellName, target)
 end
 
 function AI.GetPosition(unit)
-    local x, y, z = GetObjectCoords(unit or "player")
+    local nUnit = UnitExists(unit) and unit or "player"
+    local x, y, z = GetObjectCoords(nUnit)
     return x, y, z
 end
 
@@ -1045,9 +1046,10 @@ function AI.GetUnitCreatureId(unit)
 end
 
 function AI.StopCasting()
-    SpellStopCasting()
-    CancelChannelingSpell()
+    -- SpellStopCasting()
+    -- CancelChannelingSpell()    
     -- AI.StopMoving()
+    StopFollowing()
 end
 
 function AI.IsInDungeonOrRaid()
@@ -1230,8 +1232,8 @@ local function adornObject(obj)
             local time = GetTime()
             local auras = self:auras()
             for i, a in ipairs(auras) do
-                 local duration = a.expiration > 0 and a.expiration - time or 9999
-                if type(spell) == "number" and a.spellId == spell then                   
+                local duration = a.expiration > 0 and a.expiration - time or 9999
+                if type(spell) == "number" and a.spellId == spell then
                     return duration
                 end
                 if type(spell) == "string" and strcontains(spell, a.name) then
@@ -1246,7 +1248,7 @@ local function adornObject(obj)
             local auras = self:auras()
             local guid = UnitGUID("player")
             for i, a in ipairs(auras) do
-                 local duration = a.expiration > 0 and a.expiration - time or 9999
+                local duration = a.expiration > 0 and a.expiration - time or 9999
                 if type(spell) == "number" and a.spellId == spell and a.casterGUID == guid then
                     return duration
                 end
@@ -1424,7 +1426,7 @@ function AI.DoCastSpellChain(unit, ...)
     if count > 0 then
         for i = 1, count, 1 do
             local spell = select(i, ...)
-            if not AI.HasMyDebuff(spell, unit) or AI.GetMyDebuffDuration(spell, unit) <= 1 then
+            if not AI.HasMyDebuff(spell, unit) or AI.GetDebuffDuration(spell, unit) < 2 then
                 local success = AI.CastSpell(spell, unit)
                 if success then
                     return true
@@ -1531,15 +1533,13 @@ function AI.GetAlliesAsObstacles(r)
     for i, ally in ipairs(allies) do
         if UnitGUID(ally) ~= UnitGUID("player") then
             local x, y, z = AI.GetPosition(ally)
-            if x and y and z then
-                table.insert(obstacles, {
-                    x = x,
-                    y = y,
-                    z = z,
-                    guid = UnitGUID(ally),
-                    radius = r or 0.5
-                })
-            end
+            table.insert(obstacles, {
+                x = x,
+                y = y,
+                z = z,
+                guid = UnitGUID(ally),
+                radius = r or 5
+            })
         end
     end
     return obstacles
@@ -1553,4 +1553,8 @@ function AI.GetAvailableDpsPotion()
         end
     end
     return nil
+end
+
+function AI.IsTargetABoss()
+    return AI.IsValidOffensiveUnit("target") and UnitClassification("target") == "worldboss"
 end
