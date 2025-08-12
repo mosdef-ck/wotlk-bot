@@ -44,10 +44,11 @@ manaPctThreshold = 30
 manaTideThreshold = 70
 
 --
-panicHpPct = 10
+panicHpPct = 30
 
 --
 dpsPotion = "potion of wild magic"
+dpsPotion2 = "potion of speed"
 
 
 dps1 = { "mosdefswp" }
@@ -58,7 +59,14 @@ dps3 = { "mosdefelsham", "mosdeffmage" }
 
 startHealOverrideThreshold = 100
 
+useHealingWaveOnToons = false
+
 
 focusMagicTarget = "mosdeflocka"
 
-curseToUse = "curse of the elements"
+-- curseToUse = "curse of the elements"
+curseToUse = "curse of doom"
+
+starFormationRadius = 15
+
+judgmentToUse = "judgement of wisdom"

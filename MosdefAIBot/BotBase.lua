@@ -18,6 +18,8 @@ AI.DISABLE_THREAT_MANAGEMENT = false
 AI.USE_MANA_REGEN = true
 AI.DISABLE_WARLOCK_CURSE = false
 AI.DISABLE_PRIEST_DISPERSION = false
+AI.DISABLE_PET_AA = false
+AI.DISABLE_DEEP_FREEZE = false
 
 AI.BossModules = {}
 AI.ZoneModules = {}
@@ -44,12 +46,12 @@ local previousZoneName = nil
 local cachedOnUpdateCallbacks = nil
 local lastCallbackCheckTime = GetTime()
 
-local findEnabledBossModule
+local findEnabledBossModule, findZoneModule
 
 local hasReachedGoToPosition = nil
 local goToPath = nil
 local goToPathCurrentWp = nil
-local lastCTMTick = 0
+local maxSpeedObserved = 0
 
 local registeredClassEventHandlers = {}
 local registeredPendingActions = {}
@@ -58,14 +60,13 @@ local registeredPendingActions = {}
 local desiredPlayerFacing = nil
 local desiredVehicleAimAngle = nil
 local desiredFollowTarget = nil
+local focusedTarget = nil
 
 local lastPosCheckTime = 0
 local positionSetTime = 0
 local lastCheckedPosition = nil
 local lastSoulwellCheckTime = 0
 local lastFishFeastCheckTime = 0
-
-local executeDpsMethod = nil
 
 local objectAvoidance = nil
 
@@ -88,20 +89,19 @@ local function onUpdate()
     if UnitIsDeadOrGhost("player") then
         return
     end
-    ---        
-    AI.IS_DOING_ONUPDATE = true
+    ---            
 
     local bossMod = findEnabledBossModule()
 
     -- execute pending actions first
     local now = GetTime()
     -- execute pending action before boss updates
+    AI.IS_DOING_ONUPDATE = true
     for i, action in ipairs(registeredPendingActions) do
         if now >= action.when and not action.executed and (action.f(bossMod) or action.oneshot) then
             action.executed = true
         end
     end
-
     -- clean up executed actions
 
     for i = #registeredPendingActions, 1, -1 do
@@ -128,17 +128,6 @@ local function onUpdate()
             AI.doAutoDps()
         end
     end
-
-    if executeDpsMethod ~= nil and not AI.AUTO_DPS then
-        if ((not AI.HasMoveTo() or AI.GetDistanceTo(AI.GetMoveToFinalDestination()) < 1) or AI.IsInVehicle()) then
-            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(executeDpsMethod.isAoE == true) then
-                if not AI.HasBuff("invisibility") and not AI.HasBuff("fade") then
-                    AI.DO_DPS(executeDpsMethod.isAoE == true)
-                end
-            end
-        end
-        executeDpsMethod = nil
-    end
 end
 
 local function onAddOnLoad()
@@ -156,8 +145,11 @@ local function onAddOnLoad()
     previousZoneName = GetRealZoneText()
     local zoneId = GetCurrentMapAreaID()
     for i in pairs(AI.ZoneModules) do
-        if AI.ZoneModules[i].zoneName == previousZoneName or AI.ZoneModules[i].zoneId == zoneId then
+        if (AI.ZoneModules[i].zoneName == previousZoneName or AI.ZoneModules[i].zoneId == zoneId) and
+            not AI.ZoneModules[i].active then
             AI.ZoneModules[i]:onEnter()
+            AI.ZoneModules[i].active = true
+            UIErrorsFrame:AddMessage("activated zone module: " .. AI.ZoneModules[i].zoneName)
         end
     end
 end
@@ -205,10 +197,22 @@ local function loadBossModule(creatureId)
                 end
             end
         end
+        if ncreatureId ~= nil and type(mod.creatureId) == "number" then
+            if mod.creatureId == ncreatureId then
+                foundMod = mod
+            end
+        end
+        if ncreatureId ~= nil and type(mod.creatureId) == "string" then
+            if tonumber(mod.creatureId) == ncreatureId then
+                foundMod = mod
+            end
+        end
+
         if foundMod ~= nil and not foundMod.enabled then
             foundMod.enabled = true
             foundMod:onStart()
             UIErrorsFrame:AddMessage(foundMod.name .. " module enabled, good luck!")
+            -- print("loaded boss module for " .. foundMod.name)
         end
     end
 end
@@ -217,6 +221,18 @@ findEnabledBossModule = function()
     for i, mod in ipairs(AI.BossModules) do
         if mod.enabled == true then
             -- print("Found enabled bos mod "..mod.name)
+            return mod
+        end
+    end
+    return nil
+end
+
+findZoneModule = function()
+    local zoneName = GetRealZoneText()
+    local subzone = GetMinimapZoneText()
+    local zoneId = GetCurrentMapAreaID()
+    for i, mod in ipairs(AI.ZoneModules) do
+        if mod.zoneName == zoneName or mod.zoneId == zoneId or mod.zoneName == subzone then
             return mod
         end
     end
@@ -326,7 +342,7 @@ local function onAddOnChatMessage(from, message)
     elseif cmd == "off" then
         isAIEnabled = false
         print(PREFIX .. " is disabled!")
-    elseif cmd == "load-boss-module" and UnitName("player") ~= from then
+    elseif cmd == "load-boss-module" then
         loadBossModule(params)
     elseif cmd == "auto-dps" then
         if params == "on" then
@@ -359,10 +375,102 @@ local function onAddOnChatMessage(from, message)
         AI.Print("Clearing follow")
         desiredFollowTarget = nil
         AI.ResetMoveToPosition()
+    elseif cmd == 'set-focused-target' then
+        local guid = params
+        AI.SetFocusedTarget(guid)
+        -- print("got focused target guid: " .. guid)
+    elseif cmd == "interact-with" then
+        if from ~= UnitName("player") then
+            local guid = params
+            -- print("guid is " .. guid)
+            if not guid or guid == "" then
+                ClearTarget()
+                AssistUnit(from)
+                guid = UnitGUID("target")
+            end
+            if guid then
+                local info = AI.GetObjectInfoByGUID(guid)
+                if info then
+                    info:InteractWith()
+                end
+            else
+                local gos = AI.FindNearbyGameObjects()
+                if #gos > 0 and gos[1].distance <= 10 then
+                    print("interacting with " .. gos[1].name)
+                    gos[1]:InteractWith()
+                end
+            end
+        end
+    elseif cmd == "use-trinkets" then
+        if from ~= UnitName("player") and AI.IsDps() then
+            -- print("received use-trinkets from " .. from)
+            AI.RegisterPendingAction(function()
+                local used = AI.UseInventorySlot(13) and AI.UseInventorySlot(10) and AI.UseInventorySlot(14)
+                return used
+            end, 0, "USE_TRINKETS");
+        end
+    elseif cmd == "form-star" then
+        if from ~= UnitName("player") then
+            -- print("received form-star from " .. from)
+            local rad90 = math.pi / 2
+            AssistUnit(from)
+            if not AI.IsValidOffensiveUnit() then
+                TargetUnit(from)
+            end
+            local tx, ty, tz
+            local theta
+            if not params or params == "" then
+                tx, ty, tz = AI.GetPosition("target")
+            else
+                tx, ty, tz = splitstr3(params, ",")
+                if tx == nil then
+                    local obj = AI.GetObjectInfoByGUID(params)
+                    tx, ty, tz = obj.x, obj.y, obj.z
+                end
+            end
+
+            if UnitName("target") ~= from then
+                theta = AI.CalcFacing(tx, ty, AI.GetPosition(from))
+            else
+                theta = AI.CalcFacing(tx, ty, AI.GetPosition())
+            end
+            local r = tonumber(params) or AI.Config.starFormationRadius
+            if AI.IsHealer() then
+                AI.SetMoveTo(tx + r * math.cos(theta), ty + r * math.sin(theta))
+            end
+            if AI.IsDpsPosition(1) then
+                theta = theta + rad90 * 1
+                AI.SetMoveTo(tx + r * math.cos(theta), ty + r * math.sin(theta))
+            end
+            if AI.IsDpsPosition(2) then
+                theta = theta + rad90 * 2
+                AI.SetMoveTo(tx + r * math.cos(theta), ty + r * math.sin(theta))
+            end
+            if AI.IsDpsPosition(3) then
+                theta = theta + rad90 * 3
+                AI.SetMoveTo(tx + r * math.cos(theta), ty + r * math.sin(theta))
+            end
+        end
+    elseif cmd == 'toggle-closest-door' then
+        local gos = AI.FindNearbyGameObjects()
+        if #gos > 0 then
+            local door = gos[1]
+            print("toggling door " .. door.name .. " state " .. door.state)
+            if door.state == 1 then
+                door:SetGoState(0)
+            else
+                door:SetGoState(1)
+            end
+        end
     else
         local bossMod = findEnabledBossModule()
         if bossMod and type(bossMod.ON_ADDON_MESSAGE) == 'function' then
             bossMod:ON_ADDON_MESSAGE(from, cmd, params)
+        end
+
+        local zone = findZoneModule()
+        if zone ~= nil and type(zone.ON_ADDON_MESSAGE) == 'function' then
+            zone:ON_ADDON_MESSAGE(from, cmd, params)
         end
     end
 
@@ -370,41 +478,52 @@ end
 
 local function handleFacingWrongWay()
     if AI.ALLOW_AUTO_REFACE and not AI.HasCTM() then
+        StopFollowing()
         AI.SetFacingCoords(AI.GetPosition("target"))
     end
 end
 
 local cachedUnitCastCb = nil
 local function onEvent(self, event, ...)
-    local arg1 = select(1, ...)
-    local arg2 = select(2, ...)
-    local arg3 = select(3, ...)
-    local arg4 = select(4, ...)
-    local arg5 = select(5, ...)
-    local arg6 = select(6, ...)
-    local arg7 = select(7, ...)
-    local arg8 = select(8, ...)
+    local arg1 = select(1, ...) or ""
+    local arg2 = select(2, ...) or ""
+    local arg3 = select(3, ...) or ""
+    local arg4 = select(4, ...) or ""
+    local arg5 = select(5, ...) or ""
+    local arg6 = select(6, ...) or ""
+    local arg7 = select(7, ...) or ""
+    local arg8 = select(8, ...) or ""
 
     local bossMod = findEnabledBossModule()
 
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         isAddonLoaded = true
         AI.Print(PREFIX .. " has been successfully loaded")
+        previousZoneName = GetRealZoneText()
     elseif event == "CHAT_MSG_ADDON" and arg1 == PREFIX then
         local msg = arg2
         local from = arg4
         onAddOnChatMessage(from, msg)
     elseif event == "PLAYER_REGEN_DISABLED" then
-        AI.isInCombat = true
         loadBossModule(AI.GetUnitCreatureId("target"))
         AI.SendAddonMessage("load-boss-module", AI.GetUnitCreatureId("target"))
     elseif event == "PLAYER_REGEN_ENABLED" then
-        AI.isInCombat = false
         unloadBossModules()
-        AI.ResetMoveToPosition()        
+        AI.ResetMoveToPosition()
+        AI.Config.startHealOverrideThreshold = 100
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastPlayerEnterWorld = GetTime()
         AI.ResetMoveToPosition()
+    elseif event == "PLAYER_TALENT_UPDATE" then
+        -- print("talent update")
+        --- invokes any 'doOnLoad_' funcs that have been registered by any addon
+        if not lastPlayerEnterWorld or tickTime - lastPlayerEnterWorld > 1 then
+            for i in pairs(AI) do
+                if strcontains(i, "doOnLoad") then
+                    AI[i]()
+                end
+            end
+        end
     elseif event == "UI_ERROR_MESSAGE" then
         if strcontains(arg1, "wrong way") or strcontains(arg1, "in front of you") then
             handleFacingWrongWay()
@@ -412,14 +531,14 @@ local function onEvent(self, event, ...)
     elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
         local caster, spellName, rank = arg1, arg2, arg3
         -- print("UNIT_SPELLCAST_START arg1 "..arg1.. " arg2 "..arg2 .. " arg3 "..arg3 .. " arg4 "..arg4)
-        if cachedUnitCastCb == nil then
-            cachedUnitCastCb = {}
-            for f in pairs(AI) do
-                if MaloWUtils_StrStartsWith(f, "doOnTargetStartCasting") then
-                    table.insert(cachedUnitCastCb, AI[f])
-                end
-            end
-        end
+        -- if cachedUnitCastCb == nil then
+        --     cachedUnitCastCb = {}
+        --     for f in pairs(AI) do
+        --         if MaloWUtils_StrStartsWith(f, "doOnTargetStartCasting") then
+        --             table.insert(cachedUnitCastCb, AI[f])
+        --         end
+        --     end
+        -- end
         -- if arg1 == "target" then
         --     for i, f in ipairs(cachedUnitCastCb) do
         --         f()
@@ -430,22 +549,47 @@ local function onEvent(self, event, ...)
         end
 
     elseif event == "PLAYER_TARGET_CHANGED" then
-        if AI.IsInCombat() and AI.IsValidOffensiveUnit("target") then
+        if AI.IsInCombat() and AI.IsValidOffensiveUnit("target", true) then
             loadBossModule(AI.GetUnitCreatureId("target"))
             AI.SendAddonMessage("load-boss-module", AI.GetUnitCreatureId("target"))
         end
-    elseif event == "ZONE_CHANGED_NEW_AREA" then
+    elseif event == "UNIT_TARGET" then
+        if UnitName("player") == arg1 and AI.IsInCombat() and AI.IsValidOffensiveUnit("target", true) then
+            loadBossModule(AI.GetUnitCreatureId("target"))
+            AI.SendAddonMessage("load-boss-module", AI.GetUnitCreatureId("target"))
+        end
+
+    elseif (event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED_INDOORS" or event == "ZONE_CHANGED") then
         local zoneName = GetRealZoneText()
+        local subzone = GetMinimapZoneText()
         local zoneId = GetCurrentMapAreaID()
         local realMapId = GetCurrentMapID()
-        print("new zone " .. zoneName .. " areaId: " .. zoneId .. " realMapId: " .. (realMapId or ""))
-        for i in pairs(AI.ZoneModules) do
-            if AI.ZoneModules[i].zoneName == zoneName or AI.ZoneModules[i].zoneId == zoneId then
-                AI.ZoneModules[i]:onEnter()
+        if event == "ZONE_CHANGED_NEW_AREA" then
+            print("new zone " .. zoneName .. " zoneId: " .. zoneId .. " realMapId: " .. (realMapId or "") ..
+                      " subZone: " .. (subzone or ""))
+        end
+        for i, mod in ipairs(AI.ZoneModules) do
+            if mod.active == true and (mod.zoneName ~= zoneName or mod.zoneId ~= zoneId or mod.subzone == subzone) then
+                -- print("leaving zone " .. mod.zoneName)
+                mod:onLeave()
+                mod.active = false
             end
-            if previousZoneName ~= nil and previousZoneName ~= zoneName and AI.ZoneModules[i].zoneName ==
-                previousZoneName then
-                AI.ZoneModules[i]:onLeave()
+            if (mod.zoneName == zoneName or mod.zoneId == zoneId or mod.subzone == subzone) and not mod.active then
+                previousZoneName = zoneName
+                mod.active = true
+                mod:onEnter()
+                UIErrorsFrame:AddMessage("activated zone module: " .. mod.zoneName)
+            end
+        end
+        local bossMod = findEnabledBossModule()
+        if bossMod and bossMod.subzone and bossMod.subzone:lower() ~= subzone:lower() and not AI.IsInCombat() then
+            unloadBossModules()
+        end
+        -- load boss modules related to the current subzone
+        for i, mod in ipairs(AI.BossModules) do
+            if mod.subzone and mod.subzone:lower() == subzone:lower() and not mod.active and #mod.creatureId > 0 then
+                loadBossModule(mod.creatureId[1])
+                AI.SendAddonMessage("load-boss-module", mod.creatureId[1])
             end
         end
     elseif event == "UNIT_AURA" then
@@ -466,6 +610,7 @@ local function onEvent(self, event, ...)
                 unloadBossModules()
                 AI.ResetMoveToPosition()
                 AI.StopMoving()
+                AI.ClearObjectAvoidance()
             end
             -- print("unit died/destroyed "..arg6.. " ".. arg7)
             if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
@@ -584,6 +729,7 @@ function AI.SetMoveToPath(path, dist, onArrival)
             -- end
         end
         if #goToPath > 0 then
+            -- print("got path of length " .. #goToPath)
             goToPathCurrentWp = 1
             hasReachedGoToPosition = false
             positionSetTime = GetTime()
@@ -616,7 +762,8 @@ function AI.ResetMoveToPosition()
     goToPath = nil
     hasReachedGoToPosition = false
     AI.ALLOW_AUTO_MOVEMENT = true
-    AI.StopMoving()
+    -- AI.StopMoving()
+    -- print("ResetMoveToPosition")
 end
 function AI.ResetMoveTo()
     return AI.ResetMoveToPosition()
@@ -652,9 +799,20 @@ function AI.GetMoveToFinalDestination()
     return nil
 end
 
+function AI.ShouldMoveTo(x, y, z)
+    local nx, ny, nz = x, y, z
+    if type(x) == "table" then
+        nz = x.z or 0
+        ny = x.y or 0
+        nx = x.x or 0
+    end
+    local finalDestX, finalDestY, finalDestZ = AI.GetMoveToFinalDestination()
+    return not AI.HasMoveTo() or (math.abs(finalDestX - nx) > 0.1 or math.abs(finalDestY - ny) > 0.1)
+end
+
 function AI.IsCurrentPathSafeFromObstacles(obstacles)
     if not goToPath or #goToPath == 0 or hasReachedGoToPosition or goToPathCurrentWp == #goToPath then
-        return false
+        return true
     end
     local px, py = AI.GetPosition()
     for p = goToPathCurrentWp, #goToPath, 1 do
@@ -684,7 +842,7 @@ function AI.SetObjectAvoidance(descriptor)
             targetVector = nil,
             targetVectorMinDistance = descriptor.gridSize or 1.5
         }
-        print("obj-avoidance enabled")
+        -- print("obj-avoidance enabled")
         -- print(table2str(objectAvoidance))
         return true
     end
@@ -698,8 +856,10 @@ end
 
 function AI.ClearObjectAvoidance()
     objectAvoidance = nil
-    AI.ResetMoveTo()
-    print("obj-avoidance disabled")
+    -- print("obj-avoidance disabled")
+    if AI.HasMoveTo() then
+        AI.ResetMoveToPosition()
+    end
 end
 
 function AI.SetObjectAvoidanceTarget(guidOrObj, minDistance)
@@ -838,31 +998,36 @@ local function doAutoMovementUpdate()
     local wp = goToPath[goToPathCurrentWp]
     local totalWp = #goToPath
 
+    local ctmX, ctmY, ctmZ = GetClickToMove();
     local dist = AI.GetDistanceTo(wp.x, wp.y)
-    -- print("dist to MoveTo:" .. dist .. "gotToPath# " .. goToPathCurrentWp .. " totalWp: " .. totalWp);
+    local speed = AI.GetSpeed()
+    if speed > maxSpeedObserved then
+        maxSpeedObserved = speed
+    end
+    -- print("dist to MoveTo:" .. dist .. " goToPath# " .. goToPathCurrentWp .. " totalWp: " .. totalWp .. " ctmX: " ..
+    --           (ctmX or "nil") .. " ctmY: " .. (ctmY or "nil") .. " ctmZ: " .. (ctmZ or "nil") .. " speed: " .. speed);
     local diff = 1
     if goToPathCurrentWp >= totalWp then
         diff = 0.5
     end
-    if AI.GetSpeed() > 7 then
-        diff = 3
+    if maxSpeedObserved >= 7 then
+        diff = 2.5
     end
     local bossMod = findEnabledBossModule()
-
-    local ctmX, ctmY, ctmZ = GetClickToMove();
+    
     if dist <= diff then
         -- reached coordinates1
         if goToPathCurrentWp >= totalWp then
-            if AI.IsMoving() then
-                AI.StopMoving()
-            end
+            -- if AI.IsMoving() then
+            --     AI.StopMoving()
+            -- end
             wp.endTime = GetTime()
             hasReachedGoToPosition = true
             goToPath = nil
             if type(wp.onArrival) == "function" then
                 wp.onArrival(bossMod, nil, wp, true)
             else
-                if AI.IsDps() and AI.IsValidOffensiveUnit() then
+                if AI.IsDps() and UnitExists("target") then
                     AI.SetFacingUnit("target")
                 end
             end
@@ -884,9 +1049,9 @@ local function doAutoMovementUpdate()
     SetCVar('autoInteract', 1)
     -- end
 
-    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.3 or math.abs(ctmY - wp.y) > 0.3) or tickTime > lastCTMTick + 0.5 then
+    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.25 or math.abs(ctmY - wp.y) > 0.251) then
+    -- if ctmX == nil then
         ClickToMove(wp.x, wp.y, wp.z)
-        lastCTMTick = tickTime
     end
     return false
 end
@@ -933,7 +1098,11 @@ function AI.doOnUpdate_BotBase()
         end
         if calcDist >= distToFollow then
             local x, y, z = AI.GetPosition(desiredFollowTarget)
-            AI.SetMoveToPosition(x, y, z)
+            local ctmX, ctmY, ctmZ = GetClickToMove();
+            if ctmX == nil or (math.abs(ctmX - x) > 0.5 or math.abs(ctmY - y) > 0.5) then
+                -- print("Following " .. desiredFollowTarget .. " at dist " .. calcDist)
+                AI.SetMoveToPosition(x, y, z)
+            end
         end
     end
 
@@ -972,10 +1141,15 @@ function AI.doOnUpdate_BotBase()
         if not AI.HasContainerItem("fel healthstone") and tickTime > lastSoulwellCheckTime then
             local soulwell = AI.FindNearbyGameObjects("soulwell")
             if #soulwell > 0 and soulwell[1].distance <= 20 then
-                if AI.GetDistanceTo(soulwell[1].x, soulwell[1].y) <= 4 then
+                if AI.GetDistanceTo(soulwell[1].x, soulwell[1].y) <= 5 then
                     soulwell[1]:InteractWith()
                 else
-                    AI.SetMoveTo(soulwell[1].x, soulwell[1].y, soulwell[1].z)
+                    local p = AI.PathFinding.FindSafeSpotInCircle(soulwell[1], 5)
+                    if p then
+                        AI.SetMoveTo(p.x, p.y, p.z, 0, function()
+                            soulwell[1]:InteractWith()
+                        end)
+                    end
                 end
             end
             lastSoulwellCheckTime = tickTime + 1
@@ -986,10 +1160,11 @@ function AI.doOnUpdate_BotBase()
             not AI.IsCasting() then
             local feasts = AI.FindNearbyGameObjects("fish feast", "great feast")
             if #feasts > 0 and feasts[1].distance <= 20 then
-                if AI.GetDistanceTo(feasts[1].x, feasts[1].y) <= 5.5 then
+                if AI.GetDistanceTo(feasts[1].x, feasts[1].y) <= 5 then
                     feasts[1]:InteractWith()
                 else
-                    AI.SetMoveTo(feasts[1].x, feasts[1].y, feasts[1].y, 1, function()
+                    local p = AI.PathFinding.FindSafeSpotInCircle(feasts[1], 5)
+                    AI.SetMoveTo(p.x, p.y, p.z, 0, function()
                         feasts[1]:InteractWith()
                     end)
                 end
@@ -1017,6 +1192,35 @@ function AI.HasDesiredAimAngle()
     return desiredVehicleAimAngle ~= nil
 end
 
+function AI.SetFocusedTarget(guid)
+    if guid ~= nil and guid ~= "" then
+        local info = AI.GetObjectInfoByGUID(guid)
+        if info then
+            focusedTarget = info
+        end
+    end
+end
+
+function AI.GetFocusedTarget()
+    return focusedTarget
+end
+
+function AI.HasFocusedTarget()
+    if focusedTarget == nil then
+        return false
+    end
+    local info = AI.GetObjectInfoByGUID(focusedTarget.guid)
+    if not info then
+        focusedTarget = nil
+        return false
+    end
+    if info.isDead then
+        focusedTarget = nil
+        return false
+    end
+    return true
+end
+
 -- stub, overridden
 function AI.do_PriorityTarget()
     return false
@@ -1036,21 +1240,24 @@ function AI.MustCastSpell(spell, target)
     local cd = GetSpellCooldown(spell)
     if cd == nil or cd == 0 or (tick - cd) < 5 then
         AI.RegisterPendingAction(function()
-            -- if AI.CanCastSpell(spell, target, true) then
+            if AI.CanCastSpell(spell, target, true) then
                 AI.StopCasting()
-            -- end
+            end
             return AI.CastSpell(spell, target)
-        end, null, spell)
+        end, nil, spell)
     end
 end
 
 function AI.ExecuteDpsMethod(isAoE)
-    if executeDpsMethod == nil then
-        executeDpsMethod = {
-            isAoE = isAoE
-        }
+    if not AI.IS_DOING_ONUPDATE then
+        if ((not AI.HasMoveTo() or AI.GetDistanceTo(AI.GetMoveToFinalDestination()) < 1) or AI.IsInVehicle()) then
+            if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(isAoE) then
+                if not AI.HasBuff("invisibility") and not AI.HasBuff("fade") then
+                    AI.DO_DPS(isAoE)
+                end
+            end
+        end
     end
-    executeDpsMethod.isAoE = isAoE == true
 end
 
 -- generic mount function, customizable
@@ -1069,23 +1276,25 @@ end
 function AI.toggleAutoDps(on)
     if on then
         AI.AUTO_DPS = true
-        print(PREFIX .. " AUTO_DPS ON")
+        UIErrorsFrame:AddMessage(PREFIX .. " AUTO_DPS ON");
         return true
     else
         AI.AUTO_DPS = false
-        print(PREFIX .. " AUTO_DPS OFF")
+        UIErrorsFrame:AddMessage(PREFIX .. " AUTO_DPS OFF");
         return true
     end
 end
 
-function AI.toggleAoEMode()
-    -- if AI.AUTO_AOE then
-    --     AI.AUTO_AOE = false
-    --     -- AI.Print("auto-AOE OFF")
-    -- else
-    --     AI.AUTO_AOE = true
-    --     -- AI.Print("auto-AOE ON")
-    -- end
+function AI.toggleAoEMode(flag)
+    if flag then
+        AI.AUTO_AOE = flag
+        UIErrorsFrame:AddMessage(PREFIX .. " AUTO_AOE ON");
+        -- AI.Print("auto-AOE OFF")
+    else
+        AI.AUTO_AOE = flag
+        UIErrorsFrame:AddMessage(PREFIX .. " AUTO_AOE OFF");
+        -- AI.Print("auto-AOE ON")
+    end
 end
 
 function AI.RegisterBossModule(mod)
@@ -1175,6 +1384,10 @@ f:RegisterEvent("UNIT_SPELLCAST_START")
 f:RegisterEvent("UNIT_SPELLCAST_STOP")
 f:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
+f:RegisterEvent("PLAYER_TALENT_UPDATE")
+f:RegisterEvent("UNIT_TARGET")
+f:RegisterEvent("ZONE_CHANGED")
+f:RegisterEvent("ZONE_CHANGED_INDOORS")
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 f:RegisterEvent("PLAYER_REGEN_DISABLED")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1189,3 +1402,21 @@ f:RegisterEvent("UNIT_AURA")
 f:RegisterEvent("UNIT_DESTROYED")
 f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 f:SetScript("OnEvent", onEvent)
+
+-- Listen for events
+RegisterCustomEventHandler("smsg_spell_cast_go", function(spellId, spellName, casterGuid, targetGuid, src, dest)
+    local bossMod = findEnabledBossModule()
+    if bossMod and bossMod["SMSG_SPELL_CAST_GO"] and type(bossMod["SMSG_SPELL_CAST_GO"]) == "function" then
+        -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+        bossMod["SMSG_SPELL_CAST_GO"](bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+end)
+RegisterCustomEventHandler("smsg_spell_cast_start", function(spellId, spellName, casterGuid, targetGuid, src, dest)
+    local bossMod = findEnabledBossModule()
+    if bossMod and bossMod["SMSG_SPELL_CAST_START"] and type(bossMod["SMSG_SPELL_CAST_START"]) == "function" then
+        -- print("smsg_spell_cast", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+        bossMod["SMSG_SPELL_CAST_START"](bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+    end
+    -- print("smsg_spell_cast_start", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+end)

@@ -3,8 +3,9 @@ local primaryTank = nil
 local panicPct = 20
 
 local function doSpellSteal()
-    if AI.IsInCombat() and AI.HasStealableBuff("target") and AI.CastSpell("spellsteal") then
-        AI.Print("I've stolen a buff from " .. UnitName("target"))
+    if AI.IsInCombat() and (AI.HasStealableBuff("target") and AI.CastSpell("spellsteal", "target")) or
+        (AI.HasStealableBuff("focus") and AI.CastSpell("spellsteal", "focus")) then
+        -- AI.Print("I've stolen a buff from " .. UnitName("target"))
         return true
     end
     return false
@@ -14,7 +15,7 @@ local function doManaSapphire()
     if not AI.IsInCombat() and not AI.HasContainerItem("mana sapphire") and AI.CastSpell("Conjure Mana Gem") then
         return true
     end
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 50 then
+    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 40 then
         if not AI.UseContainerItem("mana sapphire") then
             AI.UseContainerItem(AI.Config.manaPotion)
         end
@@ -61,10 +62,6 @@ local function doAutoDpsArcane()
     --     return
     -- end
 
-    if doSpellSteal() then
-        return
-    end
-
     useHealthStone()
 
     if not AI.IsValidOffensiveUnit("target") then
@@ -80,51 +77,6 @@ local function doAutoDpsArcane()
     end
 
     AI.CastSpell("arcane blast", "target")
-end
-
-local function doAutoDpsFire()
-    if not AI.AUTO_DPS then
-        return
-    end
-
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") then
-        return
-    end
-
-    if not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
-    end
-
-    if doManaSapphire() then
-        return
-    end
-
-    -- if doManaShield() then
-    --     return
-    -- end
-
-    if doSpellSteal() then
-        return
-    end
-
-    useHealthStone()
-
-    if not AI.IsValidOffensiveUnit("target") then
-        return
-    end
-
-    if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("living bomb", "target") and
-        AI.CastSpell("living bomb", "target") then
-        return
-    end
-
-    if AI.HasBuff("hot streak", "player") and AI.CastSpell("pyroblast") then
-        return
-    end
-
-    AI.CastSpell("frostfire bolt")
-
 end
 
 local function doOnUpdate_MageAI()
@@ -149,29 +101,37 @@ local function doOnUpdate_MageAI()
     --     return
     -- end
 
-    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 10 and AI.CastSpell("Evocation") then
+    if AI.IsInCombat() and AI.GetUnitPowerPct("player") <= 5 and AI.CastSpell("Evocation") then
         return
     end
 
     -- cast mirror image IF we're not lusting(slows dps)
-    if AI.IsInCombat() and AI.GetTargetStrength() >= 3 and not AI.HasBuff("bloodlust") and AI.CastSpell("mirror image") then
-        return
-    end
+    -- if AI.IsInCombat() and (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and AI.CastSpell("mirror image") then
+    --     return
+    -- end
 
-    if not AI.DISABLE_CDS and AI.GetTargetStrength() >= 3 then
+    if not AI.DISABLE_CDS and AI.GetTargetStrength() >= 3 and UnitHealth("target") > 100000 then
         -- if AI.HasBuff("Bloodlust") then
-        --     if AI.HasContainerItem(AI.Config.dpsPotion) then
+        --     if AI.HasContainerItem(AI.Config.dpsPotion) then1
         --         AI.UseContainerItem(AI.Config.dpsPotion)
         --     end
         -- end
         if (AI.HasBuff("flame of the heavens") or AI.HasBuff("Bloodlust")) then
-            AI.CastSpell("Icy Veins")
-            AI.CastSpell("presence of mind")
-            AI.CastSpell("arcane power")
-            AI.CastSpell("combustion")
+            if AI.HasBuff("bloodlust") then
+                AI.CastSpell("mirror image")
+                AI.UseInventorySlot(13)
+                AI.UseInventorySlot(14)
+                AI.CastSpell("presence of mind")
+                AI.CastSpell("arcane power")
+                AI.CastSpell("combustion")
+                AI.CastSpell("berserking")                
+                AI.UseContainerItem(AI.GetAvailableDpsPotion())
+                if not AI.HasBuff("icy veins") then
+                    AI.CastSpell("icy veins")
+                    AI.CastSpell("cold snap")
+                end
+            end
             AI.UseInventorySlot(10)
-            AI.UseInventorySlot(13)
-            AI.UseInventorySlot(14)
         end
 
     end
@@ -185,7 +145,7 @@ local function doOnUpdate_MageAI()
         end
         -- if spec == "Frost" and not AI.HasMyBuff("mage armor") and AI.CastSpell("mage armor") then return end
 
-        if spec == "Arcane" then
+        if spec == "Arcane" or spec == "Frost" then
             if AI.IsUnitValidFriendlyTarget(AI.Config.focusMagicTarget, "focus magic") and
                 not AI.HasMyBuff("focus magic", AI.Config.focusMagicTarget) and not AI.HasBuff("teleport momentum") then
                 AI.CastSpell("focus magic", AI.Config.focusMagicTarget)
@@ -204,6 +164,10 @@ local function doDpsArcane(isAoE)
 
     if not AI.IsValidOffensiveUnit("target") then
         return
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
     end
 
     if isAoE then
@@ -235,11 +199,21 @@ local function doDpsFireMage(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() >= 3 and not AI.HasDebuff("living bomb", "target") and
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
+    end
+
+    if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and not AI.HasBuff("bloodlust") and
+        not AI.HasDebuff("living bomb", "target") and UnitHealth("target") > 100000 and
         AI.CastSpell("living bomb", "target") then
         -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
         --     CastCursorAOESpell(AI.GetPosition("target"))
         -- end
+        return
+    end
+
+    if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and UnitHealth("target") > 200000 and
+        not AI.HasMyDebuff("improved scorch", "target") and AI.CastSpell("scorch", "target") then
         return
     end
 
@@ -265,6 +239,145 @@ local function doDpsFireMage(isAoE)
     AI.CastSpell("frostfire bolt")
 end
 
+local function doAutoDpsFire()
+    if not AI.AUTO_DPS then
+        return
+    end
+
+    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+        AI.HasBuff("drink") then
+        return
+    end
+
+    if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
+        AssistUnit(primaryTank)
+    end
+
+    if not AI.IsValidOffensiveUnit("target") then
+        return
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
+    end
+
+    if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and not AI.HasDebuff("living bomb", "target") and
+        UnitHealth("target") > 100000 and AI.CastSpell("living bomb", "target") then
+        -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+        --     CastCursorAOESpell(AI.GetPosition("target"))
+        -- end
+        return
+    end
+
+    if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 3) and UnitHealth("target") > 100000 and
+        not AI.HasMyDebuff("improved scorch", "target") and AI.CastSpell("scorch", "target") then
+        return
+    end
+
+    if AI.HasBuff("hot streak", "player") and AI.CastSpell("pyroblast") then
+        -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+        --     CastCursorAOESpell(AI.GetPosition("target"))
+        -- end
+        return
+    end
+
+    if isAoE then
+        if (AI.GetDistanceToUnit("target") <= 10 and AI.CastSpell("dragon's breath")) then
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
+            return
+        end
+        if (AI.CastSpell("flamestrike") and CastCursorAOESpell(AI.GetPosition("target"))) then
+            return
+        end
+    end
+
+    AI.CastSpell("frostfire bolt")
+
+end
+
+local function doDpsFrost(isAOE)
+    if IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+        AI.HasBuff("drink") then
+        return
+    end
+
+    if not AI.IsValidOffensiveUnit("target") then
+        return
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
+    end
+
+    if isAOE then
+        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
+            return
+        end
+
+        if AI.CastAOESpell("blizzard", "target") then
+            return
+        end
+    else
+        if AI.GetTargetStrength() >= 2 and not HasPetSpells() and AI.CastSpell("summon water elemental") then
+            return
+        end
+        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
+            return
+        end
+
+        if not AI.DISABLE_DEEP_FREEZE and AI.CanCastSpell("deep freeze", "target", true) and AI.HasBuff("fingers of frost") and not AI.IsUnitCC("target") then
+            RunMacro("fingers-of-frost")
+        end
+
+        AI.CastSpell("frostbolt", "target")
+    end
+end
+
+local function doAutoDpsFrost()
+    if not AI.AUTO_DPS then
+        return
+    end
+
+    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+        AI.HasBuff("drink") then
+        return
+    end
+
+    if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
+        AssistUnit(primaryTank)
+    end
+
+    if not AI.IsValidOffensiveUnit("target") then
+        return
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
+    end
+    
+    if AI.AUTO_AOE then
+        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
+            return
+        end
+        if AI.CastAOESpell("blizzard", "target") then
+            return
+        end
+    else
+        if AI.GetTargetStrength() >= 2 and not HasPetSpells() and AI.CastSpell("summon water elemental") then
+            return
+        end
+        if AI.HasBuff("fireball!") and AI.CastSpell("frostfire bolt", "target") then
+            return
+        end
+        if not AI.DISABLE_DEEP_FREEZE and AI.CanCastSpell("deep freeze", "target", true) and AI.HasBuff("fingers of frost") and not AI.IsUnitCC("target") then
+            RunMacro("fingers-of-frost")
+        end
+        AI.CastSpell("frostbolt", "target")
+    end
+end
+
 function AI.doOnLoad_Mage()
     local class = AI.GetClass("player")
 
@@ -281,9 +394,12 @@ function AI.doOnLoad_Mage()
         if spec == "Arcane" then
             AI.DO_DPS = doDpsArcane
             AI.doAutoDps = doAutoDpsArcane
-        else
+        elseif spec == "Fire" then
             AI.DO_DPS = doDpsFireMage
             AI.doAutoDps = doAutoDpsFire
+        else
+            AI.DO_DPS = doDpsFrost
+            AI.doAutoDps = doAutoDpsFrost
         end
 
         --

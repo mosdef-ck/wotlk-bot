@@ -60,7 +60,7 @@ local yoggSaron = MosDefBossModule:new({
     onStart = function(self)
         local mod = self
         if not AI.IsTank() then
-            AI.RegisterOneShotAction(function()
+            AI.RegisterOneShotAction(function(self)
                 local cx, cy, cz = AI.GetPosition()
                 local path = CalculatePathToDetour(GetCurrentMapID(), AI.PathFinding.Vector3.new(cx, cy, cz),
                     AI.PathFinding.Vector3.new(self.dpsstartx, self.dpsstarty, self.dpsstartz))
@@ -148,10 +148,10 @@ local yoggSaron = MosDefBossModule:new({
             end
 
             if self.phase == 2 and AI.IsValidOffensiveUnit() and not AI.HasBuff("shadowy barrier", "target") and
-                not AI.IsTank() and AI.GetDistanceToUnit("target") > 40 and
+                not AI.IsTank() and AI.GetDistanceToUnit("target") >= 35 and
                 (not self.portalToUse and not self.usedDescentPortal) then
                 local x, y, z = AI.GetPosition("target")
-                local dist = ternary(AI.IsHealer(), 25, 35)
+                local dist = ternary(AI.IsHealer(), 25, 30)
                 if (not AI.IsHealer() or not AI.IsCasting()) and tick > self.lastPathTargetSetTime + 5 then
                     if AI.HasObjectAvoidance() then
                         AI.SetObjectAvoidanceTarget(UnitGUID("target"), dist)
@@ -167,11 +167,11 @@ local yoggSaron = MosDefBossModule:new({
             if AI.IsTank() and AI.AUTO_DPS and AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "tentacle") and
                 AI.GetDistanceToUnit("target") > 5 and tick > self.lastPathTargetSetTime + 5 then
                 if AI.HasObjectAvoidance() then
-                    AI.SetObjectAvoidanceTarget(UnitGUID("target"), 5.5)
+                    AI.SetObjectAvoidanceTarget(UnitGUID("target"), 4.5)
                     self.lastPathTargetSetTime = tick
                 elseif not AI.HasMoveTo() or not AI.IsCurrentPathSafeFromObstacles(self:GetCurrentObstacles()) then
                     local x, y, z = AI.GetPosition("target")
-                    self:MoveSafelyToSpotWithin(5.5, x, y, z, nil, "to melee attack the target");
+                    self:MoveSafelyToSpotWithin(4.5, x, y, z, nil, "to melee attack the target");
                     self.lastPathTargetSetTime = tick
                 end
             end
@@ -199,6 +199,10 @@ local yoggSaron = MosDefBossModule:new({
             end
 
             return false
+        end
+
+        if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
+            AI.UseContainerItem("lesser flask of resistance")
         end
     end,
     onEnd = function(self)
@@ -258,7 +262,7 @@ local yoggSaron = MosDefBossModule:new({
             end
 
             if self:isDescentTeam() then
-                if self.portalToUse and not self.doesPortalExist(self.portalToUse) then
+                if self.portalToUse and not self:doesPortalExist(self.portalToUse) then
                     self.portalToUse = nil
                     print("portal to use no longer around")
                     if not AI.HasObjectAvoidance() and AI.HasMoveTo() then
@@ -270,6 +274,7 @@ local yoggSaron = MosDefBossModule:new({
                 if self.portalToUse then
                     if AI.GetDistanceTo(self.portalToUse.x, self.portalToUse.y) <= 5 and tick > self.squeezeExpireTime +
                         1 then
+                        print("at target portal location")
                         AI.ClearObjectAvoidance()
                         AI.ResetMoveTo()
                         self.portalToUse:InteractWith()
@@ -280,15 +285,15 @@ local yoggSaron = MosDefBossModule:new({
                             if AI.IsWarlock() then
                                 AI.USE_MANA_REGEN = false
                             end
-                            if UnitName("player"):lower() == self.descentDps2 then -- face away from skulls upon teleporting
+                            if strcontains(UnitName("player"), self.descentDps2) then -- face away from skulls upon teleporting
                                 AI.RegisterOneShotAction(function(self)
-                                    AI.SetFacing(GetPlayerFacing() + math.pi)
                                     -- local doors = AI.FindNearbyGameObjects(194635, 194636, 194637)
                                     -- for i, o in ipairs(doors) do
                                     --     if o.state ~= 0 then
                                     --         o:SetGoState(0)
                                     --     end
                                     -- end
+                                    AI.SetFacing(GetPlayerFacing() + math.pi)
                                     if self.illusionShattered then
                                         print(
                                             "took brain portal after shattered illusion. Moving to brain attack vector")
@@ -309,7 +314,7 @@ local yoggSaron = MosDefBossModule:new({
                                             print("no escape portal found, something is wrong!")
                                         end
                                     end
-                                end, 10)
+                                end, 1)
                             end
                         else
                             print("taking escape portal")
@@ -333,12 +338,10 @@ local yoggSaron = MosDefBossModule:new({
                         if AI.HasObjectAvoidance() then
                             AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
                             self.lastPathTargetSetTime = tick
-                        elseif not AI.HasMoveTo() or
-                            (not AI.IsCurrentPathSafeFromObstacles(self:GetCurrentObstacles()) and tick >
-                                self.lastPathGenerateTime) then
+                        elseif tick > self.lastPathGenerateTime then
                             self:MoveSafelyToSpot(self.portalToUse.x, self.portalToUse.y, self.portalToUse.z, nil,
                                 "Get to Brain Portal")
-                            self.lastPathGenerateTime = tick + 1
+                            self.lastPathGenerateTime = tick + 0.5
                             self.lastPathTargetSetTime = tick
                         end
                     end
@@ -441,24 +444,26 @@ local yoggSaron = MosDefBossModule:new({
     p3tanky = -44.710132598877,
     p3tankz = 328.283203125,
     yoggRadius = 27.0,
-    isDescentTeam = function(self)
-        return UnitName("player"):lower() == self.descentDps1 or UnitName("player"):lower() == self.descentDps2
-    end,
     maladyTarget = nil,
     brainLinkCaster = nil,
     brainLinkVictim = nil,
-    doesPortalExist = function(portal)
-        local portals = AI.FindNearbyObjectsOfTypeAndName(AI.ObjectTypeFlag.UnitsAndGameObjects, "descend into madness",
-            "flee to the surface")
-        for i, o in ipairs(portals) do
-            if portal.guid == o.guid then
-                return true
-            end
-        end
-        return false
-    end,
     nextLunaticGazeTime = 0
 })
+
+function yoggSaron:isDescentTeam()
+    return strcontains(UnitName("player"), self.descentDps1) or strcontains(UnitName("player"), self.descentDps2)
+end
+
+function yoggSaron:doesPortalExist(portal)
+    local portals = AI.FindNearbyObjectsOfTypeAndName(AI.ObjectTypeFlag.UnitsAndGameObjects, "descend into madness",
+        "flee to the surface")
+    for i, o in ipairs(portals) do
+        if portal.guid == o.guid then
+            return true
+        end
+    end
+    return false
+end
 
 function yoggSaron:GetCurrentObstacles()
     local obstacles = AI.FindNearbyUnitsByName("death orb")
@@ -468,7 +473,7 @@ function yoggSaron:GetCurrentObstacles()
     if self.maladyTarget ~= UnitName("player") and not self.squeezeTarget then
         local maladyOb = AI.GetObjectInfo(self.maladyTarget)
         if maladyOb then
-            maladyOb.radius = 13
+            maladyOb.radius = 15
             table.insert(obstacles, maladyOb)
         end
     end
@@ -499,18 +504,9 @@ function yoggSaron:MoveSafelyToSpotWithin(r, tx, ty, tz, force, reason)
 end
 
 function yoggSaron:MoveSafelyToSpot(tx, ty, tz, force, reason)
-    local startp = AI.PathFinding.Vector3.new(AI.GetPosition())
     local endp = AI.PathFinding.Vector3.new(tx, ty, tz)
 
     local obstacles = self:GetCurrentObstacles()
-    local dist = startp:distanceTo(endp)
-
-    local gridSize = 1
-    if dist < 20 then
-        gridSize = 0.5
-    elseif dist > 40 then
-        gridSize = 3.0
-    end
 
     ---yogg sitting at the center, avoid him too
     -- table.insert(obstacles, {
@@ -519,17 +515,9 @@ function yoggSaron:MoveSafelyToSpot(tx, ty, tz, force, reason)
     --     z = self.centerz,
     --     radius = 22
     -- })
+    print('trying to move due to :' .. reason or "N/A")
 
-    local path = CalculatePathWhileAvoidingAStar(GetCurrentMapID(), startp, endp, obstacles, gridSize, 200)
-    if type(path) == "table" and #path > 0 then
-        print("moving safely due to " .. (reason or ""))
-        AI.SetMoveToPath(path)
-        return true
-    else
-        print("failed to gen safe path " .. (reason or ""))
-        AI.StopMoving()
-    end
-    return false
+    return AI.PathFinding.MoveSafelyTo(endp, obstacles)
 end
 
 function yoggSaron:SPELL_CAST_START(args)
@@ -539,7 +527,7 @@ function yoggSaron:SPELL_CAST_START(args)
             local guardians = AI.FindNearbyUnitsByName("guardian")
             for i, o in ipairs(guardians) do
                 if not o.isDead and (o.castingSpellId or o.channelingSpellId) then
-                    o:Target()
+                    o:Focus()
                     AI.DoStaggeredInterrupt()
                     return
                 end
@@ -587,7 +575,7 @@ function yoggSaron:CHAT_MSG_MONSTER_YELL(text, monster)
                 if #obstacles > 0 then
                     AI.SetObjectAvoidance({
                         guids = obstacles,
-                        safeDistance = 3,
+                        safeDistance = 5,
                         polygon = yoggFightAreaPolygon
                     })
                 end
@@ -611,6 +599,7 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                     print("moving to engage brain of yogg")
                     AI.SetMoveToPath(path, 0.3, function(self)
                         TargetUnit("brain of")
+                        AI.SetFacingUnit("target")
                     end)
                     AI.UseInventorySlot(8)
                 else
@@ -628,7 +617,7 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
         self.illusionShattered = false
         local mod = self
         AI.RegisterOneShotAction(function(self)
-            -- print("portals closed")
+            print("portals closed")
             mod.portalsOpen = false
         end, 25, "PORTALS_CLOSED")
 
@@ -650,66 +639,68 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
         end
 
         if self:isDescentTeam() then
-            local portals = AI.FindNearbyUnitsByName("descend into madness")
-            if #portals == 2 then
-                if AI.IsWarlock() then
-                    AI.MustCastSpell("shadow ward")
-                end
-                if strcontains(UnitName("player"), self.descentDps1) then
-                    local portal = portals[1]
-                    self.portalToUse = portal
-                    AI.ResetMoveTo()
-                    -- AI.SayRaid("descentDps1 portal set heading to it")
-                    if AI.HasObjectAvoidance() then
-                        AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
-                        self.lastPathTargetSetTime = GetTime()
-                    else
-                        self:MoveSafelyToSpot(self.portalToUse.x, self.portalToUse.y, self.portalToUse.z, nil,
-                            "Get to Brain Portal")
+            AI.RegisterOneShotAction(function(self)
+                local portals = AI.FindNearbyUnitsByName("descend into madness")
+                if #portals == 2 then
+                    if AI.IsWarlock() then
+                        AI.MustCastSpell("shadow ward")
                     end
-                end
-                if strcontains(UnitName("player"), self.descentDps2) then
-                    AI.RegisterOneShotAction(function(self)
-                        local portals = AI.FindNearbyUnitsByName("descend into madness")
-                        -- if AI.IsMage() then
-                        --     AI.MustCastSpell("mana shield")
-                        -- end
-                        if #portals > 0 then
-                            if #portals == 2 then
-                                local dx, dy = AI.GetPosition(self.descentDps1)
-                                local dist = 0
-                                for i, o in ipairs(portals) do
-                                    if AI.CalcDistance(dx, dy, o.x, o.y) > dist then
-                                        dist = AI.CalcDistance(dx, dy, o.x, o.y)
-                                        self.portalToUse = o
+                    if strcontains(UnitName("player"), self.descentDps1) then
+                        local portal = portals[1]
+                        self.portalToUse = portal
+                        AI.ResetMoveTo()
+                        AI.SayRaid("descentDps1 portal set heading to it")
+                        if AI.HasObjectAvoidance() then
+                            AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
+                            self.lastPathTargetSetTime = GetTime()
+                        else
+                            self:MoveSafelyToSpot(self.portalToUse.x, self.portalToUse.y, self.portalToUse.z, nil,
+                                "Get to Brain Portal")
+                        end
+                    end
+                    if strcontains(UnitName("player"), self.descentDps2) then
+                        AI.RegisterOneShotAction(function(self)
+                            local portals = AI.FindNearbyUnitsByName("descend into madness")
+                            -- if AI.IsMage() then
+                            --     AI.MustCastSpell("mana shield")
+                            -- end
+                            if #portals > 0 then
+                                if #portals == 2 then
+                                    local dx, dy = AI.GetPosition(self.descentDps1)
+                                    local dist = 0
+                                    for i, o in ipairs(portals) do
+                                        if AI.CalcDistance(dx, dy, o.x, o.y) > dist then
+                                            dist = AI.CalcDistance(dx, dy, o.x, o.y)
+                                            self.portalToUse = o
+                                        end
                                     end
+                                else
+                                    self.portalToUse = portals[1]
+                                end
+                                AI.ResetMoveTo()
+                                AI.SayRaid("descentDps2 portal set heading to it")
+                                if AI.HasObjectAvoidance() then
+                                    AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
+                                    self.lastPathTargetSetTime = GetTime()
                                 end
                             else
-                                self.portalToUse = portals[1]
+                                AI.SayRaid("descendDps2 rdy to take portal but no portal found")
                             end
-                            AI.ResetMoveTo()
-                            -- AI.SayRaid("descentDps2 portal set heading to it")
-                            if AI.HasObjectAvoidance() then
-                                AI.SetObjectAvoidanceTarget(self.portalToUse.guid, 0)
-                                self.lastPathTargetSetTime = GetTime()
-                            end
-                        else
-                            AI.SayRaid("descendDps2 rdy to take portal but no portal found")
-                        end
-                    end, 10)
-                end
-            end
-
-            --- Move to escape portals when it's time(3s before induce madness finishes)
-            AI.RegisterOneShotAction(function(self)
-                if self.phase == 2 and self.usedDescentPortal then
-                    print("brain will finish casting Induce Madness in 2s")
-                    local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
-                    if #escapePortal > 0 then
-                        self.portalToUse = escapePortal[1]
+                        end, 10)
                     end
                 end
-            end, 58, "MOVE_TO_ESCAPE_PORTALS")
+
+                --- Move to escape portals when it's time(3s before induce madness finishes)
+                AI.RegisterOneShotAction(function(self)
+                    if self.phase == 2 and self.usedDescentPortal then
+                        print("brain will finish casting Induce Madness in 2s")
+                        local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
+                        if #escapePortal > 0 then
+                            self.portalToUse = escapePortal[1]
+                        end
+                    end
+                end, 58, "MOVE_TO_ESCAPE_PORTALS")
+            end, 1)
         end
         if not self:isDescentTeam() then
             AI.toggleAutoDps(true)
@@ -744,7 +735,7 @@ function yoggSaron:SPELL_AURA_APPLIED(args)
             end
             TargetUnit("constrictor")
             local x, y, z = AI.GetPosition("target")
-            local dist = ternary(AI.IsPaladin(), 5, 35)
+            local dist = ternary(AI.IsPaladin(), 4.5, 30)
             if AI.HasObjectAvoidance() then
                 AI.SetObjectAvoidanceTarget(UnitGUID("target"), dist)
                 self.lastPathTargetSetTime = GetTime()
@@ -763,7 +754,7 @@ function yoggSaron:SPELL_AURA_APPLIED(args)
             AI.SetObjectAvoidance({
                 guids = obstacles,
                 polygon = yoggFightAreaPolygon,
-                safeDistance = 3
+                safeDistance = 5
             })
             -- end
         end
@@ -810,7 +801,7 @@ function yoggSaron:SPELL_AURA_REMOVED(args)
                 AI.SetObjectAvoidance({
                     guids = obstacles,
                     polygon = yoggFightAreaPolygon,
-                    safeDistance = 3
+                    safeDistance = 5
                 })
             end
             if args.target == UnitName("player") then
@@ -872,7 +863,7 @@ function yoggSaron:SPELL_DAMAGE(args)
                 AI.SetObjectAvoidance({
                     guids = self:GetCurrentObstacles(),
                     polygon = yoggFightAreaPolygon,
-                    safeDistance = 3
+                    safeDistance = 5
                 })
                 AI.SetObjectAvoidanceTarget(UnitGUID("target"), dist)
                 self.lastPathTargetSetTime = GetTime()

@@ -1,15 +1,19 @@
 local isAIEnabled = false
 local primaryTank = nil
 local primaryManaPot = "crazy alchemist's potion"
-local panicPct = 35
+local panicPct = 40
 local manaPctThreshold = 10
 
 local function ApplyWeaponEnchants(mainHandSpell, offHandSpell)
-    if AI.IsInDungeonOrRaid() then
+    if AI.IsInDungeonOrRaid() and not AI.IsInCombat() then
         local hasMainHandEnchant, mainHandExpiration, _, hasOffHandEnchant, offHandExpiration = GetWeaponEnchantInfo()
         if not hasMainHandEnchant then
-            if AI.CastSpell(mainHandSpell) then
-                return true
+            local link = GetInventoryItemLink("player", 16)
+            if link then
+                local name, _, _, _, _, _, _, _, type = GetItemInfo(GetInventoryItemLink("player", 16))
+                if type and (strcontains(type, "mace") or strcontains(type, "staves")) and AI.CastSpell(mainHandSpell) then
+                    return true
+                end
             end
         end
         if offHandSpell == nil then
@@ -29,10 +33,10 @@ local function hasStartHealingThreshold()
 end
 
 local function doHealTarget(target, missingHp, healSpell)
-    if AI.IsUnitValidFriendlyTarget(target) then
+    if AI.IsUnitValidFriendlyTarget(target, healSpell) then
         local missingPct = AI.GetUnitHealthPct(target)
         local hasHealThreshold = hasStartHealingThreshold()
-        local metThreshold = AI.IsInCombat() and hasHealThreshold and missingPct <= AI.Config.startHealOverrideThreshold
+        local metThreshold = hasHealThreshold and missingPct <= AI.Config.startHealOverrideThreshold
 
         if missingPct <= panicPct and AI.IsInCombat() then
             AI.CastSpell("Nature's Swiftness")
@@ -84,9 +88,9 @@ local function doAutoDpsRestoration()
 end
 
 local function doOnUpdate_RestorationShaman()
-    
+
     if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or not AI.CanCast() then
+        AI.HasBuff("drink") then
         return
     end
 
@@ -96,14 +100,15 @@ local function doOnUpdate_RestorationShaman()
     local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("chain heal")
     local tank = AI.GetPrimaryTank()
 
-    if AI.IsUnitValidFriendlyTarget(tank, "healing wave") and AI.IsInCombat() then
+    if AI.IsUnitValidFriendlyTarget(tank, "healing wave") and AI.IsInCombat() and not AI.HasDebuff("ice tomb", tank) then
         local missingHealth = AI.GetMissingHealth(tank)
         local tankHpPct = AI.GetUnitHealthPct(tank)
         -- before we heal the tank, if we have a more crucial target to heal instead, let's heal them before we heal the tank(provided the tank is healthy enough)
         if healTar and UnitName(healTar):lower() ~= tank then
             local healTarPct = AI.GetUnitHealthPct(healTar)
-            if healTarPct <= panicPct and tankHpPct >= panicPct and doHealTarget(healTar, missingHp, "chain heal") then
-                -- if healTarPct <= panicPct and tankHpPct >= 50 and AI.CastSpell("lesser healing wave", healTar) then
+            if healTarPct <= panicPct and missingHealth >= 25000 and
+                ((AI.HasBuff("tidal waves") and AI.Config.useHealingWaveOnToons and
+                    doHealTarget(healTar, missingHp, "healing wave")) or doHealTarget(healTar, missingHp, "chain heal")) then
                 return
             end
         end
@@ -113,18 +118,17 @@ local function doOnUpdate_RestorationShaman()
             -- tank is in danger use insta-cast CDS
             AI.CastSpell("Nature's Swiftness")
             AI.CastSpell("Tidal Force")
-            AI.CastSpell("berserking")
         end
 
         local hasHealThreshold = hasStartHealingThreshold()
         local metThreshold = hasHealThreshold and AI.IsInCombat() and tankHpPct <= AI.Config.startHealOverrideThreshold
-        if not AI.HasMyBuff("riptide", tank) and
+        if (not AI.HasBuff("tidal waves") and tankHpPct > panicPct) and
             ((hasHealThreshold and metThreshold) or
                 (not hasHealThreshold and missingHealth >= AI.GetSpellEffect("riptide"))) and
             AI.CastSpell("riptide", tank) then
             return
         end
-        if AI.HasBuff("tidal waves", "player") then
+        if AI.HasBuff("tidal waves") or tankHpPct <= panicPct then
             if ((hasHealThreshold and metThreshold) or
                 (not hasHealThreshold and missingHealth >= AI.GetSpellEffect("healing wave"))) and
                 AI.CastSpell("healing wave", tank) then
@@ -153,7 +157,21 @@ local function doOnUpdate_RestorationShaman()
     --         return
     --     end
     -- end
-    if doHealTarget(healTar, missingHp, "chain heal") then
+
+    if not AI.HasDebuff("ice tomb", healTar) and AI.IsUnitValidFriendlyTarget(healTar, "chain heal") then
+        if (AI.IsInCombat() and AI.HasBuff("tidal waves") and AI.Config.useHealingWaveOnToons and
+            doHealTarget(healTar, missingHp, "healing wave")) or doHealTarget(healTar, missingHp, "chain heal") then
+            return
+        end
+    elseif not AI.HasDebuff("ice tomb", secondTar) and secondTar and AI.IsUnitValidFriendlyTarget(secondTar, "chain heal") then
+        if (AI.IsInCombat() and AI.HasBuff("tidal waves") and AI.Config.useHealingWaveOnToons and
+            doHealTarget(secondTar, secondTarHp, "healing wave")) or doHealTarget(secondTar, secondTarHp, "chain heal") then
+            return
+        end
+    end
+
+    if AI.AUTO_CLEANSE and
+        (AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease") or AI.CleanseRaid("Dispel Magic", "Magic")) then
         return
     end
 
@@ -167,15 +185,11 @@ local function doOnUpdate_RestorationShaman()
             AI.CastSpell("mana tide totem") then
             return
         end
-        if AI.GetUnitPowerPct("player") <= manaPctThreshold and AI.HasContainerItem(primaryManaPot) and
-            AI.UseContainerItem(primaryManaPot) then
+        if AI.GetUnitPowerPct("player") <= manaPctThreshold and
+            (AI.HasContainerItem(primaryManaPot) or AI.HasContainerItem("runic mana potion")) and
+            (AI.UseContainerItem(primaryManaPot) or AI.UseContainerItem("runic mana potion")) then
             return
         end
-    end
-
-    if AI.AUTO_CLEANSE and
-        (AI.CleanseRaid("Cleanse Spirit", "Curse", "Poison", "Disease") or AI.CleanseRaid("Dispel Magic", "Magic")) then
-        return
     end
 
     -- maintain water shield
@@ -193,8 +207,16 @@ local function doOnUpdate_RestorationShaman()
         return
     end
 
+    if type(AI.doPost_Update) == "function" then
+        AI.doPost_Update()
+    end
+
     if AI.AUTO_DPS then
         doAutoDpsRestoration()
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
     end
 end
 
@@ -231,15 +253,18 @@ local function doOnUpdate_ElementalShaman()
     end
 
     if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 95 then
-        AI.CastSpell("berserking")
         AI.UseInventorySlot(10)
         AI.UseInventorySlot(13)
         AI.UseInventorySlot(14)
     end
 
     -- keep earthliving weapon up
-    if AI.IsInDungeonOrRaid() and ApplyWeaponEnchants("flametongue weapon") then
+    if not AI.IsInCombat() and AI.IsInDungeonOrRaid() and ApplyWeaponEnchants("flametongue weapon") then
         return
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
     end
 end
 
@@ -343,20 +368,6 @@ function AI.doOnLoad_Shaman()
             AI.doAutoDps = doAutoDpsElemental
         end
         AI.doOnTargetStartCasting_Shaman = doOnTargetStartCasting_Shaman
-
-        AI.DO_BLOODLUST = function()
-            local delay = 0
-            if AI.IsDps() then
-                delay = 2
-            end
-            AI.RegisterPendingAction(function()
-                if AI.HasDebuff("sated") then
-                    return true
-                end
-                return AI.CastSpell("Bloodlust")
-            end, "DO_BLOODLUST", delay)
-        end
-
         --
         if AI.Config then
             primaryTank = AI.Config.tank

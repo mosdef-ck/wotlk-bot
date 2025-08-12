@@ -201,8 +201,11 @@ function AI.GetSpellEffect(spell)
     if AI.IsDruid() and AI.GetMySpecName() == "Restoration" and spell:lower() == "nourish" then
         classModifier = 1.20
     end
-    if AI.HasBuff("resilence of nature") then
+    if AI.HasBuff("resilience of nature") then
         classModifier = classModifier + 0.20 -- an additional 20% from resilience of nature
+    end
+    if AI.HasBuff("hellscream's warsong") then
+        classModifier = classModifier + 0.10 -- an additional 10% from hellscream's warsong
     end
     local spellEffect = (baseValue + coefficient * spellPower) * 1.06 * classModifier -- Count on having Improved Devotion Aura, or Tree Form on the raid
     return spellEffect

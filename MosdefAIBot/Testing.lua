@@ -255,3 +255,39 @@ function AI.TestSafeLocationInPolygon()
         print("failed to generate AStar path")
     end    
 end
+
+
+function AI.TestNavigateClouds()
+    RunMacroText("/say .cast 70766")
+    local start = AI.PathFinding.Vector3.new(AI.GetPosition())
+    local p = AI.PathFinding.Vector3.new(4263.6015625, 2484.4033203125, 364.86950683594)
+    local clouds = AI.FindNearbyUnitsByName("dream cloud")
+    table_removeif(clouds, function(c)
+        return c:GetDistanceTo(p.x, p.y) > 50
+    end)
+    local cloudGuids = {}
+
+    if #clouds > 0 then
+        local count = 0
+        local nextCloud = clouds[1]
+        while count < 5 and nextCloud do
+            table.insert(cloudGuids, nextCloud)
+            count = count + 1
+            table_removeif(clouds, function(c)
+                return c == nextCloud
+            end)
+            nextCloud = clouds[1]
+        end
+    end
+
+    local wps = {}
+    local start = AI.PathFinding.Vector3.new(AI.GetPosition())
+    for i, c in ipairs(cloudGuids) do
+        local wp = AI.PathFinding.Vector3.new(c.x, c.y, c.z)
+        table.insert(wps, wp)
+    end
+    table.insert(wps, start)
+
+    JumpOrAscendStart()
+    AI.SetMoveToPath(wps)
+end

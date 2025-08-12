@@ -7,6 +7,7 @@ local panicPct = 20
 local primaryManaPot = "runic mana potion"
 
 local procTierForSwp = 0
+local lastVampiricTouch = 0
 
 local function upkeepShadowForm()
 
@@ -23,8 +24,8 @@ local function upkeepShadowForm()
             return true
         end
 
-        if not AI.IsInCombat() and not AI.HasMyBuff("prayer of shadow protection") and
-            AI.CastSpell("prayer of shadow protection") then
+        if not AI.IsInCombat() and not AI.HasBuff("prayer of shadow protection") and
+            AI.CastSpell("prayer of shadow protection", nil) then
             return true
         end
     end
@@ -34,7 +35,8 @@ end
 local function doPowerWordShield()
     if AI.IsInCombat() then
         local criticalTarget, missingHp = AI.GetMostDamagedFriendly("power word: shield")
-        if criticalTarget and AI.GetUnitHealthPct(criticalTarget) <= panicPct and
+        if criticalTarget and AI.GetDistanceToUnit(criticalTarget) <= 35 and
+            AI.IsUnitValidFriendlyTarget(criticalTarget) and AI.GetUnitHealthPct(criticalTarget) <= panicPct and
             not AI.HasDebuff("weakened soul", criticalTarget) then
             if AI.IsCasting() then
                 AI.StopCasting()
@@ -62,91 +64,13 @@ local function useHealthStone()
 end
 
 local function getProcTier()
-    if AI.HasBuff("bloodlust") or AI.HasBuff("hyperspeed acceleration") then
+    if AI.HasBuff("bloodlust") or AI.HasBuff("flame of the heavens") then
         return 1
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("hyperspeed acceleration") then
+    if AI.HasBuff("bloodlust") and AI.HasBuff("flame of the heavens") then
         return 2
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("hyperspeed acceleration") and AI.HasBuff("devious mind") then
-        return 3
-    end
     return 0
-end
-
-local function doAutoDps()
-    if not AI.AUTO_DPS then
-        return
-    end
-
-    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() then
-        return
-    end
-
-    if not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
-    end
-
-    if not AI.IsValidOffensiveUnit("target") then
-        return
-    end
-
-    useHealthStone()
-
-    -- AI.CastSpell("inner focus")
-    if not AI.AUTO_AOE then
-        if AI.GetTargetStrength() > 1 and not AI.HasMyDebuff("Vampiric Touch", "target") and
-            AI.CastSpell("Vampiric Touch", "target") then
-            return
-        end
-    end
-
-    if AI.CastSpell("mind blast", "target") then
-        return
-    end
-
-    if not AI.AUTO_AOE then
-        if AI.CastSpell("Shadow Word: Death", "target") then
-            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-            --     CastCursorAOESpell(AI.GetPosition("target"))
-            -- end
-            return
-        end
-
-        if AI.GetTargetStrength() > 1 and not AI.HasMyDebuff("devouring plague", "target") and
-            AI.CastSpell("devouring plague", "target") then
-            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-            --     CastCursorAOESpell(AI.GetPosition("target"))
-            -- end
-            return
-        end
-
-        if AI.GetTargetStrength() > 1 and AI.GetMyBuffCount("shadow weaving") == 5 then
-            if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
-                -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                --     CastCursorAOESpell(AI.GetPosition("target"))
-                -- end
-                return
-            end
-
-            if AI.GetTargetStrength() > 3 then
-                local procTier = getProcTier()
-                if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
-                    procTierForSwp = procTier
-                    -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                    --     CastCursorAOESpell(AI.GetPosition("target"))
-                    -- end
-                    -- AI.SayRaid("SWP under procTier " .. procTier)
-                    return
-                end
-            end
-        end
-
-        AI.CastSpell("mind flay", "target")
-    elseif AI.DoCastSpellChain("target", "shadow word: death", "mind sear") then
-        return
-    end
 end
 
 local function autoPurge()
@@ -207,26 +131,32 @@ local function doOnUpdate_ShadowPriest()
             return
         end
 
-        if AI.GetTargetStrength() > 3 and AI.GetUnitPowerPct("player") < 10 and AI.CastSpell("Hymn of Hope") then
+        local hasBloodLust = AI.HasBuff("bloodlust")
+
+        if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() > 3) and AI.GetUnitPowerPct("player") <= 5 and
+            AI.CastSpell("Hymn of Hope") then
             return
         end
-        if AI.GetTargetStrength() >= 2 and AI.GetUnitPowerPct("player") < 40 and AI.CastSpell("shadowfiend", "target") then
+        if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 2) and (AI.GetUnitPowerPct("player") <= 30 or hasBloodLust) and
+            AI.CastSpell("shadowfiend", "target") then
             return
         end
-        if AI.GetTargetStrength() > 2 and AI.GetUnitPowerPct("player") < 40 and not AI.DISABLE_PRIEST_DISPERSION and AI.CastSpell("Dispersion") then
+        if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() > 2) and AI.GetUnitPowerPct("player") <
+            (hasBloodLust and 10 or 50) and not AI.DISABLE_PRIEST_DISPERSION and AI.CastSpell("Dispersion") then
             return
         end
     end
 
-    if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 95 then
+    if not AI.DISABLE_CDS and AI.IsInCombat() and (AI.GetTargetStrength() >= 3 or AI.IsHeroicRaidOrDungeon()) then
 
-        if AI.HasBuff("dying curse") or AI.HasBuff("bloodlust") then
+        if AI.HasBuff("flame of the heavens") or AI.HasBuff("bloodlust") then
             AI.UseInventorySlot(10)
+        end
+        if AI.HasBuff("bloodlust") then
+            AI.CastSpell("berserking")
+            AI.UseContainerItem(AI.GetAvailableDpsPotion())
             AI.UseInventorySlot(13)
             AI.UseInventorySlot(14)
-        end
-        if AI.HasBuff("bloodlust") and AI.HasContainerItem(AI.Config.dpsPotion) then
-            AI.UseContainerItem(AI.Config.dpsPotion)
         end
 
     end
@@ -237,6 +167,76 @@ local function doOnUpdate_ShadowPriest()
     end
 
     useHealthStone()
+end
+
+local function doAutoDps()
+    if not AI.AUTO_DPS then
+        return
+    end
+
+    if not isAIEnabled or IsMounted() or UnitUsingVehicle("player") or not AI.CanCast() or UnitIsDeadOrGhost("player") or
+        AI.HasBuff("drink") or AI.IsMoving() then
+        return
+    end
+
+    if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
+        AssistUnit(primaryTank)
+    end
+
+    if not AI.IsValidOffensiveUnit("target") then
+        return
+    end
+
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
+    end
+
+    if not AI.AUTO_AOE then
+        if AI.GetTargetStrength() >= 1 and GetTime() > lastVampiricTouch + 1.3 and
+            AI.DoCastSpellChain("target", "vampiric touch") then
+            lastVampiricTouch = GetTime()
+            return
+        end
+
+        if AI.DoCastSpellChain("target", "devouring plague") then
+            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+            --     CastCursorAOESpell(AI.GetPosition("target"))
+            -- end
+            return
+        end
+
+
+        -- if AI.CanCastSpell("shadow word: death", "target", true) then
+        --     RunMacro("mindblast-swd")
+        -- end
+
+        if AI.DoCastSpellChain("target", "mind blast") then
+            return
+        end
+
+        if UnitHealth("target") > 50000 and AI.GetMyBuffCount("shadow weaving") == 5 and AI.HasBuff("shadowy insight") then
+            if AI.DoCastSpellChain("target", "Shadow Word: Pain") then
+                return
+            end
+            if AI.GetTargetStrength() > 3 then
+                local procTier = getProcTier()
+                if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then
+                    procTierForSwp = procTier
+                    -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
+                    --     CastCursorAOESpell(AI.GetPosition("target"))
+                    -- end
+                    -- AI.SayRaid("SWP under procTier " .. procTier)
+                    return
+                end
+            end
+        end
+
+        AI.CastSpell("mind flay", "target")
+    else
+        if AI.DoCastSpellChain("target", "mind blast", "mind sear") then
+            return
+        end
+    end
 end
 
 local function doDps(isAoE)
@@ -250,48 +250,40 @@ local function doDps(isAoE)
         return
     end
 
-    if not isAoE then
-        if AI.GetTargetStrength() >= 1 and not AI.HasMyDebuff("Vampiric Touch", "target") and
-            AI.CastSpell("Vampiric Touch", "target") then
-            return
-        end
-    end
-
-    if AI.CastSpell("Mind Blast") then
-        return
+    if not AI.DISABLE_PET_AA then
+        PetAttack()
     end
 
     if isAoE then
-        if AI.GetTargetStrength() >= 2 and AI.DoCastSpellChain("target", "shadow word: pain") then
-            return            
-        end
-        if AI.DoCastSpellChain("target", "mind sear") then
+        if AI.DoCastSpellChain("target", "mind blast", "mind sear") then
             return
         end
     else
-        if AI.CastSpell("Shadow Word: Death", "target") then
+        if AI.GetTargetStrength() >= 1 and GetTime() > lastVampiricTouch + 1.3 and
+            AI.DoCastSpellChain("target", "vampiric touch") then
+            lastVampiricTouch = GetTime()
+            return
+        end
+
+        if AI.DoCastSpellChain("target", "devouring plague") then
             -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
             --     CastCursorAOESpell(AI.GetPosition("target"))
             -- end
             return
         end
 
-        if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 and
-            not AI.HasMyDebuff("devouring plague", "target") and AI.CastSpell("devouring plague", "target") then
-            -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-            --     CastCursorAOESpell(AI.GetPosition("target"))
-            -- end
+        -- if AI.CanCastSpell("shadow word: death", "target", true) then
+        --     RunMacro("mindblast-swd")
+        -- end
+
+        if AI.DoCastSpellChain("target", "mind blast") then
             return
         end
 
-        if AI.GetTargetStrength() >= 1 and AI.GetMyBuffCount("shadow weaving") == 5 then
-            if not AI.HasMyDebuff("Shadow Word: Pain", "target") and AI.CastSpell("Shadow Word: Pain", "target") then
-                -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
-                --     CastCursorAOESpell(AI.GetPosition("target"))
-                -- end
+        if UnitHealth("target") > 50000 and AI.GetMyBuffCount("shadow weaving") == 5 and AI.HasBuff("shadowy insight") then
+            if AI.DoCastSpellChain("target", "Shadow Word: Pain") then
                 return
             end
-
             if AI.GetTargetStrength() > 3 then
                 local procTier = getProcTier()
                 if procTier > 0 and procTier > procTierForSwp and AI.CastSpell("Shadow Word: Pain", "target") then

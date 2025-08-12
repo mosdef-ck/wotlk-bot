@@ -9,14 +9,11 @@ local noth = MosDefBossModule:new({
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             TargetUnit("plagued conqueror", 1)
-            if AI.IsValidOffensiveUnit("target") and UnitName("target") == "Plagued Conqueror" then
-                return true
-            end
-            return false
+            return AI.DoTargetChain("plagued conqueror")
         end
         AI.PRE_DO_DPS = function(isAoe)
             if AI.IsDps() then
-                return GetTime() < self.lastBlinkTime + 10
+                return GetTime() < self.lastBlinkTime + 5
             end
             return false
         end
@@ -38,25 +35,9 @@ local noth = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         if AI.IsTank() then
-            if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "Noth") and
-                not AI.IsTanking("player") and AI.CastSpell("Hand of Reckoning", "target") then
+            if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "Noth") and not AI.IsTanking("player") and
+                AI.CastSpell("Hand of Reckoning", "target") then
                 return true
-            end
-            if AI.GetUnitHealthPct("player") < 50 then
-                AI.UseInventorySlot(13)
-            end
-        end
-        if AI.IsValidOffensiveUnit("target") and MaloWUtils_StrContains(UnitName("target"), "Noth") and
-            AI.GetUnitHealthPct("target") < 40 then
-            if AI.CastSpell("fire elemental totem") then
-                return true
-            end
-        end
-
-        if AI.IsHealer() then
-            if AI.AUTO_CLEANSE and
-                (AI.CleanseRaid("Cleanse", "Poison", "Disease", "Magic") or AI.CleanseRaid("Remove Curse", "Curse")) then
-                return
             end
         end
         return false
@@ -65,7 +46,7 @@ local noth = MosDefBossModule:new({
 })
 
 function noth:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
-    print("Noth has blinked")
+    -- print("Noth has blinked")
     if strcontains(s, "blinks") then
         self.lastBlinkTime = GetTime()
     end
@@ -74,7 +55,7 @@ end
 AI.RegisterBossModule(noth)
 
 -- anub
-local anubBossMod = MosDefBossModule:new({
+local anubRehkan = MosDefBossModule:new({
     name = "Anub'Rekhan",
     creatureId = {15956},
     onStart = function(self)
@@ -83,25 +64,51 @@ local anubBossMod = MosDefBossModule:new({
         end
         TargetUnit("anub'rehkan")
         FocusUnit("target")
+        AI.RegisterOneShotAction(function(self)
+            if AI.IsHealer() then
+                AI.SetMoveTo(self.centerP.x, self.centerP.y)
+            elseif AI.IsDpsPosition(1) then
+                AI.SetMoveTo(self.dps1p.x, self.dps1p.y)
+            elseif AI.IsDpsPosition(2) then
+                AI.SetMoveTo(self.dps2p.x, self.dps2p.y)
+            elseif AI.IsDpsPosition(3) then
+                AI.SetMoveTo(self.dps3p.x, self.dps3p.y)
+            end
+        end, 1)
     end,
     onStop = function(self)
         AI.ALLOW_AUTO_REFACE = true
     end,
     onUpdate = function(self)
-        if not AI.IsValidOffensiveUnit("focus") or UnitName("focus") ~= "Anub'Rekhan" then
-            TargetUnit("anub'rehkan")
-            FocusUnit("target")
-        end
-        if AI.IsHeroicRaidOrDungeon() and AI.IsDps() and AI.IsShaman() then
-            if AI.HasBuff("locust swarm", "focus") or AI.HasDebuff("locust swarm", "focus") and
-                AI.CastSpell("healing wave", AI.Config.tank) then
-                return true
-            end
-        end
         return false
-    end
+    end,
+    centerP = AI.PathFinding.Vector3.new(3272.4348144531, -3476.4177246094, 287.07574462891),
+    dps1p = AI.PathFinding.Vector3.new(3274.8842773438, -3468.2561035156, 287.07574462891),
+    dps2p = AI.PathFinding.Vector3.new(3273.5114746094, -3455.4321289063, 287.07574462891),
+    dps3p = AI.PathFinding.Vector3.new(3275.2368164063, -3489.8125, 287.07574462891)
 })
-AI.RegisterBossModule(anubBossMod)
+function anubRehkan:SPELL_CAST_START(args)
+    if strcontains(args.spellName:lower(), "locust swarm") then
+        if not AI.IsTank() then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        end
+    end
+end
+
+function anubRehkan:SPELL_AURA_REMOVED(args)
+    if strcontains(args.spellName:lower(), "locust swarm") then
+        if AI.IsHealer() then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(1) then
+            AI.SetMoveTo(self.dps1p.x, self.dps1p.y)
+        elseif AI.IsDpsPosition(2) then
+            AI.SetMoveTo(self.dps2p.x, self.dps2p.y)
+        elseif AI.IsDpsPosition(3) then
+            AI.SetMoveTo(self.dps3p.x, self.dps3p.y)
+        end
+    end
+end
+AI.RegisterBossModule(anubRehkan)
 
 -- faerlina
 local faerlina = MosDefBossModule:new({
@@ -160,6 +167,7 @@ local faerlina = MosDefBossModule:new({
                     if AI.GetDistanceTo(self.dps1X, self.dps1Y) > 0.009 then
                         AI.SetMoveToPosition(self.dps1X, self.dps1Y)
                         return true
+
                     end
                 elseif AI.IsWarlock() then
                     if AI.GetDistanceTo(self.dps2X, self.dps2Y) > 0.009 then
@@ -189,12 +197,12 @@ local faerlina = MosDefBossModule:new({
     end
 })
 
-AI.RegisterBossModule(faerlina)
+-- AI.RegisterBossModule(faerlina)
 
 ---- Grobbulus
 local grobbulusBossMod = MosDefBossModule:new({
     name = "Grobbulus",
-    creatureId = {15931},    
+    creatureId = {15931},
     startx = nil,
     starty = nil,
     startz = nil,
@@ -251,6 +259,7 @@ AI.RegisterBossModule(grobbulusBossMod)
 ---- maexxna
 local maexxna = MosDefBossModule:new({
     name = "Maexxna",
+    creatureId = {15952},
     druidIsUp = false,
     priestIsUp = false,
     onStart = function(self)
@@ -260,46 +269,19 @@ local maexxna = MosDefBossModule:new({
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
-                TargetUnit("web wrap", 1)
-                if AI.IsValidOffensiveUnit("target") then
-                    return true
-                end
-                TargetUnit("maexxna spiderling", 1)
+                return AI.DoTargetChain("web wrap", "spiderling")
             end
-            return AI.IsValidOffensiveUnit("target")
         end
     end,
     onStop = function(self)
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
         self.druidIsUp = false
         self.priestIsUp = false
         AI.DISABLE_DRAIN = false
     end,
     onUpdate = function(self)
-        if AI.IsDps() and AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "web wrap" then
-            if AI.IsPriest() and (AI.CastSpell("mind blast", "target") or AI.CastSpell("mind flay", "target")) then
-                return true
-            elseif AI.IsShaman() and AI.CastSpell("lightning bolt", "target") then
-                return true
-            end
+        if AI.IsPaladin() and AI.CleanseSelf("cleanse", "Poison", "Disease") then
+            return true
         end
-        if AI.IsDps() and AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "maexxna spiderling" then
-            if AI.IsPriest() and (AI.CastSpell("mind blast", "target") or AI.CastSpell("mind sear", "target")) then
-                return true
-            end
-            if AI.IsWarlock() and (AI.CastSpell("hellfire")) then
-                return true
-            end
-        end
-
-        -- stop hellfire once all the spiderlings are dead
-        if AI.IsWarlock() and AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() ~= "maexxna spiderling" and
-            AI.IsChanneling() then
-            AI.StopCasting()
-        end
-
         if AI.IsHealer() or (AI.IsDps() and AI.IsShaman()) then
             if not AI.IsHealer() and AI.CleanseRaid("Cure Toxins", "Poison", "Disease") then
                 return true
@@ -349,18 +331,17 @@ local maexxna = MosDefBossModule:new({
 })
 
 function maexxna:SPELL_AURA_REMOVED(args)
-    local class = AI.GetClass():lower()
-    if args.spellName:lower() == "web spray" and (AI.IsPriest() or AI.IsShaman()) then
-        AI.RegisterPendingAction(function()
-            AI.StopCasting()
-            if AI.IsPriest() then
-                return AI.CastSpell("power word: shield", AI.Config.tank)
-            elseif AI.IsShaman() and AI.IsDps() then
-                return AI.CastSpell("lesser healing wave", AI.Config.tank)
-            end
-            return true
-        end)
-    end
+    -- if args.spellName:lower() == "web spray" and (AI.IsPriest() or AI.IsShaman()) then
+    --     AI.RegisterPendingAction(function()
+    --         AI.StopCasting()
+    --         if AI.IsPriest() then
+    --             return AI.CastSpell("power word: shield", AI.Config.tank)
+    --         elseif AI.IsShaman() and AI.IsDps() then
+    --             return AI.CastSpell("lesser healing wave", AI.Config.tank)
+    --         end
+    --         return true
+    --     end)
+    -- end
 end
 
 AI.RegisterBossModule(maexxna)
@@ -371,10 +352,29 @@ local razuvious = MosDefBossModule:new({
     creatureId = {16061},
     onStart = function()
         AI.AUTO_TAUNT = false
+        if not AI.IsHeroicRaidOrDungeon() then
+            if AI.IsDpsPosition(2) then
+                local crystals = AI.FindNearbyUnitsByName("obedience crystal")
+                local closestToTank = nil
+                local tank = AI.GetObjectInfo(AI.GetPrimaryTank())
+                local dist = 100
+                for i, o in ipairs(crystals) do
+                    if tank:GetDistanceTo(o.x, o.y) <= dist then
+                        closestToTank = o
+                        dist = tank:GetDistanceTo(o.x, o.y)
+                    end
+                end
+                if closestToTank then
+                    closestToTank:InteractWith()
+                    self.selectedCrystal = closestToTank
+                    AI.SendAddonMessage('selected-crystal', closestToTank.guid)
+                end
+            end
+        end
     end,
     onStop = function()
         AI.AUTO_TAUNT = true
-        SetCVar("autoInteract", 0)
+        -- SetCVar("autoInteract", 0)
     end,
     onUpdate = function()
         if not AI.IsHeroicRaidOrDungeon() then
@@ -410,8 +410,23 @@ local razuvious = MosDefBossModule:new({
             end
         end
         return false
-    end
+    end,
+    selectedCrystal = nil
 })
+
+function AI.ON_ADDON_MESSAGE(from, cmd, params)
+    if AI.IsDpsPosition(3) and cmd == "selected-crystal" and params then
+        local guid = tonumber(params)
+        local crystals = AI.FindNearbyUnitsByName("obedience crystal")
+        for i, o in ipairs(crystals) do
+            if o.guid ~= guid then
+                self.selectedCrystal = o
+                o:InteractWith()
+                break
+            end
+        end
+    end
+end
 
 AI.RegisterBossModule(razuvious)
 
@@ -551,13 +566,9 @@ AI.RegisterBossModule(gluth)
 local heigan = MosDefBossModule:new({
     name = "Heigan The Unclean",
     creatureId = {15936},
-    platformX = 0.51658093929291,
-    platformY = 0.41808542609215,
-    danceStartX = 0.48749935626984,
-    danceStartY = 0.42669451236725,
     onStart = function(self)
         if not AI.IsTank() then
-            AI.SetMoveToPosition(self.platformX, self.platformY, 0.001)
+            AI.SetMoveTo(self.startP.x, self.startP.y)
         end
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
@@ -568,20 +579,22 @@ local heigan = MosDefBossModule:new({
     end,
     onUpdate = function()
         return false
-    end
+    end,
+    startP = AI.PathFinding.Vector3.new(2804.5974121094, -3707.037109375, 276.65213012695),
+    danceStartP = AI.PathFinding.Vector3.new(2806.4020996094, -3684.9084472656, 273.65112304688)
 })
 
-function heigan:CHAT_MSG_RAID_BOSS_EMOTE(arg1, arg2)
+function heigan:CHAT_MSG_RAID_BOSS_EMOTE(s, y)
     -- print("CHAT_MSG_RAID_BOSS_EMOTE" .. arg2 .. "says " .. arg1)
-    if arg1:lower() == "%s teleports and begins to channel a spell!" then
+    if strcontains(s, "teleports") then
         AI.DISABLE_CDS = true
         if not AI.IsTank() then
-            AI.SetMoveToPosition(self.danceStartX, self.danceStartY, 0.001)
+            AI.SetMoveTo(self.danceStartP.x, self.danceStartP.y)
         end
-    elseif arg1:lower() == "%s rushes to attack once more!" then
+    elseif strcontains(s, "rushes to attack") then
         AI.DISABLE_CDS = false
         if not AI.IsTank() then
-            AI.SetMoveToPosition(self.platformX, self.platformY, 0.001)
+            AI.SetMoveTo(self.startP.x, self.startP.y)
         end
     end
 end
@@ -591,17 +604,14 @@ AI.RegisterBossModule(heigan)
 -- loatheb
 local loatheb = MosDefBossModule:new({
     name = "Loatheb",
+    creatureId = {16011},
     onStart = function()
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
         end
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
-            if not AI.IsTank() then
-                TargetUnit("plagued mushroom-men")
-            end
-            return AI.IsValidOffensiveUnit() and AI.CanHitTarget() and
-                       MaloWUtils_StrContains(UnitName("target"), "plagued")
+            return AI.DoTargetChain("plagued mushroom-men")
         end
     end,
     onStop = function()
@@ -656,10 +666,10 @@ local loatheb = MosDefBossModule:new({
         end
 
         if AI.IsPriest() then
-            if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "plagued") and
-                AI.CastSpell("mind flay", "target") then
-                return true
-            end
+            -- if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "plagued") and
+            --     AI.CastSpell("mind flay", "target") then
+            --     return true
+            -- end
             if AI.GetUnitHealthPct(AI.Config.tank) <= 50 and not AI.HasDebuff("weakened soul", AI.Config.tank) and
                 AI.CastSpell("power word: shield", AI.Config.tank) then
                 return true
@@ -672,6 +682,13 @@ local loatheb = MosDefBossModule:new({
         --         return true
         --     end
         -- end
+
+        local protectiveMushrooms = AI.FindNearbyUnitsByName("protective mushroom")
+        local mushroomMen = AI.FindNearbyUnitsByName("plagued mushroom-men")
+        if #protectiveMushrooms > 0 and #mushroomMen == 0 and protectiveMushrooms[1].distance > 4 and not AI.IsCasting() then
+            print("moving to mushroom")
+            AI.SetMoveTo(protectiveMushrooms[1].x, protectiveMushrooms[1].y)
+        end
 
         return AI.IsHealer() and AI.HasDebuff("Necrotic Aura")
     end
@@ -944,28 +961,20 @@ local thaddius = MosDefBossModule:new({
     onStop = function(self)
     end,
     onUpdate = function(self)
+        local plr = AI.GetObjectInfo("player")
+        if plr:HasAura("positive charge") and AI.GetDistanceTo(self.positiveX, self.positiveY) > 3 and
+            not AI.HasMoveTo() then
+            AI.SetMoveToPosition(self.positiveX, self.positiveY)
+        elseif plr:HasAura("negative charge") and AI.GetDistanceTo(self.negativeX, self.negativeY) > 3 and
+            not AI.HasMoveTo() then
+            AI.SetMoveToPosition(self.negativeX, self.negativeY)
+        end
     end,
     positiveX = 0.27245682477951,
     positiveY = 0.10747250169516,
     negativeX = 0.2879327237606,
     negativeY = 0.13413137197495
 })
-
-function thaddius:UNIT_AURA(target)
-    if target == "player" and not AI.IsTank() then
-        if AI.HasDebuff("positive charge") then
-            AI.SayRaid("I've been positive charged")
-            if not AI.HasMoveToPosition() then
-                AI.SetMoveToPosition(self.positiveX, self.positiveY)
-            end
-        elseif AI.HasDebuff("negative charge") then
-            AI.SayRaid("I've been negative charged")
-            if not AI.HasMoveToPosition() then
-                AI.SetMoveToPosition(self.negativeX, self.negativeY)
-            end
-        end
-    end
-end
 
 AI.RegisterBossModule(thaddius)
 
@@ -1007,14 +1016,6 @@ AI.RegisterBossModule(sapphiron)
 local kelthuzad = MosDefBossModule:new({
     name = "Kel'Thuzad",
     creatureId = {15990},
-    warlockX = 0.34942698478699,
-    warlockY = 0.21835534274578,
-    spriestX = 0.34770148992538,
-    spriestY = 0.18267193436623,
-    mageX = 0.39329892396927,
-    mageY = 0.21219502389431,
-    healerX = 0.38045877218246,
-    healerY = 0.16219447553158,
     frozenTarget = nil,
     mcUnit = nil,
     onStart = function(self)
@@ -1032,15 +1033,15 @@ local kelthuzad = MosDefBossModule:new({
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
                 TargetUnit("Soul Weaver")
-                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 40 then
+                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 35 then
                     return true
                 end
                 TargetUnit("soldier of the frozen wastes")
-                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 40 then
+                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 35 then
                     return true
                 end
                 TargetUnit("Unstoppable Abomination")
-                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 40 then
+                if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 35 then
                     return true
                 end
             end
@@ -1055,7 +1056,7 @@ local kelthuzad = MosDefBossModule:new({
                 if AI.IsWarlock() and AI.CastSpell("searing pain", "target") then
                     return true
                 end
-                if AI.IsMage() and AI.CastSpell("ice lance", "target") then
+                if AI.IsMage() and AI.CastSpell("scorch", "target") then
                     return true
                 end
                 if AI.IsPriest() and AI.CastSpell("mind flay", "target") then
@@ -1125,38 +1126,17 @@ local kelthuzad = MosDefBossModule:new({
             end
         end
         return false
-    end
+    end,
+    dps1p = AI.PathFinding.Vector3.new(3733.1115722656, -5094.7192382813, 142.02334594727),
+    healerp = AI.PathFinding.Vector3.new(3723.8518066406, -5124.1596679688, 142.0245513916),
+    dps2p = AI.PathFinding.Vector3.new(3706.7487792969, -5090.212890625, 142.02496337891),
+    dps3p = AI.PathFinding.Vector3.new(3701.0754394531, -5113.919921875, 141.34918212891)
+
 })
 
 function kelthuzad:SPELL_CAST_START(args)
     if args.spellName:lower() == "frostbolt" then
-        -- AI.Print("KTZ casting Frostbolt")        
-        if AI.IsShaman() then
-            local delay = 0
-            if AI.IsHealer() and self.frozenTarget ~= nil then
-                delay = nil
-            end
-            if not AI.IsDps() then
-                delay = 0.5
-            end
-            if delay ~= nil then
-                AI.RegisterPendingAction(function()
-                    if UnitName("focus") ~= "Kel'Thuzad" then
-                        TargetUnit("Kel'Thuzad")
-                        FocusUnit("target")
-                    end
-
-                    if not AI.IsCasting("focus") then
-                        return true
-                    end
-
-                    if AI.CanCastSpell("wind shear", "focus") then
-                        AI.StopCasting()
-                    end
-                    return AI.CastSpell("wind shear", "focus")
-                end, delay, "INTERRUPT_FROST_BOLT")
-            end
-        end
+        AI.DoStaggeredInterrupt()
     end
 end
 
@@ -1181,22 +1161,23 @@ end
 
 function kelthuzad:CHAT_MSG_RAID_BOSS_EMOTE(arg1, arg2)
     -- print("CHAT_MSG_RAID_BOSS_EMOTE" .. arg2 .. " says " .. arg1)
-    if MaloWUtils_StrContains(arg1, "strikes!") then
-        local class = AI.GetClass():lower()
-        if AI.IsDps() then
-            if class == "warlock" then
-                AI.SetMoveToPosition(self.warlockX, self.warlockY)
-            elseif class == "priest" then
-                AI.SetMoveToPosition(self.spriestX, self.spriestY)
-            elseif class == "mage" or class == "shaman" then
-                AI.SetMoveToPosition(self.mageX, self.mageY)
-            end
-        elseif AI.IsHealer() then
-            AI.SetMoveToPosition(self.healerX, self.healerY)
-        end
+    if strcontains(arg1, "strikes!") then
+        TargetUnit("kel'thuzad")
+        FocusUnit("target")
         if AI.IsTank() then
-            TargetUnit("kel'thuzad")
-            AI.CastSpell("Hand of Reckoning", "target")
+            AI.MustCastSpell("Hand of Reckoning", "focus")
+        else
+            AI.RegisterOneShotAction(function(self)
+                if AI.IsHealer() then
+                    AI.SetMoveToPosition(self.healerp.x, self.healerp.y)
+                elseif AI.IsDpsPosition(1) then
+                    AI.SetMoveToPosition(self.dps1p.x, self.dps1p.y)
+                elseif AI.IsDpsPosition(2) then
+                    AI.SetMoveToPosition(self.dps2p.x, self.dps2p.y)
+                elseif AI.IsDpsPosition(3) then
+                    AI.SetMoveToPosition(self.dps3p.x, self.dps3p.y)
+                end
+            end, 3)
         end
     end
 end

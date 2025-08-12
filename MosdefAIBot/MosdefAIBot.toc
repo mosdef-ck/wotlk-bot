@@ -26,4 +26,9 @@ raids\ulduar\hodir.lua
 raids\ulduar\mimiron.lua
 raids\voa\voa.lua
 raids\eoe.lua
+raids\togc\togc.lua
+raids\icc\icc.lua
+raids\icc\lichking.lua
+raids\icc\putricide.lua
+raids\icc\valinthria.lua
 Testing.lua

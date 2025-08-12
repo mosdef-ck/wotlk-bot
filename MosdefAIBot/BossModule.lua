@@ -221,33 +221,44 @@ local leyguardian = MosDefBossModule:new({
     name = "Ley-Guardian Eregos",
     creatureId = {27656},
     onStart = function(self)
+        TargetUnit("ley")
+        FocusUnit("target")
         AI.PRE_DO_DPS = function(isAoe)
             if AI.IsPossessing() then
                 local pet = UnitName("playerpet"):lower()
-                if pet == "ruby drake" and AI.IsValidOffensiveUnit() and
-                    AI.UsePossessionSpell("searing wrath", "target") then
+                if pet == "ruby drake" and AI.IsValidOffensiveUnit() and AI.CastVehicleSpellOnTarget("searing wrath", "target") then
                     return true
                 elseif pet == "amber drake" then
-                    if AI.IsValidOffensiveUnit() and MaloWUtils_StrContains(UnitName("target"), "Ley") then
-                        if AI.IsCasting("playerpet") then
-                            return true
-                        end
-                        if AI.GetMyDebuffCount("shock charge", "target") < 10 and
-                            AI.UsePossessionSpell("temporal rift", "target") then
+                    if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "ley") then
+                        if AI.GetMyDebuffCount("shock charge", "target") < 10 and not AI.IsCasting("playerpet") and
+                            AI.CastVehicleSpellOnTarget("temporal rift", "target") then
                             return true
                         elseif AI.GetMyDebuffCount("shock charge", "target") >= 10 then
-                            if AI.IsCasting("playerpet") then
+                            if AI.IsChanneling("playerpet") or AI.IsChanneling() then
                                 AI.StopCasting()
                             end
-                            if AI.UsePossessionSpell("shock lance", "target") then
+                            if AI.CastVehicleSpellOnTarget("shock lance", "target") then
                                 return true
                             end
                         end
-                    elseif AI.UsePossessionSpell("shock lance", "target") then
+                    elseif AI.CastVehicleSpellOnTarget("shock lance", "target") then
                         return true
                     end
-                elseif pet == "emerald drake" and AI.IsValidOffensiveUnit() and not AI.IsCasting("playerpet") and
-                    AI.UsePossessionSpell("leeching poison", "target") then
+                elseif pet == "emerald drake" and AI.IsValidOffensiveUnit() and not AI.IsCasting("playerpet") then
+                    if AI.GetMyDebuffCount("leeching poison", "target") > 2 then
+                        local mostHurt = AI.GetMostDamagedFriendlyPet()
+                        if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 90 then
+                            if UnitName("target") ~= UnitName(mostHurt) then
+                                TargetUnit(mostHurt)
+                            end
+                            if AI.CastVehicleSpellOnTarget("dream funnel", "target") then
+                                TargetLastEnemy()
+                                return true
+                            end
+                        end
+                    elseif (AI.GetMyDebuffCount("leeching poison", "target") > 2 and AI.CastVehicleSpellOnTarget("touch of nightmare", "target")) or AI.CastVehicleSpellOnTarget("leeching poison", "target") then
+                        return true
+                    end
                     return true
                 end
             end
@@ -260,40 +271,44 @@ local leyguardian = MosDefBossModule:new({
         if not AI.IsPossessing() then
             return false
         end
-        if AI.IsValidOffensiveUnit("target") and MaloWUtils_StrContains(UnitName("target"), "Ley") then
+        if AI.IsValidOffensiveUnit("focus") and MaloWUtils_StrContains(UnitName("focus"), "Ley") then
             local pet = UnitName("playerpet"):lower()
-            if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "target") > 2 then
+            if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "focus") > 2 then
                 local mostHurt = AI.GetMostDamagedFriendlyPet()
-                if mostHurt and AI.GetUnitHealthPct(mostHurt) < 70 then
+                if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 70 then
                     if UnitName("target") ~= mostHurt then
                         TargetUnit(mostHurt)
                     end
-                    if AI.UsePossessionSpell("dream funnel", "target") then
+                    if AI.CastVehicleSpellOnTarget("dream funnel", "target") then
                         TargetUnit("Ley")
                         return true
                     end
                 end
             end
-            if pet == "amber drake" and AI.HasBuff("enraged assault", "target") then
-                local delay = 0
-                if AI.IsDpsPosition(1) then
-                    delay = 0
-                elseif AI.IsDpsPosition(2) then
-                    delay = 3
-                else
-                    delay = 6
-                end
-                AI.RegisterPendingAction(function()
-                    if AI.IsValidOffensiveUnit("target") and not AI.HasDebuff("stop time", "target") then
-                        return AI.HasPossessionSpellCooldown("stop time") or
-                                   AI.UsePossessionSpell("stop time", "target")
-                    end
-                    return true
-                end, delay, "TIME_STOP")
-            end
         end
     end
 })
+
+function leyguardian:SPELL_AURA_APPLIED(args)
+    if strcontains(args.spellName, "enraged assault") and AI.IsDps() then
+        local delay = 0
+        if AI.IsDpsPosition(1) then
+            delay = 0
+        elseif AI.IsDpsPosition(2) then
+            delay = 1
+        else
+            delay = 2
+        end
+        AI.RegisterPendingAction(function()
+            print("time stopping leyguardian")            
+            if AI.IsValidOffensiveUnit("focus") and not AI.HasDebuff("stop time", "focus") and not AI.HasPossessionSpellCooldown("stop time") then
+                AI.StopCasting()
+                return AI.UsePossessionSpell("stop time")
+            end
+            return true
+        end, delay, "TIME_STOP")
+    end
+end
 
 AI.RegisterBossModule(leyguardian)
 
@@ -334,7 +349,10 @@ local sartharion = MosDefBossModule:new({
     onEnd = function(self)
     end,
     onUpdate = function(self)
-        AI.DISABLE_CDS = AI.IsValidOffensiveUnit() and (not strcontains(UnitName("target"), "shadron") and not strcontains(UnitName("target"), "vesperon") and strcontains(UnitName("target"), "tenebron") )
+        AI.DISABLE_CDS = AI.IsValidOffensiveUnit() and
+                             (not strcontains(UnitName("target"), "shadron") and
+                                 not strcontains(UnitName("target"), "vesperon") and
+                                 strcontains(UnitName("target"), "tenebron"))
         if AI.IsDps() and not self.portalOpen then
             local healer = AI.GetPrimaryHealer()
             if AI.GetDistanceToUnit(healer) > 3 then

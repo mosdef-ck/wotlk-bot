@@ -43,19 +43,19 @@ local oculus = MosdefZoneModule:new({
     oldMountMethod = nil,
     onEnter = function(self)
         self.oldMountMethod = AI.DO_MOUNT
-		AI.PRE_DO_DPS = function(isAoE)
+        AI.PRE_DO_DPS = function(isAoE)
             if AI.IsPossessing() then
                 local pet = UnitName("playerpet"):lower()
-                if pet == "ruby drake" and AI.UsePossessionSpell("searing wrath", "target") then
+                if pet == "ruby drake" and AI.CastVehicleSpellOnTarget("searing wrath", "target") then
                     return
-                elseif pet == "amber drake" and AI.UsePossessionSpell("shock lance", "target") then
+                elseif pet == "amber drake" and AI.CastVehicleSpellOnTarget("shock lance", "target") then
                     return
-                elseif pet == "emerald drake" and AI.UsePossessionSpell("leeching poison", "target") then
+                elseif pet == "emerald drake" and AI.CastVehicleSpellOnTarget("leeching poison", "target") then
                     return
                 end
-				return true            
+                return true
             end
-			return false
+            return false
         end
 
         AI.DO_MOUNT = function()
@@ -69,6 +69,7 @@ local oculus = MosdefZoneModule:new({
         end
     end,
     onLeave = function(self)
+        -- print("leaving Oculus, resetting mount method and pre DPS function")
         AI.PRE_DO_DPS = nil
         if self.oldMountMethod ~= nil then
             AI.DO_MOUNT = self.oldMountMethod
@@ -77,3 +78,39 @@ local oculus = MosdefZoneModule:new({
 })
 AI.RegisterZoneModule(oculus)
 
+local toc = MosdefZoneModule:new({
+    zoneName = "Trial of the Champion",
+    zoneId = 543,
+    onEnter = function(self)
+        AI.PRE_DO_DPS = function(isAoE)
+            if AI.IsPossessing() then
+                -- print('PRE-DO-DPS battleWorg')
+                local pet = UnitName("playerpet")
+                if strcontains(pet, "battleworg") then
+                    if not AI.IsTank() then
+                        SetFollowTarget(UnitGUID(AI.GetPrimaryTank()))
+                    end
+                    if AI.GetDistanceToUnit("target") > 5.5 and AI.CastVehicleSpellOnTarget("charge", "target") then
+                        return true
+                    end
+                    if AI.HasBuff("defend", "target") and AI.CastVehicleSpellOnTarget("shield-breaker", "target") then
+                        return true
+                    end
+                    if AI.CastVehicleSpellOnTarget("defend", "player") or
+                        AI.CastVehicleSpellOnTarget("thrust", "target") then
+                        return true
+                    end
+                end
+            end
+            return false
+        end
+    end,
+    onLeave = function(self)
+        AI.PRE_DO_DPS = nil
+    end
+})
+
+function toc:ON_ADDON_MESSAGE(from, cmd, args)
+end
+
+AI.RegisterZoneModule(toc)

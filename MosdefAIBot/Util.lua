@@ -101,7 +101,7 @@ function MalowUtils_ShowNearbyObjects(distanceFilter, ...)
     local time = GetTime()
 
     local f = CreateFrame("Frame", "MyFrame" .. time, UIParent, "UIPanelDialogTemplate")
-    f:SetSize(800, 400)
+    f:SetSize(550, 400)
     -- f:SetFrameStrata("DIALOG")
     f:SetPoint("CENTER", UIParent)
     f:EnableMouse(true)
@@ -174,8 +174,9 @@ function MalowUtils_ShowNearbyObjects(distanceFilter, ...)
             for i, o in ipairs(nearbyObjects) do
                 if not distanceFilter or AI.GetDistanceTo(o.x, o.y) <= distanceFilter and matchesName(o) then
                     if o.name and not strcontains(o.name, "dark rune") and not strcontains(o.name, "invisible") then
-                        s = s .. "t:" .. o.objectType .. " id:" .. o.objectEntry .. " n: " .. strpad(o.name, 30) ..
+                        s = s .. "t:" .. o.objectType .. " id:" .. o.objectEntry .. " n: " .. strpad(o.name, 20) ..
                                 " x:" .. o.x .. " y:" .. o.y .. " z:" .. o.z .. "\n"
+                                -- " targetGUID: ".. (o.targetGUID or "") .. "\n"
                     end
                     if o.objectType == 6 then
                         s = s .. "spellName:" .. o.spellName .. " spellId " .. o.spellId .. " r " .. o.radius ..
@@ -337,6 +338,11 @@ function splitstr3(text, sep)
     local v1, v2, v3 = string.match(text, pattern)
     return v1, v2, v3
 end
+function splitstr4(text, sep)
+    local pattern = "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)," .. "([^" .. sep .. "]+)"
+    local v1, v2, v3, v4 = string.match(text, pattern)
+    return v1, v2, v3, v4
+end
 
 function normalizeAngle(angle)
     local pi2 = math.pi * 2
@@ -349,7 +355,7 @@ function normalizeAngle(angle)
     if nAngle < 0.0 then
         nAngle = nAngle + pi2
     end
-    return angle
+    return nAngle
 end
 
 function findClosestPointInList(pointList, ref)
@@ -377,4 +383,14 @@ function table_removeif(t, f)
             table.remove(t, i)
         end
     end
+end
+
+function normalizeObstacleRadius(radius)
+    local plrInfo = AI.GetObjectInfo("player")
+    local boundingRadius = plrInfo.boundingRadius or 0.5
+    local scale = 1.2
+    if plrInfo.objectScale and plrInfo.objectScale > scale then
+        scale = plrInfo.objectScale    
+    end
+    return (radius + boundingRadius) * scale
 end

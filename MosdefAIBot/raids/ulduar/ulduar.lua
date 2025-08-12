@@ -1,4 +1,5 @@
 local oldPriorityTargetFn = nil
+local oldPreDpsFn = nil
 local rad30 = 0.5235988
 local rad22_5 = 0.3926991
 local rad10 = 0.1745329
@@ -20,27 +21,13 @@ local ulduar = MosdefZoneModule:new({
             if AI.IsInVehicle() then
                 if AI.IsValidOffensiveUnit() and not AI.HasMoveToPosition() then
                     AI.SetFacingUnit("target")
-                    local dist = AI.GetDistanceTo(AI.GetPosition("target"))
-                    if dist > 100 then
-                        AI.SetDesiredAimAngle(0.524377)
-                    elseif dist > 90 then
-                        AI.SetDesiredAimAngle(0.4176137)
-                    elseif dist > 70 then
-                        AI.SetDesiredAimAngle(0.276313)
-                    elseif dist > 50 then
-                        AI.SetDesiredAimAngle(0.125593)
-                    elseif dist > 30 then
-                        AI.SetDesiredAimAngle(0.03139)
-                    elseif dist > 15 then
-                        AI.SetDesiredAimAngle(-0.19468)
-                    end
                 elseif not AI.IsValidOffensiveUnit() then
                     local vehicle = (UnitName("playerpet") or ""):lower()
                     local angle = 0.35212010
                     if vehicle == "salvaged siege turret" then
                         angle = 0.25119984
                     end
-                    AI.SetDesiredAimAngle(angle)
+                    VehicleAimRequestNormAngle(angle)
                     if not AI.IsTank() then
                         local tankPet = AI.GetObjectInfo(AI.GetPrimaryTank() .. "-pet")
                         if tankPet and tankPet.facing then
@@ -51,22 +38,39 @@ local ulduar = MosdefZoneModule:new({
 
                 local vehicle = (UnitName("playerpet") or ""):lower()
                 if vehicle == "salvaged siege turret" then
-                    AI.UsePossessionSpell("fire cannon")
+                    AI.CastVehicleSpellOnDestination("fire cannon", "target")
+                    AI.CastVehicleSpellOnDestination("anti-air rocket", "target")
+                    -- AI.UsePossessionSpell("fire cannon")
                 end
                 if vehicle == "salvaged siege engine" and AI.IsValidOffensiveUnit() and
                     CheckInteractDistance("target", 3) then
                     -- AI.UsePossessionSpell("ram")
                 end
                 if vehicle == "salvaged demolisher" then
-                    if UnitPower("playerpet") > 10 and AI.IsValidOffensiveUnit() and AI.GetTargetStrength() > 3 then
-                        AI.UsePossessionSpell("hurl pyrite barrel")
+                    if UnitPower("playerpet") < 40 then
+                        local pyrite = AI.FindNearbyUnitsByName("liquid pyrite")
+                        if #pyrite and pyrite[1].distance <= 50 then                            
+                            if AI.CastVehicleSpellOnTarget("grab crate", pyrite[1].guid) then
+                                return true
+                            end
+                        end
+                    end
+                    if UnitPower("playerpet") > 10 and AI.IsValidOffensiveUnit() and AI.GetTargetStrength() > 3 and
+                        (AI.GetDebuffCount("blue pyrite", "target") < 10 or
+                            AI.GetDebuffDuration("blue pyrite", "target") < 2) then
+                        -- AI.UsePossessionSpell("hurl pyrite barrel")
+                        AI.CastVehicleSpellOnDestination("hurl pyrite barrel", "target")
                     else
-                        AI.UsePossessionSpell("hurl boulder")
+                        AI.CastVehicleSpellOnDestination("hurl boulder", "target")
+                        -- AI.UsePossessionSpell("hurl boulder")
                     end
                 end
                 if vehicle == "salvaged demolisher mechanic seat" then
-                    AI.SetDesiredAimAngle(0.2037674)
-                    AI.UsePossessionSpell("anti-air rocket")
+                    VehicleAimRequestNormAngle(0.2037674)
+                    -- AI.SetDesiredAimAngle(0.2037674)
+                    -- AI.UsePossessionSpell("anti-air rocket")
+                    AI.CastVehicleSpellOnDestination("anti-air rocket", "target")
+                    AI.CastVehicleSpellOnDestination("mortar", "target")
                 end
 
                 if vehicle == "salvaged chopper" and CheckInteractDistance("target", 3) then
@@ -89,7 +93,9 @@ local ironMender = MosDefBossModule:new({
     creatureId = {34198, 34199, 34190},
     onStart = function(self)
         if AI.IsTank() then
-            TargetUnit("iron mender")
+            if not strcontains(UnitName("target"), "iron mender") then
+                TargetUnit("iron mender")
+            end
             local nearbyMender = AI.FindUnitYWithinXOf("target", "iron mender", 20)
             if #nearbyMender > 0 and not nearbyMender[1].isDead and not AI.IsUnitCC(nearbyMender[1]) then
                 nearbyMender[1]:Focus()
@@ -121,7 +127,7 @@ local ironMender = MosDefBossModule:new({
                         if not markedMender.isDead and not AI.IsUnitCC(markedMender) then
                             return AI.CastSpell("fear", "focus")
                         end
-                    end, 5, "CC_IRON_MENDER")
+                    end, 4, "CC_IRON_MENDER")
                 end
             end
         end
@@ -134,7 +140,7 @@ local chamberOverseer = MosDefBossModule:new({
     name = "Chamber Overseer",
     creatureId = {34197},
     onStart = function(self)
-        AI.Config.startHealOverrideThreshold = 99
+        AI.Config.startHealOverrideThreshold = 90
     end,
     onEnd = function(self)
         AI.Config.startHealOverrideThreshold = 100
@@ -163,9 +169,17 @@ local flameLeviathan = MosDefBossModule:new({
             TargetUnit("Flame Leviathan")
             FocusUnit("target")
         end
+        oldPreDpsFn = AI.PRE_DO_DPS
+        AI.PRE_DO_DPS = function(isAoE)
+            if self:IsMyVehiclePursued() and self:AmIDriver() then                
+                return true
+            end            
+            return oldPreDpsFn(isAoE)
+        end
     end,
     onStop = function(self)
         self.pursuedTarget = nil
+        AI.PRE_DO_DPS = oldPreDpsFn
     end,
     onUpdate = function(self)
         -- run from leviathan if we're being pursued
@@ -218,10 +232,13 @@ local flameLeviathan = MosDefBossModule:new({
                 local pyrite = AI.FindNearbyUnitsByName("liquid pyrite")
                 if #pyrite and pyrite[1].distance <= 50 then
                     pyrite[1]:Target()
+                    if AI.CastVehicleSpellOnDestination(UnitGUID("playerpet"), "grab crate", "target") then
+                        return true
+                    end
                 end
-                if UnitName("target") == "Liquid Pyrite" and AI.UsePossessionSpell("grab crate", "target") then
-                    return true
-                end
+                -- if UnitName("target") == "Liquid Pyrite" and AI.UsePossessionSpell("grab crate", "target") then
+                --     return true
+                -- end
             end
             return false
         end
@@ -296,6 +313,39 @@ function flameLeviathan:SPELL_AURA_REMOVED(args)
     --     end
     --     self.pursuedTarget = nil
     -- end
+end
+
+function flameLeviathan:IsMyVehiclePursued()
+    if not AI.IsPossessing() then
+        return false
+    end
+    local vehicle = UnitName("playerpet"):lower()
+    if not self.pursuedTarget then
+        return false
+    end
+    if strcontains(self.pursuedTarget, "siege") and strcontains(vehicle, "siege") then
+        return true
+    end
+    if strcontains(self.pursuedTarget, "demolisher") and strcontains(vehicle, "demolisher") then
+        return true
+    end
+    if strcontains(self.pursuedTarget, "chopper") and strcontains(vehicle, "chopper") then
+        return true
+    end
+    return false
+end
+
+function flameLeviathan:AmIDriver()
+    if not AI.IsPossessing() then
+        return false
+    end
+    local vehicle = UnitName("playerpet"):lower()
+    if vehicle == "salvaged siege engine" or vehicle == "salvaged demolisher" or
+        vehicle == "salvaged chopper" then
+        return true
+    end
+
+    return false
 end
 
 AI.RegisterBossModule(flameLeviathan)
@@ -376,10 +426,10 @@ function ignis:SPELL_AURA_APPLIED(args)
                         return true
                     end
                     local hx, hy = AI.GetPosition(healer)
-                    local tX, tY = AI.GetPosition()
-                    local facing = GetPlayerFacing()
+                    local ignis = AI.FindNearbyUnitsByName("ignis")[1]
+                    local facing = ignis.facing
                     local success = false
-                    if AI.IsPointWithinCone(tX, tY, hx, hy, facing, math.pi) then
+                    if AI.IsPointWithinCone(hx, hy, ignis.x, ignis.y, facing, rad90) then
                         success = AI.CastSpell("blink")
                         if success then
                             AI.SetMoveTo(self.dpsX, self.dpsY)
@@ -424,7 +474,7 @@ local kologarn = MosDefBossModule:new({
             AI.SetMoveTo(self.healerx, self.healery)
         end
 
-        self.nextRightArmTargetTime = GetTime() + 15
+        self.nextRightArmTargetTime = GetTime() + 16
         local mod = self
 
         oldPriorityTargetFn = AI.do_PriorityTarget
@@ -436,13 +486,16 @@ local kologarn = MosDefBossModule:new({
             end
             return false
         end
+        if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
+            AI.UseContainerItem("lesser flask of resistance")
+        end
     end,
     onStop = function(self)
         AI.do_PriorityTarget = oldPriorityTargetFn
     end,
     onUpdate = function(self)
         if AI.IsShaman() and AI.IsHealer() and self.gripTarget and AI.GetUnitHealthPct(self.gripTarget) <= 70 and
-            AI.CastSpell("healing wave", self.gripTarget) then
+            UnitHealth(AI.GetPrimaryTank()) > 20000 and AI.CastSpell("healing wave", self.gripTarget) then
             return true
         end
 
@@ -458,6 +511,7 @@ local kologarn = MosDefBossModule:new({
         if AI.IsDps() then
             local eyebeam = AI.FindNearbyUnitsByName("eyebeam")
             if #eyebeam > 0 then
+                -- print("eyebeam target:" .. eyebeam[1].targetGUID or " N/A")
                 local x, y = AI.GetPosition("player")
                 if GetTime() > self.eyeEvadeTime then
                     local eyeFacing = eyebeam[1].facing
@@ -471,7 +525,7 @@ local kologarn = MosDefBossModule:new({
                     -- local diff = math.abs(eyeFacing - facingToPlayer)
                     -- print("eyebeam facing " .. eyeFacing .. " toplr facing:" .. facingToPlayer .. " diff:" .. diff)
                     if (eyebeam[1].distance <= 5 -- and diff <= 0.5
-                    and AI.IsPointWithinCone(x, y, eyebeam[1].x, eyebeam[1].y, eyeFacing, rad22_5)) and
+                    and AI.IsPointWithinCone(x, y, eyebeam[1].x, eyebeam[1].y, eyeFacing, rad5)) and
                         not AI.HasMoveToPosition() then
                         if AI.IsDpsPosition(1) then
                             AI.SetMoveToPosition(self.dps1evadeX, self.dps1evadeY, 3)
@@ -481,19 +535,18 @@ local kologarn = MosDefBossModule:new({
                             AI.SetMoveToPosition(self.dps3evadeX, self.dps3evadeY, 3)
                         end
                         AI.DISABLE_CDS = true
-                        self.eyeEvadeTime = GetTime() + 5
+                        self.eyeEvadeTime = GetTime() + 10
                     end
                 end
             elseif self.gripTarget == nil and not AI.HasMoveToPosition() then
-                if AI.IsDpsPosition(1) and AI.GetDistanceTo(self.dps1x, self.dps1y) > 1 then
+                if AI.IsDpsPosition(1) and AI.GetDistanceTo(self.dps1x, self.dps1y) > 2 then
                     AI.SetMoveToPosition(self.dps1x, self.dps1y)
-                elseif AI.IsDpsPosition(2) and AI.GetDistanceTo(self.dps2x, self.dps2y) > 1 then
+                elseif AI.IsDpsPosition(2) and AI.GetDistanceTo(self.dps2x, self.dps2y) > 2 then
                     AI.SetMoveToPosition(self.dps2x, self.dps2y)
-                elseif AI.IsDpsPosition(3) and AI.GetDistanceTo(self.dps3x, self.dps3y) > 1 then
+                elseif AI.IsDpsPosition(3) and AI.GetDistanceTo(self.dps3x, self.dps3y) > 2 then
                     AI.SetMoveToPosition(self.dps3x, self.dps3y)
                 end
             end
-
             if #eyebeam == 0 then
                 AI.DISABLE_CDS = false
             end
@@ -554,18 +607,18 @@ function kologarn:SPELL_AURA_REMOVED(args)
         if args.target == UnitName("player") then
             -- self.eyeEvadeTime = GetTime() + 10
             local mod = self
-            AI.RegisterPendingAction(function()
-                if AI.IsDpsPosition(1) and not AI.HasMoveToPosition() then
+            AI.RegisterOneShotAction(function()
+                if AI.IsDpsPosition(1) then
                     AI.SetMoveToPosition(mod.dps1x, mod.dps1y)
                 end
-                if AI.IsDpsPosition(2) and not AI.HasMoveToPosition() then
+                if AI.IsDpsPosition(2) then
                     if AI.HasBuff("demonic circle: summon") and AI.CastSpell("demonic circle: teleport") then
                         return true
                     else
                         AI.SetMoveToPosition(mod.dps2x, mod.dps2y)
                     end
                 end
-                if AI.IsDpsPosition(3) and not AI.HasMoveToPosition() then
+                if AI.IsDpsPosition(3) then
                     AI.SetMoveToPosition(mod.dps3x, mod.dps3y)
                 end
                 return true
@@ -576,7 +629,6 @@ end
 
 function kologarn:CHAT_MSG_MONSTER_YELL(s, t)
     if strcontains(s, "flesh wound") then
-        print("Arm dead")
         self.nextRightArmTargetTime = GetTime() + 85
     end
 end
@@ -821,7 +873,7 @@ local xtMobs = MosDefBossModule:new({
 
 function xtMobs:SPELL_CAST_START(args)
     if strcontains(args.spellName, "matrix") then
-        print("defense matrix incoming")
+        -- print("defense matrix incoming")
         if AI.IsDps() then
             local delay = 0
             if AI.IsDpsPosition(2) then
@@ -830,6 +882,7 @@ function xtMobs:SPELL_CAST_START(args)
                 delay = 1
             end
             AI.RegisterOneShotAction(function()
+                AI.StopCasting()
                 TargetUnit(args.caster)
                 if AI.IsCasting("target") and AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
                     CastCursorAOESpell(AI.GetPosition("target"))
@@ -845,6 +898,7 @@ local xt = MosDefBossModule:new({
     name = "xt-002 deconstructor",
     creatureId = {33293},
     onStart = function(self)
+        AI.Config.starFormationRadius = 20
     end,
     onStop = function(self)
     end,
@@ -919,7 +973,7 @@ local assemblyOfIron = MosDefBossModule:new({
                     runeOfPower.radius = 5
                     local obstacles = self:GetRunesOfDeath()
                     table.insert(obstacles, runeOfPower)
-                    local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), 30, obstacles, 3)
+                    local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), 25, obstacles, 3)
                     if p then
                         AI.PathFinding.MoveSafelyTo(p, self:GetRunesOfDeath())
                     end
@@ -929,9 +983,11 @@ local assemblyOfIron = MosDefBossModule:new({
     end,
     lastOverloadTime = 0,
     tendrilsActive = false,
-    centerx = 1587.4993896484,
-    centery = 119.86359405518,
-    centerz = 427.26727294922,
+    centerP = AI.PathFinding.Vector3.new({
+        x = 1587.4993896484,
+        y = 119.86359405518,
+        z = 427.26727294922
+    }),
     r = 39
 })
 
@@ -1008,12 +1064,7 @@ function assemblyOfIron:SPELL_AURA_APPLIED(args)
         if #brundir > 0 then
             if not AI.IsTank() then
                 brundir[1].radius = 20
-                local poly = AI.PathFinding.createCircularPolygon({
-                    x = self.centerx,
-                    y = self.centery,
-                    z = self.centerz,
-                    radius = self.r
-                })
+                local poly = AI.PathFinding.createCircularPolygon(self.centerP, self.r)                
                 AI.SetObjectAvoidance({
                     guids = brundir,
                     safeDistance = 3,
@@ -1123,6 +1174,11 @@ local thorim = MosDefBossModule:new({
                 return false
             end
 
+            if AI.IsPriest() and self:IsGauntletTeam() and not mod.thorimDropped and not AI.HasDebuff("weakened soul") and
+                not AI.HasBuff("power word: shield") and AI.CastSpell("power word: shield", "player") then
+                return true
+            end
+
             if UnitName("player") ~= mod.gauntletLeader and UnitName("player") ~= mod.follower then
                 return false
             else
@@ -1186,6 +1242,10 @@ local thorim = MosDefBossModule:new({
                                     AI.SetMoveTo(x, y)
                                 end
 
+                                if AI.HasDebuff("frost nova") or AI.HasDebuff("frostbolt") then
+                                    AI.SendAddonMessage("cleanse-me")
+                                end
+
                                 AI.RegisterPendingAction(function()
                                     if AI.IsDpsPosition(1) and AI.GetDistanceTo(self.dpsSpot1X, self.dpsSpot1Y) > 1 then
                                         AI.SetMoveToPosition(self.dpsSpot1X, self.dpsSpot1Y)
@@ -1204,14 +1264,14 @@ local thorim = MosDefBossModule:new({
                 end
             end
 
-            if AI.IsPriest() then
-                local allies = AI.GetRaidOrPartyMemberUnits()
-                for i, a in ipairs(allies) do
-                    if AI.HasDebuff("frost nova", a) and AI.CastSpell("dispel magic", a) then
-                        return true
-                    end
-                end
-            end
+            -- if AI.IsPriest() then
+            --     local allies = AI.GetRaidOrPartyMemberUnits()
+            --     for i, a in ipairs(allies) do
+            --         if AI.HasDebuff("frost nova", a) and AI.CastSpell("dispel magic", a) then
+            --             return true
+            --         end
+            --     end
+            -- end
 
             if AI.IsMage() and AI.HasMoveTo() and AI.IsFacingTowardsDestination() and AI.CastSpell("blink") then
                 return true
@@ -1250,8 +1310,19 @@ local thorim = MosDefBossModule:new({
     dps2Safex = 2129.2443847656,
     dps2Safey = -280.47311401367,
     dps3Safex = 2153.9934082031,
-    dps3Safey = -269.09017944336
+    dps3Safey = -269.09017944336,
+    gauntletEnter = AI.PathFinding.Vector3.new(2165.8608398438, -262.71313476563, 419.33630371094)
+
 })
+
+function thorim:ON_ADDON_MESSAGE(from, cmd, params)
+    if cmd == "cleanse-me" and AI.IsPriest() then
+        AI.RegisterPendingAction(function()
+            print("cleansing " .. from)
+            return AI.CleanseFriendly("dispel magic", from)
+        end)
+    end
+end
 
 function thorim:IsGauntletTeam()
     local name = UnitName("player")
@@ -1275,23 +1346,22 @@ function thorim:CHAT_MSG_MONSTER_YELL(text, monster)
             CancelUnitBuff("player", "vampiric embrace")
         end
         if self:IsGauntletTeam() then
-            local gate = AI.FindNearbyGameObjects(194560)
+            local gate = AI.FindNearbyGameObjects("dark iron portcullis", "194560")
             if #gate > 0 and gate[1].state ~= 0 then
                 gate[1]:SetGoState(0)
             else
                 print("gauntlet gate not found")
             end
+            AI.SetMoveTo(self.gauntletEnter.x, self.gauntletEnter.y)
         end
     end
     if monster == "Thorim" and MaloWUtils_StrContains(text:lower(), "you dare challenge") then
         self.thorimDropped = true
+        AI.AUTO_CLEANSE = false
         TargetUnit("Thorim")
         AI.ResetMoveTo()
         if UnitName("player") == self.follower then
             FollowUnit(self.gauntletLeader)
-        end
-        if AI.IsHealer() then
-            AI.AUTO_CLEANSE = false
         end
         if AI.IsDps() then
             if AI.IsPriest() then
@@ -1493,7 +1563,6 @@ end
 
 AI.RegisterBossModule(freya)
 
-
 -- faceless horror
 local facelessHorror = MosDefBossModule:new({
     name = "Faceless Horror",
@@ -1504,53 +1573,36 @@ local facelessHorror = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         -- check for MC
-        if self.mcUnit ~= nil and GetTime() > self.ccTimeout then
-            local mod = self
-            if UnitName("player") ~= self.mcUnit and AI.IsDps() then
-                if AI.IsWarlock() then
-                    AI.RegisterPendingAction(function()
-                        if not AI.IsUnitCC(mod.mcUnit) then
-                            mod.ccTimeout = GetTime() + 10
-                            return AI.CastSpell("fear", mod.mcUnit)
-                        end
-                    end, 3, "CC_MC_UNIT")
-                end
-
-                if AI.IsMage() and not AI.IsUnitCC(mod.mcUnit) and AI.CastSpell("polymorph", mod.mcUnit) then
-                    self.ccTimeout = GetTime() + 10
-                    return true
-                end
-
-                if AI.IsShaman() and not AI.IsUnitCC(mod.mcUnit) and AI.CastSpell("hex", mod.mcUnit) then
-                    self.ccTimeout = GetTime() + 10
-                    return true
-                end
+        if self.mcUnit and not strcontains(UnitName("player"), self.mcUnit) and AI.IsDps() then
+            if AI.IsWarlock() then
+                AI.RegisterPendingAction(function(self)
+                    if not AI.IsUnitCC(self.mcUnit) then
+                        return AI.CastSpell("fear", self.mcUnit)
+                    end
+                end, 3, "CC_MC_UNIT")
             end
+
+            if AI.IsMage() and not AI.IsUnitCC(self.mcUnit) and AI.CastSpell("polymorph", self.mcUnit) then
+                return true
+            end
+
+            if AI.IsShaman() and not AI.IsUnitCC(self.mcUnit) and AI.CastSpell("hex", self.mcUnit) then
+                return true
+            end
+
         end
 
-        if not AI.IsTank() and AI.IsValidOffensiveUnit() and AI.GetDistanceTo(AI.GetPosition("target")) > 30 then
-            local angle = AI.GetFacingForPosition(AI.GetPosition("target")) + math.pi
-            local r = 30
-            local x, y = r * math.cos(angle), r * math.sin(angle)
-            local tX, tY = AI.GetPosition("target")
-            AI.SetMoveToPosition(tX + x, tY + y)
+        if not AI.IsTank() and AI.IsValidOffensiveUnit() and AI.GetDistanceTo(AI.GetPosition("target")) > 35 then
+            local p = AI.PathFinding.FindSafeSpotInCircle("target", 30)
+            if p then
+                AI.PathFinding.MoveSafelyTo(p)
+            end
         end
     end,
     mcUnit = nil,
     ccTimeout = 0
 })
 
-function facelessHorror:SPELL_CAST_START(args)
-    if args.spellName:lower() == "Shadow Crash" and args.target == UnitName("player") then
-        AI.SayRaid("shadow crash on me")
-    end
-end
-
-function facelessHorror:SPELL_CAST_SUCCESS(args)
-    if args.spellName:lower() == "Shadow Crash" and args.target == UnitName("player") then
-        AI.SayRaid("shadow crash on me")
-    end
-end
 function facelessHorror:SPELL_AURA_APPLIED(args)
     if args.spellName:lower() == "dominate mind" then
         self.mcUnit = args.target
@@ -1583,7 +1635,8 @@ local vezax = MosDefBossModule:new({
         AI.do_PriorityTarget = function()
             return AI.DoTargetChain("saronite animus", "vezax")
         end
-
+        TargetUnit("General Vezax")
+        FocusUnit("target")
         AI.Config.startHealOverrideThreshold = 50
     end,
     onStop = function(self)
@@ -1594,14 +1647,13 @@ local vezax = MosDefBossModule:new({
     onUpdate = function(self)
         local tick = GetTime()
         local crashes = AI.FindNearbyDynamicObjects("shadow crash")
-        if tick > self.lastCrashTime and AI.IsDps() and #crashes > 0 then
+        local bestCrash = self:findBestCrashSite()
+        if tick > self.lastCrashTime and AI.IsDps() and bestCrash then
             if not AI.HasDebuff("shadow crash") and not AI.HasDebuff("mark of the faceless") and
                 not AI.HasMoveToPosition() and not AI.HasObjectAvoidance() then
-                local closestCrash = self.findClosestPointInList(crashes)
-                if closestCrash then
-                    print("moving into shadow crash impact area")
-                    AI.SetMoveTo(closestCrash.x, closestCrash.y)
-                end
+
+                print("moving into shadow crash impact area")
+                AI.SetMoveTo(bestCrash.x, bestCrash.y)
             end
         end
 
@@ -1610,21 +1662,13 @@ local vezax = MosDefBossModule:new({
             if not AI.HasDebuff("weakened soul", tank) and AI.CastSpell("power word: shield", tank) then
                 return true
             end
-        end    
+        end
     end,
     lastCrashTime = 0,
     animus = false,
     markedPlayer = nil,
     findClosestPointInList = function(pointList)
-        local dist = 500
-        local point = nil
-        for i, d in ipairs(pointList) do
-            if AI.GetDistanceTo(d.x, d.y) <= dist then
-                point = d
-                dist = AI.GetDistanceTo(d.x, d.y)
-            end
-        end
-        return point
+        return findClosestPointInList(pointList)
     end,
     isFarEnoughFromAllies = function(x, y, allies)
         for i, a in ipairs(allies) do
@@ -1641,11 +1685,26 @@ local vezax = MosDefBossModule:new({
         end
         local info = AI.GetObjectInfo(self.markedPlayer)
         if info then
+            -- return info:GetDistanceTo(x, y) > 18
             return AI.CalcDistance(x, y, info.x, info.y) > 18
         end
         return true
     end
 })
+
+function vezax:findBestCrashSite()
+    local crashes = AI.FindNearbyDynamicObjects("shadow crash")
+    if #crashes == 0 then
+        return nil
+    end
+    local gx, gy = AI.GetPosition("focus")
+    for i, o in ipairs(crashes) do
+        if o:GetDistanceTo(gx, gy) <= 35 then
+            return o
+        end
+    end
+    return nil
+end
 
 function vezax:SPELL_CAST_START(args)
     if args.spellName:lower() == "searing flames" then
@@ -1670,43 +1729,46 @@ function vezax:SPELL_CAST_SUCCESS(args)
         self.lastCrashTime = GetTime() + secondsToImpact
         local mod = self
         local cX, cY = AI.GetPosition()
-        if AI.GetDistanceTo(sX, sY) <= 11 and not AI.IsTank() then
-            print("evading shadow crash")
-            local allies = AI.GetRaidOrPartyMemberUnits()
-            local angle = AI.CalcFacing(sX, sY, gX, gY)
-            local points = {}
-            if AI.HasDebuff("mark of the faceless") then
-                for theta = angle - rad90, angle + rad90, rad5 do
-                    local ntheta = normalizeAngle(theta)
-                    for r = 13, 40, 1 do
-                        local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
-                        local nX, nY = sX + x, sY + y
-                        if self.isFarEnoughFromAllies(nX, nY, allies) then
-                            table.insert(points, {
-                                x = nX,
-                                y = nY
-                            })
+        if not AI.IsTank() then
+            local destX, destY = AI.GetMoveToFinalDestination()
+            if AI.GetDistanceTo(sX, sY) <= 12 or (AI.HasMoveTo() and AI.CalcDistance(sX, sY, destX, destY) <= 12) then
+                print("evading shadow crash")
+                local allies = AI.GetRaidOrPartyMemberUnits()
+                local angle = AI.CalcFacing(sX, sY, gX, gY)
+                local points = {}
+                if AI.HasDebuff("mark of the faceless") then
+                    for theta = angle - rad90, angle + rad90, rad5 do
+                        local ntheta = normalizeAngle(theta)
+                        for r = 15, 40, 1 do
+                            local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
+                            local nX, nY = sX + x, sY + y
+                            if self.isFarEnoughFromAllies(nX, nY, allies) then
+                                table.insert(points, {
+                                    x = nX,
+                                    y = nY
+                                })
+                            end
+                        end
+                    end
+                else
+                    for i, theta in ipairs({angle - rad90, angle + rad90}) do
+                        local ntheta = normalizeAngle(theta)
+                        for r = 13, 20, 1 do
+                            local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
+                            local nX, nY = sX + x, sY + y
+                            if self:isFarEnoughFromMarkedPlayer(nX, nY) then
+                                table.insert(points, {
+                                    x = nX,
+                                    y = nY
+                                })
+                            end
                         end
                     end
                 end
-            else
-                for i, theta in ipairs({angle - rad90, angle + rad90}) do
-                    local ntheta = normalizeAngle(theta)
-                    for r = 13, 20, 1 do
-                        local x, y = r * math.cos(ntheta), r * math.sin(ntheta)
-                        local nX, nY = sX + x, sY + y
-                        if self:isFarEnoughFromMarkedPlayer(nX, nY) then
-                            table.insert(points, {
-                                x = nX,
-                                y = nY
-                            })
-                        end
-                    end
-                end
-            end
 
-            local p = self.findClosestPointInList(points)
-            AI.SetMoveToPosition(p.x, p.y)
+                local p = self.findClosestPointInList(points)
+                AI.SetMoveToPosition(p.x, p.y)
+            end
         end
     end
 end
@@ -1715,19 +1777,10 @@ function vezax:SPELL_AURA_APPLIED(args)
     if args.spellName:lower() == "mark of the faceless" then
         self.markedPlayer = args.target
         if UnitName("player") == args.target then
-
-            local allies = AI.GetRaidOrPartyMemberUnits()
-            local obstacles = {}
-            for i, a in ipairs(allies) do
-                if UnitGUID(a) ~= UnitGUID("player") then
-                    local info = AI.GetObjectInfo(a)
-                    info.radius = 18
-                    table.insert(obstacles, info)
-                end
-            end
+            local obstacles = AI.GetAlliesAsObstacles(18)
             AI.SetObjectAvoidance({
                 guids = obstacles,
-                safeDistance = 1,
+                safeDistance = 3,
                 gridSize = 5
             })
         end
@@ -1851,8 +1904,4 @@ AI.RegisterBossModule(guardianLasher)
 -- })
 
 -- AI.RegisterBossModule(chamberOverseer)
-
-
-
-
 

@@ -5,32 +5,21 @@ local malygos = MosDefBossModule:new({
     creatureId = {28859},
     surgeTarget = nil,
     onStart = function(self)
-        oldPriorityTargetFn = AI.do_PriorityTarget
         AI.DISABLE_DRAIN = true
+        TargetUnit("Malygos")
+        FocusUnit("target")
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
         end
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
-                ClearTarget()
-                TargetUnit("Power Spark")
-                if AI.IsValidOffensiveUnit("target") and AI.CanHitTarget() then
-                    return true
+                if AI.DoTargetChain("power spark", "Scion", "Nexus Lord") then
+                    if strcontains(UnitName("target"), "power spark") then
+                        local tx, ty = AI.GetPosition("target")
+                        return AI.CalcDistance(self.centerP.x, self.centerP.y, tx, ty) <= self.r and AI.GetDistanceToUnit("target") <= 35
+                    end
+                    return AI.GetDistanceToUnit("target") <= 35
                 end
-            else
-                ClearTarget()
-                TargetUnit("malygos")
-                return AI.IsValidOffensiveUnit("target")
-            end
-            ClearTarget()
-            TargetUnit("scion")
-            if AI.IsValidOffensiveUnit("target") and AI.CanHitTarget() then
-                return true
-            end
-            ClearTarget()
-            TargetUnit("Nexus Lord")
-            if AI.IsValidOffensiveUnit("target") and AI.CanHitTarget() then
-                return true
             end
             return false
         end
@@ -38,23 +27,11 @@ local malygos = MosDefBossModule:new({
     onStop = function(self)
         AI.DISABLE_DRAIN = false
         AI.ALLOW_AUTO_REFACE = true
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
     end,
     onUpdate = function(self)
         local class = AI.GetClass():lower()
 
-        if not AI.IsPossessing() then
-            if AI.IsValidOffensiveUnit("target") and UnitName("target"):lower() == "power spark" then
-                if class == "priest" and AI.CastSpell("mind flay", "target") then
-                    return true
-                end
-                if class == "mage" and AI.CastSpell("arcane missiles", "target") then
-                    return true
-                end
-            end
-        else
+        if AI.IsPossessing() then
             -- if AI.HasDebuff("surge of power", "playerpet") and GetComboPoints("playerpet", "target") > 1 and
             --     self:CanCast("flame shield") and AI.UsePossessionSpell("flame shield") then
             --     AI.SayRaid("flame shielding")
@@ -62,16 +39,9 @@ local malygos = MosDefBossModule:new({
             -- end
 
             if AI.IsHealer() then
-                if UnitName("focus") ~= "Malygos" then
-                    TargetUnit("malygos")
-                    FocusUnit("target")
-                end
-
                 if self:CanCast("life burst") then
                     for i, unit in ipairs(AI.GetRaidOrPartyPetMemberUnits()) do
-                        if GetComboPoints("playerpet", unit) > 4 then
-                            TargetUnit(unit)
-                            AI.UsePossessionSpell("Life Burst")
+                        if GetComboPoints("playerpet", unit) > 4 and AI.CastVehicleSpellOnTarget("life burst", unit) then
                             return true
                         end
                     end
@@ -79,54 +49,39 @@ local malygos = MosDefBossModule:new({
 
                 local healTarget = AI.GetMostDamagedFriendlyPet()
                 if healTarget then
-                    TargetUnit(healTarget)
-
                     -- if GetComboPoints("playerpet", healTarget) > 4 and self:CanCast("life burst") and
                     --     AI.UsePossessionSpell("Life Burst") then
                     --     return true
                     -- end
                     if self:CanCast("Revivify") then
-                        if AI.GetBuffCount("revivify", healTarget) < 5 and AI.UsePossessionSpell("Revivify", healTarget) then
+                        if AI.GetBuffCount("revivify", healTarget) < 5 and
+                            AI.CastVehicleSpellOnTarget("Revivify", healTarget) then
                             return true
                         end
                     end
                 else
-                    TargetUnit("playerpet")
                     if GetComboPoints("playerpet", "playerpet") > 4 and self:CanCast("life burst") and
-                        AI.UsePossessionSpell("Life Burst") then
+                        AI.CastVehicleSpellOnTarget("Life Burst", "playerpet") then
                         return true
                     end
                     if AI.GetBuffCount("revivify", "playerpet") and self:CanCast("Revivify") and
-                        AI.UsePossessionSpell("Revivify", "playerpet") then
+                        AI.CastVehicleSpellOnTarget("Revivify", "playerpet") then
                         return true
                     end
                 end
             else
-                if UnitName("target") ~= "Malygos" then
-                    TargetUnit("Malygos")
-                end
+                AI.DoTargetChain("malygos")
 
                 if not AI.IsValidOffensiveUnit("target") then
                     return true
                 end
 
-                -- if GetComboPoints("playerpet", "target") == 0 and AI.GetBuffDuration("revivify", "playerpet") < 3 and
-                --     self:CanCast("Revivify") then
-                --     TargetUnit("playerpet")
-                --     AI.UsePossessionSpell("revivify", "playerpet")
-                --     return true
-                -- end
-
-                if UnitName("target") ~= "Malygos" then
-                    TargetUnit("Malygos")
-                end
-
                 if self:CanCast("Engulf in Flames") and GetComboPoints("playerpet", "target") > 4 and
-                    AI.UsePossessionSpell("Engulf in Flames", "target") then
+                    AI.CastVehicleSpellOnTarget("Engulf in Flames", "target") then
                     return true
                 end
                 if self:CanCast("Flame Spike") and GetComboPoints("playerpet", "target") < 5 then
-                    AI.UsePossessionSpell("Flame Spike", "target")
+                    AI.CastVehicleSpellOnTarget("Flame Spike", "target")
                 end
             end
             return true
@@ -148,21 +103,22 @@ local malygos = MosDefBossModule:new({
             return true
         end
         return false
-    end
+    end,
+    centerP = AI.PathFinding.Vector3.new(776.10754394531, 1323.0025634766, 267.19049072266),
+    r = 30
 })
 
 function malygos:SPELL_AURA_APPLIED(args)
-    if args.spellName:lower() == "vortex" and args.target == UnitName("player") then
+    if strcontains(args.spellName:lower(), "vortex") and strcontains(args.target, UnitName("player")) then
         AI.RegisterPendingAction(function()
-            local class = AI.GetClass():lower()
-            if class == "priest" and not AI.HasDebuff("weakened soul", AI.Config.healer) and
+            if AI.IsPriest() and not AI.HasDebuff("weakened soul", AI.Config.healer) and
                 AI.CastSpell("power word: shield", AI.Config.healer) then
                 return true
             end
-            if class == "warlock" and AI.CastSpell("demonic circle: teleport") then
+            if AI.IsWarlock() and AI.CastSpell("demonic circle: teleport") then
                 return true
             end
-            if class == "mage" and AI.CastSpell("blink") then
+            if AI.IsMage() and AI.CastSpell("blink") then
                 return true
             end
         end, 2)
