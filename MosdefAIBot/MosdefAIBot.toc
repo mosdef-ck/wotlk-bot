@@ -9,8 +9,9 @@ Util.lua
 BaseFunctions.lua
 BotBase.lua
 SpellEffectCalculator.lua
-BossModule.lua
 PathFinding.lua
+Testing.lua
+BossModule.lua
 classes\ShamanAI.lua
 classes\WarlockAI.lua
 classes\MageAI.lua
@@ -31,4 +32,3 @@ raids\icc\icc.lua
 raids\icc\lichking.lua
 raids\icc\putricide.lua
 raids\icc\valinthria.lua
-Testing.lua

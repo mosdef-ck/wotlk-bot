@@ -57,7 +57,7 @@ local heraldVolazjModule = MosDefBossModule:new({
     end,
     onStop = function()
     end,
-    onUpdate = function()       
+    onUpdate = function()
     end
 })
 
@@ -122,26 +122,25 @@ local leyguardian = MosDefBossModule:new({
     name = "Ley-Guardian Eregos",
     creatureId = {27656},
     onStart = function(self)
-        AI.FindNearbyUnitsByName("ley-guardian")[1]:Focus()
+        AI.FocusUnit("Ley-Guardian Eregos")
         AI.do_PriorityTarget = function()
             return AI.DoTargetChain("Ley-Guardian")
         end
         AI.PRE_DO_DPS = function(isAoe)
             if AI.IsPossessing() then
+                AI.DoTargetChain("Ley-Guardian")
                 local pet = UnitName("playerpet"):lower()
                 if pet == "ruby drake" then
-                    AI.DoTargetChain("Ley-Guardian")
                     if AI.IsValidOffensiveUnit() and AI.CastVehicleSpellOnTarget("searing wrath", "target") then
                         return true
                     end
                 elseif pet == "amber drake" then
-                    AI.DoTargetChain("Ley-Guardian")
                     if AI.IsValidOffensiveUnit() then
                         -- StopFollowing()
                         if AI.GetMyDebuffCount("shock charge", "target") < 10 and not AI.IsChanneling("playerpet") then
-                            print("shock charge count " .. AI.GetMyDebuffCount("shock charge", "target"))
+                            -- print("shock charge count " .. AI.GetMyDebuffCount("shock charge", "target"))
                             if AI.CastVehicleSpellOnTarget("temporal rift", "target") then
-                                print("casting temporal rift")
+                                -- print("casting temporal rift")
                                 return true
                             end
                         elseif AI.GetMyDebuffCount("shock charge", "target") >= 10 then
@@ -166,10 +165,12 @@ local leyguardian = MosDefBossModule:new({
                                 if AI.CastVehicleSpellOnTarget("dream funnel", mostHurt) then
                                     return true
                                 end
+                            else
+                                if AI.CastVehicleSpellOnTarget("touch the nightmare", "target") then
+                                    return true
+                                end
                             end
-                        elseif (AI.GetMyDebuffCount("leeching poison", "target") > 2 and
-                            AI.CastVehicleSpellOnTarget("touch the nightmare", "target")) or
-                            AI.CastVehicleSpellOnTarget("leeching poison", "target") then
+                        elseif AI.CastVehicleSpellOnTarget("leeching poison", "target") then
                             return true
                         end
                         return true
@@ -190,7 +191,7 @@ local leyguardian = MosDefBossModule:new({
         if AI.IsValidOffensiveUnit("target") then
             if pet == "emerald drake" and AI.GetMyDebuffCount("leeching poison", "focus") > 2 then
                 local mostHurt = AI.GetMostDamagedFriendlyPet()
-                if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 90 then
+                if mostHurt and AI.GetUnitHealthPct(mostHurt) <= 50 then
                     if UnitName("target") ~= mostHurt then
                         TargetUnit(mostHurt)
                     end
@@ -232,15 +233,18 @@ AI.RegisterBossModule(leyguardian)
 local prophetTharon = MosDefBossModule:new({
     name = "The Prophet Tharon'Ja",
     creatureId = {26632},
+    onStart = function(self)
+        AI.FocusUnit("The Prophet Tharon'Ja")
+    end,
     onUpdate = function(self)
         if AI.HasDebuff("Gift of Tharon'ja") then
             if not AI.IsValidOffensiveUnit() then
                 TargetUnit("the prophet")
             end
-            if AI.IsTank() and not AI.IsTanking("player") and AI.CastSpell("taunt", "target") then
+            if AI.IsTank() and not AI.IsTanking("player", "target") and AI.CastSpell("taunt", "target") then
                 return true
             end
-            if AI.IsTanking("player") and AI.CastSpell("bone armor") then
+            if AI.IsTanking("player", "target") and not AI.HasAura("bone armor") and AI.CastSpell("bone armor") then
                 return true
             end
             if AI.CastSpell("touch of life", "target") or AI.CastSpell("slaying strike") then
@@ -253,6 +257,67 @@ local prophetTharon = MosDefBossModule:new({
 
 AI.RegisterBossModule(prophetTharon)
 
+local vesperon = MosDefBossModule:new({
+    name = "Vesperon",
+    creatureId = {30449},
+    onStart = function(self)
+        AI.FocusUnit("Vesperon")
+        AI.do_PriorityTarget = function()
+            if AI.HasDebuff("twilight shift") then
+                TargetNearestEnemy()
+                return AI.IsValidOffensiveUnit()
+            end
+        end
+    end,
+    onUpdate = function(self)
+    end
+})
+
+function vesperon:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
+    if strcontains(s, "vesperon disciple appears") and AI.GetUnitHealthPct("focus") > 10 then
+        print("appears")
+        if AI.IsDps() then
+            print("moving to twilight portal")
+            local portal = AI.FindNearbyGameObjects("twilight portal")
+            if #portal > 0 then
+                if portal[1].distance > 5 then
+                    AI.SetMoveTo(portal[1].x, portal[1].y, portal[1].z, 5, function()
+                        portal[1]:InteractWith()
+                    end)
+                else
+                    portal[1]:InteractWith()
+                end
+            end
+        end
+        if AI.IsHealer() then
+            print("moving to twilight portal")
+            local portal = AI.FindNearbyGameObjects("twilight portal")
+            AI.SetMoveTo(portal[1].x, portal[1].y)
+        end
+    end
+end
+
+function vesperon:UNIT_DIED(unit)
+    local me = self
+    if strcontains(unit, "disciple") and AI.IsDps() and AI.HasDebuff("twilight shift") then
+        print("returning to normal realm")
+        local returnP = AI.FindNearbyGameObjects("normal portal")
+        if #returnP > 0 then
+            if returnP[1].distance > 5 then
+                AI.SetMoveTo(returnP[1].x, returnP[1].y, returnP[1].z, 5, function()
+                    returnP[1]:InteractWith()
+                    AI.SetMoveTo(me.toonsP.x, me.toonsP.y)
+                end)
+            else
+                returnP[1]:InteractWith()
+                AI.SetMoveTo(me.toonsP.x, me.toonsP.y)
+            end
+        end
+    end
+end
+
+AI.RegisterBossModule(vesperon)
+
 -- Sartharion
 
 local sartharion = MosDefBossModule:new({
@@ -260,25 +325,24 @@ local sartharion = MosDefBossModule:new({
     creatureId = {28860},
     onStart = function(self)
         AI.do_PriorityTarget = function()
-            return AI.DoTargetChain("Acolyte of Vesperon")
+            if AI.HasDebuff("twilight shift") then
+                TargetNearestEnemy()
+                return AI.IsValidOffensiveUnit()
+            end
+        end
+        if not AI.IsTank() then
+            AI.SetMoveTo(self.toonsP.x, self.toonsP.y)
+        end
+        if AI.IsHeroicRaidOrDungeon() then
+            AI.Config.judgementToUse = nil
         end
     end,
     onEnd = function(self)
     end,
     onUpdate = function(self)
-        AI.DISABLE_CDS = AI.IsValidOffensiveUnit() and
-                             (not strcontains(UnitName("target"), "shadron") and
-                                 not strcontains(UnitName("target"), "vesperon") and
-                                 strcontains(UnitName("target"), "tenebron"))
-        if AI.IsDps() and not self.portalOpen then
-            local healer = AI.GetPrimaryHealer()
-            if AI.GetDistanceToUnit(healer) > 3 then
-                local hx, hy = AI.GetPosition(healer)
-                AI.SetMoveTo(hx, hy)
-            end
-        end
     end,
-    portalOpen = false
+    portalOpen = false,
+    toonsP = AI.PathFinding.Vector3.new(3239.4360351563, 541.79064941406, 58.729934692383)
 })
 
 function sartharion:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
@@ -286,10 +350,11 @@ function sartharion:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
         print("vesperon disciple appears")
         self.portalOpen = true
         if AI.IsDps() then
-            local portal = AI.FindNearbyUnitsByName("twilight portal")
+            print("moving to twilight portal")
+            local portal = AI.FindNearbyGameObjects("twilight portal")
             if #portal > 0 then
-                if portal[1].distance > 3 then
-                    AI.SetMoveTo(portal[1].x, portal[1].y, 0.5, function()
+                if portal[1].distance > 5 then
+                    AI.SetMoveTo(portal[1].x, portal[1].y, portal[1].z, 5, function()
                         portal[1]:Interact()
                     end)
                 else
@@ -300,20 +365,19 @@ function sartharion:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     end
 end
 
-function sartharion:CHAT_MSG_MONSTER_EMOTE(s, t)
-    if strcontains(s, "vesperon disciple appears") then
-        print("vesperon disciple appears")
-        self.portalOpen = true
-        if AI.IsDps() then
-            local portal = AI.FindNearbyUnitsByName("twilight portal")
-            if #portal > 0 then
-                if portal[1].distance > 3 then
-                    AI.SetMoveTo(portal[1].x, portal[1].y, 0.5, function()
-                        portal[1]:Interact()
-                    end)
-                else
-                    portal[1]:Interact()
-                end
+function sartharion:UNIT_DIED(unit)
+    local me = self
+    if strcontains(unit, "acolyte") and AI.IsDps() and AI.HasDebuff("twilight shift") then
+        local returnP = AI.FindNearbyGameObjects("normal portal")
+        if #returnP > 0 then
+            if returnP[1].distance > 5 then
+                AI.SetMoveTo(returnP[1].x, returnP[1].y, returnP[1].z, 5, function()
+                    returnP[1]:Interact()
+                    AI.SetMoveTo(me.toonsP.x, me.toonsP.y)
+                end)
+            else
+                returnP[1]:Interact()
+                AI.SetMoveTo(me.toonsP.x, me.toonsP.y)
             end
         end
     end

@@ -134,9 +134,9 @@ local function doBuffs()
         if AI.GetBuffDuration("fel armor") < 60 and AI.CastSpell("fel armor") then
             return true
         end
-        -- if not AI.HasMyBuff("life tap") and not AI.HasBuff("teleport momentum") and AI.CastSpell("life tap(rank 1)") then
-        --     return true
-        -- end
+        if not AI.HasMyBuff("life tap") and not AI.HasBuff("teleport momentum") and AI.CastSpell("life tap(rank 1)") then
+            return true
+        end
     end
     return false
 end
@@ -160,7 +160,7 @@ local function doUpdate_Warlock()
     end
 
     if not AI.DISABLE_CDS and AI.IsInCombat() and AI.GetTargetStrength() >= 3 then
-        if AI.HasBuff("flame of the heavens") or AI.HasBuff("bloodlust") then
+        if AI.HasBuff("flame of the heavens") or AI.HasBuff("dying curse") or AI.HasBuff("bloodlust") then
             AI.UseInventorySlot(10)
             -- AI.UseInventorySlot(13)
             -- AI.UseInventorySlot(14)
@@ -278,7 +278,7 @@ local function doAutoDpsDestro()
     end
 
     if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then
@@ -347,6 +347,10 @@ local function doDpsAffliction(isAoE)
         PetAttack()
     end
 
+    if AI.HasBuff("shadow trance", "player") and AI.CastSpell("shadow bolt", "target") then
+        return
+    end
+
     local hauntImpactTime = math.floor(AI.GetDistanceToUnit("target") / 20.0)
     if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 2) and UnitChannelInfo("player") == "Drain Soul" and
         AI.CanCastSpell("haunt", "target", true) and AI.GetMyDebuffDuration("haunt", "target") <= hauntImpactTime then
@@ -358,11 +362,7 @@ local function doDpsAffliction(isAoE)
         return
     end
 
-    if isAoE then
-        if AI.GetTargetStrength() >= 2 and UnitHealth("target") > 50000 and
-            AI.DoCastSpellChain("target", "unstable affliction") then
-            return
-        end
+    if isAoE then        
         if AI.DoCastSpellChain("target", "seed of corruption") then
             return
         end
@@ -381,7 +381,7 @@ local function doDpsAffliction(isAoE)
         return
     end
 
-    if AI.GetTargetStrength() >= 2 and AI.HasMyDebuff("shadow mastery", "target") then
+    if AI.GetTargetStrength() >= 2 and AI.HasDebuff("shadow mastery", "target") then
         if not AI.HasMyDebuff("corruption", "target") and AI.CastSpell("corruption", "target") then
             -- if AI.UseInventorySlot(6) or AI.UseContainerItem("saronite bomb") then
             --     CastCursorAOESpell(AI.GetPosition("target"))
@@ -402,8 +402,9 @@ local function doDpsAffliction(isAoE)
         end
     end
 
-    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 -- and AI.GetDebuffCount("shadow embrace", "target") >= 3 
-    and AI.GetMyDebuffDuration("haunt", "target") > 6 and AI.CastSpell("drain soul", "target") then
+    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 and
+        AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.GetMyDebuffDuration("haunt", "target") > 6 and
+        AI.CastSpell("drain soul", "target") then
         return
     end
 
@@ -420,7 +421,7 @@ local function doAutoDpsAffliction()
     end
 
     if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then
@@ -429,6 +430,10 @@ local function doAutoDpsAffliction()
 
     if not AI.DISABLE_PET_AA then
         PetAttack()
+    end
+
+    if AI.HasBuff("shadow trance", "player") and AI.CastSpell("shadow bolt", "target") then
+        return
     end
 
     local hauntImpactTime = math.floor(AI.GetDistanceToUnit("target") / 20.0)
@@ -443,10 +448,10 @@ local function doAutoDpsAffliction()
     end
 
     if AI.AUTO_AOE then
-        if AI.GetTargetStrength() >= 2 and UnitHealth("target") > 50000 and
-            AI.DoCastSpellChain("target", "unstable affliction") then
-            return
-        end
+        -- if AI.GetTargetStrength() >= 2 and UnitHealth("target") > 50000 and
+        --     AI.DoCastSpellChain("target", "unstable affliction") then
+        --     return
+        -- end
         if AI.DoCastSpellChain("target", "seed of corruption") then
             return
         end
@@ -483,8 +488,9 @@ local function doAutoDpsAffliction()
         end
     end
 
-    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 -- and AI.GetDebuffCount("shadow embrace", "target") >= 3 
-    and AI.GetMyDebuffDuration("haunt", "target") > 6 and AI.CastSpell("drain soul", "target") then
+    if AI.GetTargetStrength() >= 3 and AI.GetUnitHealthPct("target") <= 25 and
+        AI.GetDebuffCount("shadow embrace", "target") >= 3 and AI.GetMyDebuffDuration("haunt", "target") > 6 and
+        AI.CastSpell("drain soul", "target") then
         return
     end
 

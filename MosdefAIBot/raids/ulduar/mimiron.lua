@@ -9,7 +9,7 @@ local mimiron = MosDefBossModule:new({
         end
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
-            return AI.DoTargetChain("assault bot", "aerial command unit")
+            -- return AI.DoTargetChain("assault bot", "aerial command unit")
         end
         AI.Config.startHealOverrideThreshold = 95
     end,
@@ -21,15 +21,18 @@ local mimiron = MosDefBossModule:new({
     onUpdate = function(self)
         if AI.IsDps() then
             local healer = AI.GetPrimaryHealer()
-            if healer and AI.GetDistanceTo(AI.GetPosition(healer)) > 1 then
+            if healer and AI.GetDistanceToUnit(healer) > 2 then
                 -- print("too far from healer, moving towards")
                 local x, y = AI.GetPosition(healer)
-                AI.SetMoveToPosition(x, y)
+                if AI.IsCasting() then
+                    AI.StopCasting()
+                end
+                FollowUnit(healer)
+                -- AI.SetMoveToPosition(x, y)
             end
         end
 
         if AI.IsPriest() then
-
             if self.plasmaTarget ~= nil and not AI.HasDebuff("weakened soul", self.plasmaTarget) and
                 AI.CastSpell("power word: shield", self.plasmaTarget) then
                 return true
@@ -68,21 +71,7 @@ local mimiron = MosDefBossModule:new({
                 local nX, nY = pX + r * math.cos(theta), pY + r * math.sin(theta)
                 AI.SetMoveTo(nX, nY)
             end
-        end
-
-        if AI.IsTank() and AI.IsValidOffensiveUnit() and UnitCastingInfo("target") == "Shock Blast" and
-            not AI.HasMoveTo() and AI.GetDistanceToUnit("target") < 20 then
-            AI.StopCasting()
-            print("avoiding shock blast")
-            local facing = GetPlayerFacing() + math.pi
-            local r = 20
-            local x, y = r * math.cos(facing), math.sin(facing)
-            local cX, cY = AI.GetPosition()
-            local nX, nY = cX + x, cY + y
-            AI.SetMoveTo(nX, nY, 0.5, function()
-                AI.SetFacingUnit("target")
-            end)
-        end
+        end        
         return false
     end,
     plasmaTarget = nil,
@@ -103,16 +92,15 @@ function mimiron:SPELL_AURA_REMOVED(args)
 end
 
 function mimiron:SPELL_CAST_START(args)
-    if args.spellName == "Shock Blast" or args.spellId == 63631 then
-        if AI.IsTank() and not AI.HasMoveToPosition() then
-            AI.StopCasting()
+    if (args.spellName == "Shock Blast" or args.spellId == 63631) and AI.IsTank() then
+        if not AI.HasMoveTo() then
             print("avoiding shock blast")
             local facing = GetPlayerFacing() + math.pi
             local r = 20
             local x, y = r * math.cos(facing), math.sin(facing)
-            local cX, cY = AI.GetPosition()
+            local cX, cY, cZ = AI.GetPosition()
             local nX, nY = cX + x, cY + y
-            AI.SetMoveTo(nX, nY, 0.5, function()
+            AI.SetMoveTo(nX, nY, cZ, 0.5, function()
                 AI.SetFacingUnit("target")
             end)
         end
@@ -143,7 +131,7 @@ function mimiron:SPELL_CAST_SUCCESS(args)
                 local r = 2
                 local x, y = r * math.cos(angleBehind), r * math.sin(angleBehind)
                 local nX, nY = target.x + x, target.y + y
-                AI.SetMoveToPosition(nX, nY)
+                AI.SetMoveTo(nX, nY)
             end
         end
     end

@@ -52,7 +52,7 @@ local function doAutoDpsArcane()
     end
 
     if not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if doManaSapphire() then
@@ -117,7 +117,7 @@ local function doOnUpdate_MageAI()
         --         AI.UseContainerItem(AI.Config.dpsPotion)
         --     end
         -- end
-        if (AI.HasBuff("flame of the heavens") or AI.HasBuff("Bloodlust")) then
+        if (AI.HasBuff("flame of the heavens") or AI.HasBuff("dying curse") or AI.HasBuff("Bloodlust")) then
             if AI.HasBuff("bloodlust") then
                 AI.CastSpell("mirror image")
                 if not AI.HasBuff("icy veins") and GetTime() > lastIcyVeinsCastTime + 5 then
@@ -175,7 +175,7 @@ local function doDpsArcane(isAoE)
     end
 
     if isAoE then
-        if AI.GetDistanceToUnit("target") <= 5 and AI.CastSpell("arcane explosion") then
+        if AI.GetDistanceToUnit("target") <= 10 and AI.CastSpell("arcane explosion") then
             return
         end
     end
@@ -254,7 +254,7 @@ local function doAutoDpsFire()
     end
 
     if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then
@@ -351,7 +351,7 @@ local function doAutoDpsFrost()
     end
 
     if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then

@@ -75,7 +75,7 @@ local function doAutoDpsRestoration()
     end
 
     if not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then
@@ -319,7 +319,7 @@ local function doAutoDpsElemental()
     end
 
     if not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then

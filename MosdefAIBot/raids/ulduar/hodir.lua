@@ -8,6 +8,7 @@ local hodir = MosDefBossModule:new({
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
         end
+        AI.DISABLE_DRAIN = true
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if AI.IsDps() and AI.IsValidOffensiveUnit() and UnitName("target") == "Flash Freeze" then
@@ -22,19 +23,22 @@ local hodir = MosDefBossModule:new({
                         table.remove(obstacles, i)
                     end
                 end
-                local frozenVeesha = AI.FindUnitYWithinXOf("veesha", "flash freeze", 1)
-                if #frozenVeesha > 0 and not frozenVeesha[1].isDead then
-                    frozenVeesha[1]:Target()
-                    if frozenVeesha[1].distance > 40 and not AI.HasMoveTo() then
-                        local p = AI.PathFinding.FindSafeSpotInCircle(frozenVeesha[1], 35, obstacles, 0)
+                local frozenblazeweaver = AI.FindUnitYWithinXOf("blazeweaver", "flash freeze", 1)
+                local flameCuffs = AI.FindUnitYWithinXOf("flamecuffs", "flash freeze", 1)
+                local fireMage = #frozenblazeweaver > 0 and frozenblazeweaver[1] or
+                                     (#flameCuffs > 0 and flameCuffs[1] or nil)
+                if fireMage and not fireMage.isDead then
+                    fireMage:Target()
+                    if fireMage.distance > 35 and not AI.HasMoveTo() then
+                        local p = AI.PathFinding.FindSafeSpotInCircle(fireMage, 30, obstacles, 0)
                         if p then
                             if AI.PathFinding.MoveSafelyTo(p, obstacles) then
-                                print("moving closer to veesha")
+                                print("moving closer to blazeweaver")
                             else
-                                print('failed to move to veesha')
+                                print('failed to move to blazeweaver')
                             end
                         else
-                            print('no safe spot to veesha')
+                            print('no safe spot to blazeweaver')
                         end
                     end
                     return true
@@ -44,7 +48,8 @@ local hodir = MosDefBossModule:new({
                         for i, o in ipairs(freezes) do
                             if not o.isDead then
                                 o:Target()
-                                if AI.IsValidOffensiveUnit() and AI.GetDistanceToUnit("target") > 40 and not AI.HasMoveTo() then
+                                if AI.IsValidOffensiveUnit() and AI.GetDistanceToUnit("target") > 40 and
+                                    not AI.HasMoveTo() then
                                     local info = AI.GetObjectInfo("target")
                                     local p = AI.PathFinding.FindSafeSpotInCircle(info, 35, obstacles, 0)
                                     if p then
@@ -93,7 +98,7 @@ local hodir = MosDefBossModule:new({
         if not AI.IsTank() then
 
             local nearbyObjects = AI.GetNearbyObjects(bit.bor(AI.ObjectTypeFlag.DynamicObject, AI.ObjectTypeFlag.Unit),
-                "fire", "icicle", "veesha", "starlight")
+                "fire", "icicle", "blazeweaver", "flamecuffs", "starlight")
             local closestToastyFire = nil
             local closestIcicle = nil
             local closestSnowpackedIcicle = nil
@@ -133,7 +138,7 @@ local hodir = MosDefBossModule:new({
                     o.radius = 10
                     closestSnowpackedIcicleTarget = o
                 end
-                if strcontains(o.name, "veesha") then
+                if strcontains(o.name, "blazeweaver") or strcontains(o.name, "flamecuffs") then
                     fireMage = o
                 end
                 if o.spellName and strcontains(o.spellName, "starlight") then
@@ -153,28 +158,11 @@ local hodir = MosDefBossModule:new({
 
             if closestSnowpackedIcicleTarget and closestSnowpackedIcicleTarget.distance >
                 closestSnowpackedIcicleTarget.radius and not AI.HasMoveTo() then
-                local bestFire = nil
-                for i, f in ipairs(fires) do
-                    if AI.CalcDistance(f.x, f.y, closestSnowpackedIcicleTarget.x, closestSnowpackedIcicleTarget.y) <
-                        closestSnowpackedIcicleTarget.radius then
-                        bestFire = f
-                        break
-                    end
-                end
-
-                if bestFire then
-                    local p = AI.PathFinding.FindSafeSpotInCircle(bestFire, 4, {})
-                    if p then
-                        print("moving onto fire that's on snow packed padding")
-                        AI.SetMoveTo(p.x, p.y)
-                    end
-                else
-                    local p = AI.PathFinding.FindSafeSpotInCircle(closestSnowpackedIcicleTarget,
-                        closestSnowpackedIcicleTarget.radius - 1, {}, 0)
-                    if p then
-                        print("moving onto snow packed padding")
-                        AI.SetMoveTo(p.x, p.y)
-                    end
+                local p = AI.PathFinding.FindSafeSpotInCircle(closestSnowpackedIcicleTarget, 10, {}, 0)
+                if p then
+                    print("moving onto snow packed padding")
+                    AI.SetMoveTo(p.x, p.y)
+                    -- self:MoveTeamTo(p)
                 end
             elseif closestSnowpackedIcicle and not closestSnowpackedIcicleTarget then
                 if closestSnowpackedIcicle.distance <= closestSnowpackedIcicle.radius and not AI.HasMoveTo() then
@@ -184,6 +172,7 @@ local hodir = MosDefBossModule:new({
                         closestSnowpackedIcicle.radius * 2, snowpackedIcicles, 1)
                     if p then
                         AI.SetMoveTo(p.x, p.y)
+                        -- self:MoveTeamTo(p)
                         print("moving to avoid flash freeze")
                     else
                         print('no safe spot to avoid flash freeze')
@@ -192,63 +181,61 @@ local hodir = MosDefBossModule:new({
                 end
             elseif closestIcicle and closestIcicle.distance <= icicleRadius and not AI.HasMoveTo() then
                 AI.SendAddonMessage('seen-icicle', UnitName("player"))
-                -- local targetToMoveAround = closestIcicle
-                local targetToMoveAround = fireMage
+                local targetToMoveAround = closestIcicle
+                -- local targetToMoveAround = fireMage
 
-                local starlight = self.getBestStarlight()
-                if closestToastyFire and not AI.HasBuff("toasty fire") and AI.GetDebuffCount("biting cold") >= 2 then
-                    targetToMoveAround = self.getBestToastyFire()
-                    if not targetToMoveAround then
-                        targetToMoveAround = closestToastyFire
-                    end
-                elseif (AI.HasBuff("toasty fire") or AI.GetDebuffCount("biting cold") <= 1) and
-                    not AI.HasBuff("starlight") and AI.IsDpsPosition(2, 3) and starlight then
+                local bestFire = self.getBestToastyFire()
+                local starlight = AI.IsDpsPosition(2, 3) and self.getBestStarlight() or nil
+                if bestFire then
+                    targetToMoveAround = bestFire
+                end
+                if AI.GetDebuffCount("biting cold") < 2 and starlight then
                     targetToMoveAround = starlight
                 end
+                if fireMage then
+                    fireMage.radius = icicleRadius
+                    if bestFire then
+                        bestFire.radius = icicleRadius
+                        table.insert(icicles, bestFire)
+                    end
 
-                local p
-                if targetToMoveAround == starlight then
-                    p = AI.PathFinding.FindSafeSpotInCircle(targetToMoveAround, starlight.radius, icicles, 1)
-                else
-                    p = AI.PathFinding.FindSafeSpotInCircle(targetToMoveAround, 10, icicles, 1)
+                    table.insert(icicles, fireMage)
                 end
+
+                local p = AI.PathFinding.FindSafeSpotInCircle(targetToMoveAround, starlight and starlight.radius or 10,
+                    icicles, 1)
                 if p then
                     print("moving to avoid icicle")
+                    -- self:MoveTeamTo(p)
                     AI.SetMoveTo(p.x, p.y)
                 else
                     p = AI.PathFinding.FindSafeSpotInCircle(closestIcicle, 10, icicles, 1)
                     if p then
                         print("alt moving to avoid icicle")
+                        -- self:MoveTeamTo(p)
                         AI.SetMoveTo(p.x, p.y)
+
                     else
                         print('no safe spot to avoid icicle')
                     end
                 end
                 return false
             elseif not AI.HasMoveTo() and not AI.HasBuff("toasty fire") and AI.GetDebuffCount("biting cold") >= 2 and
-                closestToastyFire and GetTime() <= self.lastIcicleDodgeTime + 2 then
-
+                closestToastyFire then
                 local bestFire = self.getBestToastyFire()
-                local fire = bestFire
-                if not fire then
-                    fire = closestToastyFire
+                if fireMage then
+                    fireMage.radius = icicleRadius
+                    bestFire.radius = icicleRadius
+                    table.insert(icicles, fireMage)
+                    table.insert(icicles, bestFire)
                 end
-                local p = AI.PathFinding.FindSafeSpotInCircle(fire, 9, icicles, 0)
+
+                local p = AI.PathFinding.FindSafeSpotInCircle(bestFire, 10, icicles, 1)
                 if p then
                     print('headed for toasty fire')
                     AI.SetMoveTo(p.x, p.y)
-                else
-                    if fire == bestFire then
-                        p = AI.PathFinding.FindSafeSpotInCircle(closestToastyFire, 9, icicles, 0)
-                        if p then
-                            print('headed for toasty fire')
-                            AI.SetMoveTo(p.x, p.y)
-                        else
-                            print('no safe spot to toasty fire')
-                        end
-                    end
+                    -- self:MoveTeamTo(p)            
                 end
-                return false
             elseif not closestSnowpackedIcicle and not closestSnowpackedIcicleTarget and
                 (not closestIcicle or closestIcicle.distance > icicleRadius) and not AI.HasMoveTo() and GetTime() <=
                 self.lastIcicleDodgeTime + 2 then
@@ -292,7 +279,7 @@ local hodir = MosDefBossModule:new({
     isPointFarEnoughFromTeammates = function(x, y, teamList)
         for i, o in ipairs(teamList) do
             local tX, tY = AI.GetPosition(o)
-            if UnitGUID(o) ~= UnitGUID("player") and AI.CalcDistance(x, y, tX, tY) <= 3 then
+            if UnitGUID(o) ~= UnitGUID("player") and AI.CalcDistance(x, y, tX, tY) <= 2 then
                 return false
             end
         end
@@ -351,28 +338,26 @@ local hodir = MosDefBossModule:new({
     end,
     getBestToastyFire = function()
         local fires = AI.FindNearbyDynamicObjects("toasty fire");
+        local mages = AI.FindNearbyUnitsByName("blazeweaver", "flamecuffs")
         local starlights = AI.FindNearbyDynamicObjects("starlight")
-        local icicles = AI.FindNearbyDynamicObjects("icicle")
-        if #fires == 0 then
+        if #fires == 0 or #mages == 0 then
             return nil
         end
         local bestDist = 100
         local x, y = AI.GetPosition("player")
         local bestFire = nil
-        for i, o in ipairs(fires) do
-            for i, icicle in ipairs(icicles) do
-                if AI.CalcDistance(icicle.x, icicle.y, o.x, o.y) > icicleRadius then
-                    local nearLight = false
-                    for i, light in ipairs(starlights) do
-                        if AI.CalcDistance(light.x, light.y, o.x, o.y) < 25 then
-                            nearLight = true
-                            break
-                        end
-                    end
-                    if nearLight or AI.CalcDistance(o.x, o.y, x, y) < bestDist then
-                        bestDist = AI.CalcDistance(o.x, o.y, x, y)
-                        bestFire = o
-                    end
+        if #starlights == 0 then
+            for i, o in ipairs(fires) do
+                if AI.CalcDistance(mages[1].x, mages[1].y, o.x, o.y) < bestDist then
+                    bestDist = AI.CalcDistance(mages[1].x, mages[1].y, o.x, o.y)
+                    bestFire = o
+                end
+            end
+        else
+            for i, o in ipairs(fires) do
+                if AI.CalcDistance(starlights[1].x, starlights[1].y, o.x, o.y) < bestDist then
+                    bestDist = AI.CalcDistance(starlights[1].x, starlights[1].y, o.x, o.y)
+                    bestFire = o
                 end
             end
         end
@@ -401,7 +386,7 @@ local hodir = MosDefBossModule:new({
         return bestStarlight
     end,
     applyTargeting = function(self)
-       
+
     end,
     centerX = 2000.7666015625,
     centerY = -233.83085632324,
@@ -410,8 +395,28 @@ local hodir = MosDefBossModule:new({
     stormPowerPlayer = nil,
     lastMoveToStarlightTime = 0,
     lastTargetingTime = 0,
-    lastIcicleDodgeTime = 0
+    lastIcicleDodgeTime = 0,
+    lastTeamDodgeTime = 0,
+    teamA = {AI.GetPrimaryHealer(), AI.GetDpsPositionName(2)},
+    teamB = {AI.GetDpsPositionName(1), AI.GetDpsPositionName(3)}
 })
+
+function hodir:GetMyTeam()
+    local myName = UnitName("player")
+    for i, name in ipairs(self.teamA) do
+        if strcontains(name, myName) then
+            return self.teamA
+        end
+    end
+    return self.teamB
+end
+
+function hodir:MoveTeamTo(p)
+    local team = self:GetMyTeam()
+    for i, name in ipairs(team) do
+        AI.SendAddonMessage('move-team-to', name, p.x, p.y, p.z)
+    end
+end
 
 function hodir:ON_ADDON_MESSAGE(from, cmd, params)
     -- print("hodir:ON_ADDON_MESSAGE " .. cmd .. " " .. params)
@@ -423,6 +428,15 @@ function hodir:ON_ADDON_MESSAGE(from, cmd, params)
         print(unitName .. " is headed to starlight")
         if unitName ~= UnitName("player") then
             self.lastMoveToStarlightTime = GetTime()
+        end
+    end
+
+    if strcontains(cmd, "move-team-to") then
+        local member, x, y, z = splitstr4(params)
+        if strcontains(UnitName("player"), member) and not AI.HasMoveTo() and GetTime() > self.lastTeamDodgeTime + 3 then
+            print("moving team member " .. member .. " to " .. x .. ", " .. y .. ", " .. z)
+            AI.SetMoveTo(tonumber(x), tonumber(y))
+            self.lastTeamDodgeTime = GetTime()
         end
     end
 end
@@ -460,7 +474,7 @@ function hodir:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     if strcontains(s, "frozen") then
         self.lastIcicleDodgeTime = GetTime()
         if not AI.IsTank() then
-            local veesha = AI.FindNearbyUnitsByName("veesha")
+            local blazeweaver = AI.FindNearbyUnitsByName("blazeweaver", "flamecuffs")
             local icicles = AI.FindNearbyUnitsByName("icicle")
             for i = #icicles, 1, -1 do
                 icicles[i].radius = icicleRadius
@@ -469,20 +483,24 @@ function hodir:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                 end
             end
 
-            if #veesha > 0 then
-                local p = AI.PathFinding.FindSafeSpotInCircle(veesha[1], 13, icicles, 0)
+            if #blazeweaver > 0 then
+                local p = AI.PathFinding.FindSafeSpotInCircle(blazeweaver[1], 13, icicles, 0)
                 if p then
                     if AI.PathFinding.MoveSafelyTo(p, icicles) then
-                        print("moving to veesha")
+                        print("moving to blazeweaver")
                     else
-                        print('failed to move to veesha')
+                        print('failed to move to blazeweaver')
                     end
                 else
-                    print('no safe spot to veesha')
+                    print('no safe spot to blazeweaver')
                 end
             end
         end
     end
 end
+
+-- function hodir:SMSG_SPELL_CAST_GO2(args)
+--     print("SMSG_SPELL_CAST_GO " .. table2str(args))
+-- end
 
 AI.RegisterBossModule(hodir)

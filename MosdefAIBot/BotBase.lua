@@ -123,7 +123,7 @@ local function onUpdate()
     end
     AI.IS_DOING_ONUPDATE = false
     -- do auto-dps towards the end
-    if AI.AUTO_DPS and type(AI.doAutoDps) == "function" then
+    if AI.AUTO_DPS and type(AI.doAutoDps) == "function" and (not AI.HasMoveTo() or AI.GetDistanceTo(AI.GetMoveToFinalDestination()) < 1) then
         if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(AI.AUTO_AOE) then
             AI.doAutoDps()
         end
@@ -405,6 +405,7 @@ local function onAddOnChatMessage(from, message)
     elseif cmd == "shadow-fury" then
         if AI.IsWarlock() then
             AssistUnit(from)
+            print("got shadowfury request from "..from)
             AI.RegisterPendingAction(function()
                 if not AI.IsValidOffensiveUnit("target") then
                     return true
@@ -415,9 +416,35 @@ local function onAddOnChatMessage(from, message)
                 return AI.CastAOESpell("shadowfury", "target")
             end, 0, "SHADOW_FURY")
         end
+    elseif cmd == "fear-this" then
+        if AI.IsWarlock() then
+            AssistUnit(from)
+            if AI.IsValidOffensiveUnit() then
+                local guid = UnitGUID("target")
+                AI.RegisterPendingAction(function()
+                    local info = AI.GetObjectInfoByGUID(guid)
+                    if not info then
+                        return true
+                    else
+                        if AI.GetDistanceToUnit(info) > 22 then
+                            if not AI.HasMoveTo() then
+                                local p = AI.PathFinding.FindSafeSpotInCircle(info, 20)
+                                AI.SetMoveTo(p.x, p.y)
+                                print("moving closer to fear target")
+                            end
+                        elseif AI.GetDistanceToUnit(info) <= 22 and not AI.HasMoveTo() then
+                            info:Target()
+                            print("targetting fear target")
+                            return AI.CastSpell("fear", "target")
+                        end
+                    end
+                end, 0, "FEARING_TARGET")
+            end
+        end
     elseif cmd == "eat-drink" then
-        RunMacroText("/use honeymint tea")
-        RunMacroText("/use Mead Basted Caribou")
+        RunMacroText("/use conjured mana strudel")
+        -- RunMacroText("/use honeymint tea")
+        -- RunMacroText("/use Mead Basted Caribou")
     elseif strcontains(cmd, "rdf-teleport") then
         RunMacroText("/run LFGTeleport(IsInLFGDungeon())")
         -- if IsInLFGDungeon() then
@@ -430,9 +457,15 @@ local function onAddOnChatMessage(from, message)
         if from ~= UnitName("player") and AI.IsDps() then
             -- print("received use-trinkets from " .. from)
             AI.RegisterPendingAction(function()
-                local used = AI.UseInventorySlot(13) and AI.UseInventorySlot(10) and AI.UseInventorySlot(14)
-                return used
-            end, 0, "USE_TRINKETS");
+                return AI.UseInventorySlot(13)
+            end, 0, "USE_TRINKETS_1");
+            AI.RegisterPendingAction(function()
+                return AI.UseInventorySlot(10)
+            end, 0, "USE_TRINKETS_2");
+            AI.RegisterPendingAction(function()
+                return AI.UseInventorySlot(14)
+            end, 0, "USE_TRINKETS_3");
+
         end
     elseif cmd == "form-star" then
         if from ~= UnitName("player") then
@@ -532,10 +565,12 @@ local function onEvent(self, event, ...)
     elseif event == "PLAYER_REGEN_DISABLED" then
         loadBossModule(AI.GetUnitCreatureId("target"))
         AI.SendAddonMessage("load-boss-module", AI.GetUnitCreatureId("target"))
+        -- registeredPendingActions = {}
     elseif event == "PLAYER_REGEN_ENABLED" then
         unloadBossModules()
         AI.ResetMoveToPosition()
         AI.Config.startHealOverrideThreshold = 100
+        registeredPendingActions = {}
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastPlayerEnterWorld = GetTime()
         AI.ResetMoveToPosition()
@@ -1033,14 +1068,15 @@ local function doAutoMovementUpdate()
     --           (ctmX or "nil") .. " ctmY: " .. (ctmY or "nil") .. " ctmZ: " .. (ctmZ or "nil") .. " speed: " .. speed);
     local diff = 1
     if goToPathCurrentWp >= totalWp then
-        diff = 0.5
+        -- diff = 0.5
     end
-    if maxSpeedObserved >= 7 then
+    if maxSpeedObserved > 7 then
+        -- diff = 1
         diff = 2.5
     end
     local bossMod = findEnabledBossModule()
 
-    if dist <= diff then
+    if dist < diff then
         -- reached coordinates1
         if goToPathCurrentWp >= totalWp then
             -- if AI.IsMoving() then
@@ -1074,7 +1110,7 @@ local function doAutoMovementUpdate()
     SetCVar('autoInteract', 1)
     -- end
 
-    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.25 or math.abs(ctmY - wp.y) > 0.251) then
+    if ctmX == nil or (math.abs(ctmX - wp.x) > 0.25 or math.abs(ctmY - wp.y) > 0.25) then
         -- if ctmX == nil then
         ClickToMove(wp.x, wp.y, wp.z)
     end
@@ -1122,12 +1158,13 @@ function AI.doOnUpdate_BotBase()
             distToFollow = 7
         end
         if calcDist >= distToFollow then
-            local x, y, z = AI.GetPosition(desiredFollowTarget)
-            local ctmX, ctmY, ctmZ = GetClickToMove();
-            if ctmX == nil or (math.abs(ctmX - x) > 0.5 or math.abs(ctmY - y) > 0.5) then
-                -- print("Following " .. desiredFollowTarget .. " at dist " .. calcDist)
-                AI.SetMoveToPosition(x, y, z)
-            end
+            SetFollowTarget(UnitGUID(desiredFollowTarget))
+            -- local x, y, z = AI.GetPosition(desiredFollowTarget)
+            -- local ctmX, ctmY, ctmZ = GetClickToMove();
+            -- if ctmX == nil or (math.abs(ctmX - x) > 0.5 or math.abs(ctmY - y) > 0.5) then
+            --     -- print("Following " .. desiredFollowTarget .. " at dist " .. calcDist)
+            --     AI.SetMoveToPosition(x, y, z)
+            -- end
         end
     end
 
@@ -1465,14 +1502,14 @@ RegisterCustomEventHandler("smsg_spell_cast_go", function(spellId, spellName, ca
     end
     if bossMod and bossMod["SMSG_SPELL_CAST_GO2"] and type(bossMod["SMSG_SPELL_CAST_GO2"]) == "function" then
         -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
-        bossMod["SMSG_SPELL_CAST_GO2"](bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+        bossMod["SMSG_SPELL_CAST_GO2"](bossMod, args)
     end
     local zone = findZoneModule()
     if zone ~= nil and type(zone.SMSG_SPELL_CAST_GO) == 'function' then
-        zone:SMSG_SPELL_CAST_GO(bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+        zone:SMSG_SPELL_CAST_GO(spellId, spellName, casterGuid, targetGuid, src, dest)
     end
     if zone ~= nil and type(zone.SMSG_SPELL_CAST_GO2) == 'function' then
-        zone:SMSG_SPELL_CAST_GO2(bossMod, args)
+        zone:SMSG_SPELL_CAST_GO2(args)
     end
     -- print("smsg_spell_cast_go", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
 end)
@@ -1500,7 +1537,7 @@ RegisterCustomEventHandler("smsg_spell_cast_start", function(spellId, spellName,
     end
     local zone = findZoneModule()
     if zone ~= nil and type(zone.SMSG_SPELL_CAST_START) == 'function' then
-        zone:SMSG_SPELL_CAST_START(bossMod, spellId, spellName, casterGuid, targetGuid, src, dest)
+        zone:SMSG_SPELL_CAST_START(spellId, spellName, casterGuid, targetGuid, src, dest)
     end
     if zone ~= nil and type(zone.SMSG_SPELL_CAST_START2) == 'function' then
         zone:SMSG_SPELL_CAST_START2(args)

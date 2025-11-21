@@ -12,8 +12,8 @@ local stoneWarder = MosDefBossModule:new({
     creatureId = {32353}
 })
 
-function stoneWarder:SPELL_AURA_APPLIED(args)
-    if args.spellName:lower() == "rock shower" and args.target == UnitName("player") then
+function stoneWarder:SPELL_AURA_APPLIED(args)    
+    if not AI.IsTank() and args.spellName:lower() == "rock shower" and args.target == UnitName("player") then
         local allies = AI.GetRaidOrPartyMemberUnits()
         for i, a in ipairs(allies) do
             if not AI.HasDebuff("rock shower", a) and not AI.HasMoveTo() then
@@ -51,25 +51,31 @@ local archavon = MosDefBossModule:new({
 })
 
 function archavon:CHAT_MSG_MONSTER_EMOTE(s, t)
-    print("archavon:CHAT_MSG_MONSTER_EMOTE", s, t) 
+    -- print("archavon:CHAT_MSG_MONSTER_EMOTE", s, t) 
     local str = "lunges for (%w+)"
     local match = strmatch(s, str)
     if match and UnitExists(match) then
+        print("archavon lunging for", match)
         if AI.IsPriest() then
             AI.StopCasting()
             AI.MustCastSpell("power word: shield", match)
         end
         if AI.IsHealer() then
-            AI.MustCastSpell("healing wave", match)
+            AI.MustCastSpell("riptide", match)
         end
-        if AI.IsPaladin() then
-            AI.MustCastSpell("sacred shield", match)
+        if AI.IsPaladin() and (strcontains(match, self.shardTarget) or AI.GetUnitHealthPct(match) <= 50) then
+            AI.MustCastSpell("hand of protection", match)
+        end
+
+        if strcontains(match, UnitName("player")) then
+            if AI.IsMage() then
+            AI.MustCastSpell("ice block")                       
+            end
+            if AI.IsPriest() then
+                AI.MustCastSpell("dispersion")
+            end
         end
     end
-end
-
-function archavon:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
-   print("archavon:CHAT_MSG_RAID_BOSS_EMOTE", s, t) 
 end
 
 function archavon:SPELL_AURA_APPLIED(args)

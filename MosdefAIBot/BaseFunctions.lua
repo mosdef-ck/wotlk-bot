@@ -59,9 +59,9 @@ end
 
 function AI.GetNumPartyOrRaidMembers()
     if UnitInRaid("player") then
-        return GetNumRaidMembers()+1
+        return GetNumRaidMembers()
     else
-        return GetNumPartyMembers()+1
+        return GetNumPartyMembers()
     end
     return 1
 end
@@ -129,8 +129,8 @@ function AI.IsInCombat()
 end
 
 function AI.IsSpellInRange(spell, unit)
-    -- return IsSpellInRange(spell, unit) == 1
-    return true
+    return IsSpellInRange(spell, unit) == 1
+    -- return true
 end
 
 function AI.CanHitTarget(unit)
@@ -153,6 +153,9 @@ function AI.IsValidOffensiveUnit(nunit, requireCombat)
             return false
         end
     end
+    if AI.GetObjectInfo(unit) == nil then
+        return false
+    end
     return true
 end
 
@@ -170,6 +173,9 @@ function AI.IsUnitValidFriendlyTarget(unit, spell)
         return false
     end
     if UnitBuff(unit, "Spirit of Redemption") then
+        return false
+    end
+    if AI.GetObjectInfo(unit) == nil then
         return false
     end
     return true
@@ -214,6 +220,22 @@ function AI.CastSpell(spell, target)
         --     lastCastTime = GetTime()
         --     return true
         -- end
+    end
+    return false
+end
+
+function AI.DirectCastSpell(spell, targetGUID)
+    if AI.CanCastSpell(spell, nil) then
+        local spellId = GetPlayerSpellIdByName(spell)
+        if not spellId then
+            spellId = GetPlayetPetSpellIdByName(spell)
+        end
+        if spellId then
+            -- print("CastSpellOnTarget :" ..tostring(AI.CanCastSpell(spelpl, targetGUID)))
+            CastSpellOnTarget(targetGUID, spellId)
+            lastCastTime = GetTime()
+            return true
+        end
     end
     return false
 end
@@ -358,7 +380,10 @@ function AI.HasBuff(spell, unit)
 end
 
 function AI.HasMyBuff(spell, unit)
-    return AI.GetMyBuffDuration(spell, unit) > 0
+    if AI.GetObjectInfo(unit or "player") == nil then
+        return true
+    end
+    return AI.GetMyBuffDuration(spell, unit or "player") > 0
 end
 
 function AI.HasBuffOrDebuff(spell, unit)
@@ -767,7 +792,7 @@ function AI.HasPossessionSpellCooldown(spellName)
     if slot ~= nil then
         return GetActionCooldown(slot) > 0
     end
-    return nil
+    return false
 end
 
 function AI.UsePossessionSpell(spellName, unit)
@@ -807,6 +832,8 @@ function AI.CastVehicleSpellOnTarget(spellName, target)
             local targetGuid;
             if type(target) == "table" and target.guid then
                 targetGuid = target.guid
+            elseif strstartswith(target, "0xF") then
+                targetGuid = target
             else
                 targetGuid = UnitGUID(target or "target")
             end
@@ -1047,9 +1074,12 @@ end
 
 function AI.StopCasting()
     -- SpellStopCasting()
-    -- CancelChannelingSpell()    
     -- AI.StopMoving()
-    StopFollowing()
+    if AI.IsInVehicle() or AI.IsPossessing() then
+        CancelVehicleChannelingSpell()
+    else
+        CancelChannelingSpell()
+    end
 end
 
 function AI.IsInDungeonOrRaid()
@@ -1082,43 +1112,45 @@ function AI.IsHeroicRaidOrDungeon()
     return diff ~= nil and (MaloWUtils_StrContains(diff, "heroic") or MaloWUtils_StrContains(diff, "25"))
 end
 
-function AI.IsPriest()
-    local class = AI.GetClass():lower()
+function AI.IsPriest(unit)
+    local class = AI.GetClass(unit):lower()
     return class == "priest"
 end
 
-function AI.IsShaman()
-    local class = AI.GetClass():lower()
+function AI.IsShaman(unit)
+    local class = AI.GetClass(unit):lower()
     return class == "shaman"
 end
 
-function AI.IsMage()
-    local class = AI.GetClass():lower()
+function AI.IsMage(unit)
+    local class = AI.GetClass(unit):lower()
     return class == "mage"
 end
 
-function AI.IsWarlock()
-    local class = AI.GetClass():lower()
+function AI.IsWarlock(unit)
+    local class = AI.GetClass(unit):lower()
     return class == "warlock"
 end
 
-function AI.IsDruid()
-    local class = AI.GetClass():lower()
+function AI.IsDruid(unit)
+    local class = AI.GetClass(unit):lower()
     return class == "druid"
 end
 
-function AI.IsPaladin()
-    local class = AI.GetClass():lower()
+function AI.IsPaladin(unit)
+    local class = AI.GetClass(unit):lower()
     return class == "paladin"
 end
 
 function AI.GetPrimaryTank()
     if type(AI.Config.tank) == "string" then
-        return AI.Config.tank
+        local name = UnitName(AI.Config.tank)
+        return name
     elseif type(AI.Config.tank) == "table" then
         for i, unit in ipairs(AI.Config.tank) do
             if UnitExists(unit) and UnitIsPlayer(unit) then
-                return unit
+                local name = UnitName(unit)
+                return name
             end
         end
     end
@@ -1126,7 +1158,6 @@ function AI.GetPrimaryTank()
 end
 
 function AI.GetPrimaryHealer()
-
     if type(AI.Config.healers) == "string" then
         return AI.Config.healers
     elseif type(AI.Config.healers) == "table" then
@@ -1158,16 +1189,40 @@ function AI.IsDpsPosition(...)
         end
     end
     for i, unit in ipairs(dpsUnits) do
-        if UnitName("player"):lower() == unit:lower() then
+        if strcontains(UnitName("player"), unit) then
             return true
         end
     end
     return false
 end
 
+function AI.GetDpsPositionName(pos)
+    local dpsUnits = {}
+    if pos == 1 then
+        for i, n in ipairs(AI.Config.dps1) do
+            table.insert(dpsUnits, n)
+        end
+    elseif pos == 2 then
+        for i, n in ipairs(AI.Config.dps2) do
+            table.insert(dpsUnits, n)
+        end
+    elseif pos == 3 then
+        for i, n in ipairs(AI.Config.dps3) do
+            table.insert(dpsUnits, n)
+        end
+    end
+    for i, unit in ipairs(dpsUnits) do
+        if UnitExists(unit) then
+            return UnitName(unit)
+        end
+    end
+    return nil
+end
+
 local function adornObject(obj)
-    local stunnedFlag, pacifiedFlag, confusedFlag, fleeingFlag, possessedFlag, notSelectableFlag = 0x00040000,
-        0x00020000, 0x00400000, 0x00800000, 0x01000000, 0x02000000
+    local stunnedFlag, pacifiedFlag, confusedFlag, fleeingFlag, possessedFlag, notSelectableFlag, notAttackable1,
+        notAttackable2, notAttackable3 = 0x00040000, 0x00020000, 0x00400000, 0x00800000, 0x01000000, 0x02000000,
+        0x00000002, 0x00000080, 0x00010000
     if obj ~= nil and type(obj.unitFlags) == "number" then
         obj.isStunned = bit.band(obj.unitFlags, stunnedFlag) ~= 0
         obj.stunned = obj.isStunned
@@ -1181,6 +1236,10 @@ local function adornObject(obj)
         obj.possessed = obj.isPossessed
         obj.isSelectable = bit.band(obj.unitFlags, notSelectableFlag) == 0
         obj.selectable = obj.isSelectable
+        obj.attackable =
+            bit.band(obj.unitFlags, notAttackable1) == 0 and bit.band(obj.unitFlags, notAttackable2) == 0 and
+                bit.band(obj.unitFlags, notAttackable3) == 0
+        obj.isAttackable = obj.attackable
     end
     if obj ~= nil and type(obj.health) == "number" then
         obj.isDead = obj.health == 0
@@ -1445,11 +1504,13 @@ end
 function AI.GetInterruptSpell()
     local spec = AI.GetMySpecName() or ""
 
+    local target = AI.IsValidOffensiveUnit("focus") and "focus" or "target"
+
     local spell = nil
     if AI.IsMage() then
         spell = "counterspell"
     elseif AI.IsPriest() then
-        if AI.CanCastSpell("silence", "target", true) or AI.CanCastSpell("silence", "focus", true) then
+        if AI.CanCastSpell("silence", target, true) then
             spell = "silence"
         else
             spell = "shadow shear"
@@ -1457,9 +1518,12 @@ function AI.GetInterruptSpell()
     elseif AI.IsShaman() then
         spell = "wind shear"
     elseif AI.IsPaladin() then
-        spell = "Hammmer of Justice"
+        spell = "Hammer of Justice"
     elseif AI.IsWarlock() then
-        if AI.CanCastSpell("death coil", "target", true) or AI.CanCastSpell("death coil", "focus", true) then
+        if AI.IsUnitABoss(target) and spec ~= "Affliction" then
+            return nil
+        end
+        if not AI.IsUnitABoss(target) and AI.CanCastSpell("death coil", target, true) then
             spell = "death coil"
         else
             spell = spec == "Destruction" and "shadowfury" or "spell lock"
@@ -1480,7 +1544,9 @@ function AI.DoInterrupt()
                 AI.UseContainerItem("saronite bomb")
             end
         end
-        AI.SetFacingUnit(target)
+        if not AI.HasMoveTo() then
+            AI.SetFacingUnit(target)
+        end
         if strcontains(interrupt, "shadowfury") then
             AI.CastSpell(interrupt, nil)
         end
@@ -1555,6 +1621,24 @@ function AI.GetAvailableDpsPotion()
     return nil
 end
 
-function AI.IsTargetABoss()
-    return AI.IsValidOffensiveUnit("target") and UnitClassification("target") == "worldboss"
+function AI.IsUnitABoss(unit)
+    return AI.IsValidOffensiveUnit(unit or "target") and UnitClassification(unit or "target") == "worldboss"
+end
+
+function AI.FocusUnit(name)
+    if UnitExists(name) then
+        local info = AI.GetObjectInfo(name)
+        if info then
+            info:Focus()
+            return true
+        end
+    end
+    local units = AI.FindNearbyUnitsByName(name)
+    for i, u in ipairs(units) do
+        if not u.isDead then
+            u:Focus()
+            return true
+        end
+    end
+    return false
 end

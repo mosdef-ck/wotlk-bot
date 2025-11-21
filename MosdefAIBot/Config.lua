@@ -30,7 +30,7 @@ AI.ObjectTypeFlag = {
 setfenv(1, AI.Config)
 -- the main tank to pay close attention to
 --tank = "mosdefptank"
-tank="yahiko"
+tank= {"yahiko", "modefptank"}
 
 healers = { "mosdefrsham", "mosdefrdruid", "kakuzu" }
 
@@ -74,4 +74,4 @@ starFormationRadius = 15
 
 judgementToUse = "judgement of wisdom"
 
-useMindBlast = false
+useMindBlast = true

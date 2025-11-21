@@ -19,8 +19,10 @@ local ulduar = MosdefZoneModule:new({
     onEnter = function(self)
         AI.PRE_DO_DPS = function(isAoE)
             if AI.IsInVehicle() then
-                if AI.IsValidOffensiveUnit() and not AI.HasMoveToPosition() then
-                    AI.SetFacingUnit("target")
+                if AI.IsValidOffensiveUnit() and not AI.HasMoveTo() then
+                    if AI.ALLOW_AUTO_REFACE then
+                        AI.SetFacingUnit("target")
+                    end
                 elseif not AI.IsValidOffensiveUnit() then
                     local vehicle = (UnitName("playerpet") or ""):lower()
                     local angle = 0.35212010
@@ -37,44 +39,46 @@ local ulduar = MosdefZoneModule:new({
                 end
 
                 local vehicle = (UnitName("playerpet") or ""):lower()
-                if vehicle == "salvaged siege turret" then
+                if strcontains(vehicle, "salvaged siege turret") then
                     AI.CastVehicleSpellOnDestination("fire cannon", "target")
                     AI.CastVehicleSpellOnDestination("anti-air rocket", "target")
                     -- AI.UsePossessionSpell("fire cannon")
                 end
-                if vehicle == "salvaged siege engine" and AI.IsValidOffensiveUnit() and
-                    CheckInteractDistance("target", 3) then
+                if strcontains(vehicle, "salvaged siege engine") and AI.IsValidOffensiveUnit() and
+                    AI.GetDistanceTo("target") <= 3 then
                     -- AI.UsePossessionSpell("ram")
                 end
                 if vehicle == "salvaged demolisher" then
-                    if UnitPower("playerpet") < 40 then
+                    if UnitPower("playerpet") <= 25 then
                         local pyrite = AI.FindNearbyUnitsByName("liquid pyrite")
-                        if #pyrite and pyrite[1].distance <= 50 then                            
+                        if #pyrite > 0 and pyrite[1].distance <= 40 then
                             if AI.CastVehicleSpellOnTarget("grab crate", pyrite[1].guid) then
+                                -- print("grabbing pyrite")
                                 return true
                             end
                         end
                     end
                     if UnitPower("playerpet") > 10 and AI.IsValidOffensiveUnit() and AI.GetTargetStrength() > 3 and
                         (AI.GetDebuffCount("blue pyrite", "target") < 10 or
-                            AI.GetDebuffDuration("blue pyrite", "target") < 2) then
+                            AI.GetDebuffDuration("blue pyrite", "target") <= 2) then
                         -- AI.UsePossessionSpell("hurl pyrite barrel")
                         AI.CastVehicleSpellOnDestination("hurl pyrite barrel", "target")
-                    else
-                        AI.CastVehicleSpellOnDestination("hurl boulder", "target")
-                        -- AI.UsePossessionSpell("hurl boulder")
                     end
+                    AI.CastVehicleSpellOnDestination("hurl boulder", "target")
+                    -- AI.UsePossessionSpell("hurl boulder")
+
                 end
                 if vehicle == "salvaged demolisher mechanic seat" then
-                    VehicleAimRequestNormAngle(0.2037674)
+                    -- VehicleAimRequestNormAngle(0.2037674)
                     -- AI.SetDesiredAimAngle(0.2037674)
                     -- AI.UsePossessionSpell("anti-air rocket")
                     AI.CastVehicleSpellOnDestination("anti-air rocket", "target")
                     AI.CastVehicleSpellOnDestination("mortar", "target")
                 end
 
-                if vehicle == "salvaged chopper" and CheckInteractDistance("target", 3) then
+                if vehicle == "salvaged chopper" and AI.GetDistanceToUnit("target") <= 30 then
                     AI.UsePossessionSpell("sonic horn")
+                    AI.UsePossessionSpell("tar")
                 end
                 return true
             end
@@ -110,21 +114,21 @@ local ironMender = MosDefBossModule:new({
             local menders = AI.FindNearbyUnitsByName("iron mender")
             local markedMender = nil
             for i, o in ipairs(menders) do
-                if o.raidTargetIndex and not o.isDead and not AI.IsUnitCC(o) then
+                if o.raidTargetIndex and not o.isDead and not AI.IsUnitCC(o) and not AI.HasDebuff('polymorph', o) then
                     markedMender = o
                 end
             end
             if markedMender and markedMender.guid ~= UnitGUID("target") then
                 markedMender:Focus()
-                if AI.IsShaman() then
+                if AI.IsShaman() and AI.IsSpellInRange("hex", "focus") then
                     return AI.CastSpell("hex", "focus")
                 end
-                if AI.IsMage() then
+                if AI.IsMage() and AI.IsSpellInRange("polymorph", "focus") then
                     return AI.CastSpell("polymorph", "focus")
                 end
                 if AI.IsWarlock() then
                     AI.RegisterOneShotAction(function()
-                        if not markedMender.isDead and not AI.IsUnitCC(markedMender) then
+                        if not markedMender.isDead and not AI.IsUnitCC(markedMender) and AI.IsSpellInRange("fear", "focus") then
                             return AI.CastSpell("fear", "focus")
                         end
                     end, 4, "CC_IRON_MENDER")
@@ -165,15 +169,10 @@ local flameLeviathan = MosDefBossModule:new({
     name = "Flame Leviathan",
     creatureId = {33113},
     onStart = function(self)
-        if UnitName("focus") ~= "Flame Leviathan" then
-            TargetUnit("Flame Leviathan")
-            FocusUnit("target")
-        end
+        AI.FocusUnit("leviathan")
         oldPreDpsFn = AI.PRE_DO_DPS
         AI.PRE_DO_DPS = function(isAoE)
-            if self:IsMyVehiclePursued() and self:AmIDriver() then                
-                return true
-            end            
+            AI.FocusUnit("leviathan")            
             return oldPreDpsFn(isAoE)
         end
     end,
@@ -183,62 +182,49 @@ local flameLeviathan = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         -- run from leviathan if we're being pursued
-        if AI.IsPossessing() then
-            local vehicle = UnitName("playerpet") or ""
-            if UnitName("focus") ~= "Flame Leviathan" then
-                TargetUnit("Flame Leviathan")
-                FocusUnit("target")
-            end
+        if AI.IsInVehicle() then            
+            AI.ALLOW_AUTO_REFACE = not self:IsMyVehiclePursued() or not self:AmIDriver()
+
+            local vehicle = (UnitName("playerpet") or ""):lower()
             local lX, lY = AI.GetPosition("focus")
-            local pX, pY = AI.GetPosition("player")
+            local pX, pY = AI.GetPosition("playerpet")
             local distToLeviathan = AI.GetDistanceToUnit("focus")
-            if self.pursuedTarget and vehicle ~= "Salvaged Demolisher" and vehicle:lower() == self.pursuedTarget:lower() and
-                not AI.HasMoveToPosition() and (distToLeviathan == 0 or distToLeviathan < 70) then
+            print(vehicle.." dist to leviathan: " .. distToLeviathan)            
+            if vehicle ~= "salvaged demolisher" and self:IsMyVehiclePursued() and self:AmIDriver() and
+                not AI.HasMoveTo() and distToLeviathan <= 40 then
                 local points = {}
                 local facing = AI.CalcFacing(self.centerX, self.centerY, pX, pY)
                 for theta = facing, facing + pi2, rad5 do
                     local nX = self.centerX + self.r * math.cos(theta)
                     local nY = self.centerY + self.r * math.sin(theta)
-                    if not AI.DoesLineIntersect(pX, pY, nX, nY, lX, lY, 40) then
+                    if not AI.DoesLineIntersect(pX, pY, nX, nY, lX, lY, 20) then
                         table.insert(points, {
                             x = nX,
                             y = nY
                         })
                     end
                 end
+                print("leviathan too close")
                 if #points > 0 then
                     local i = math.random(1, #points)
+                    print("evading leviathan")
                     AI.SetMoveTo(points[i].x, points[i].y)
                 end
             end
 
-            if self.pursuedTarget and AI.HasMoveTo() and AI.IsFacingTowardsDestination() then
-                if strcontains(self.pursuedTarget, "siege") and strcontains(vehicle, "siege") and
+            if self.pursuedTarget and self:IsMyVehiclePursued() then
+                if AI.HasMoveTo() and AI.IsFacingTowardsDestination() and
                     AI.FindPossessionSpellSlot("steam rush") and AI.UsePossessionSpell("steam rush") then
                     return true
                 end
 
-                if strcontains(self.pursuedTarget, "demolisher") and strcontains(vehicle, "demolisher") and
-                    AI.FindPossessionSpellSlot("increased speed") and AI.UsePossessionSpell("increased speed") then
+                if AI.FindPossessionSpellSlot("increased speed") and not self.hasIncreasedSpeed
+                and AI.UsePossessionSpell("increased speed") then
                     return true
                 end
-                if strcontains(self.pursuedTarget, "chopper") and AI.FindPossessionSpellSlot("tar") and
-                    AI.UsePossessionSpell("tar") then
+                if self:IsMyVehiclePursued() and AI.FindPossessionSpellSlot("tar") and AI.UsePossessionSpell("tar") then
                     return true
                 end
-            end
-
-            if vehicle == "Salvaged Demolisher" and AI.GetUnitPowerPct("playerpet") <= 25 then
-                local pyrite = AI.FindNearbyUnitsByName("liquid pyrite")
-                if #pyrite and pyrite[1].distance <= 50 then
-                    pyrite[1]:Target()
-                    if AI.CastVehicleSpellOnDestination(UnitGUID("playerpet"), "grab crate", "target") then
-                        return true
-                    end
-                end
-                -- if UnitName("target") == "Liquid Pyrite" and AI.UsePossessionSpell("grab crate", "target") then
-                --     return true
-                -- end
             end
             return false
         end
@@ -247,58 +233,61 @@ local flameLeviathan = MosDefBossModule:new({
     lastGrabTime = 0,
     centerX = 273.52764892578,
     centerY = -34.417301177979,
-    r = 108
+    r = 108,
+    hasIncreasedSpeed = false
 })
 
-function flameLeviathan:SPELL_CAST_SUCCESS(args)
-    if AI.IsPossessing() then
-        if args.spellName:lower() == "pursued" then
-            local target = args.target:lower()
-            self.pursuedTarget = target
-        end
-
-        if args.spellName:lower() == "battery ram" then
-            local vehicle = UnitName("playerpet"):lower()
-            local target = args.target:lower()
-            if (MaloWUtils_StrContains(target, "demolisher") and MaloWUtils_StrContains(vehicle, "demolisher")) or
-                (MaloWUtils_StrContains(target, "siege") and MaloWUtils_StrContains(vehicle, "siege")) then
-                if AI.FindPossessionSpellSlot("shield generator") ~= nil then
-                    AI.UsePossessionSpell("shield generator")
-                end
-            end
+function flameLeviathan:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
+    print("flame leviathan emote: " .. s)
+    if strcontains(s, "pursues") then
+        local target = string.match(s, "pursues ([%w]+)")
+        -- print("extracted target from emote: " .. (target or "N/A"))
+        if target then
+            self.pursuedTarget = UnitName(target .. "-pet"):lower()
+            print("Vehicle " .. self.pursuedTarget .. " is being pursued from emote")
         end
     end
 end
 
+-- function flameLeviathan:SPELL_CAST_SUCCESS(args)
+--     if AI.IsInVehicle() and args.spellId == 62374 then
+--         local target = args.target:lower()
+--         self.pursuedTarget = target
+--         print("Vehicle " .. target .. " is being pursued")
+
+--     end
+-- end
+
 function flameLeviathan:SPELL_AURA_APPLIED(args)
-    if AI.IsPossessing() then
+    if AI.IsInVehicle() then
         if args.spellName:lower() == "pursued" then
             local target = args.target:lower()
             self.pursuedTarget = target
+            print("vehicle " .. self.pursuedTarget .. " is being pursued by aura")
         end
+    end
+    if args.spellName:lower() == "increased speed" then
+        self.hasIncreasedSpeed = true
+    end
+end
 
-        if args.spellName:lower() == "battering ram" then
-            local vehicle = UnitName("playerpet"):lower()
-            local target = args.target:lower()
-            if (MaloWUtils_StrContains(target, "demolisher") and MaloWUtils_StrContains(vehicle, "demolisher")) or
-                (MaloWUtils_StrContains(target, "siege") and MaloWUtils_StrContains(vehicle, "siege")) then
-                if AI.FindPossessionSpellSlot("shield generator") ~= nil then
-                    AI.UsePossessionSpell("shield generator")
-                end
-            end
-        end
+function flameLeviathan:SPELL_AURA_REMOVED(args)
+    if args.spellName:lower() == "increased speed" then
+        self.hasIncreasedSpeed = false
     end
 end
 
 function flameLeviathan:SPELL_DAMAGE(args)
-    if AI.IsPossessing() then
+    if AI.IsInVehicle() then
         if args.spellName:lower() == "flame vents" or args.spellName:lower() == "battering ram" then
             local vehicle = UnitName("playerpet"):lower()
             local target = args.target:lower()
-            if (MaloWUtils_StrContains(target, "demolisher") and MaloWUtils_StrContains(vehicle, "demolisher")) or
-                (MaloWUtils_StrContains(target, "siege") and MaloWUtils_StrContains(vehicle, "siege")) then
-                if AI.FindPossessionSpellSlot("shield generator") ~= nil then
-                    AI.UsePossessionSpell("shield generator")
+            if (strcontains(target, "demolisher") and strcontains(vehicle, "demolisher")) or
+                (strcontains(target, "siege") and strcontains(vehicle, "siege")) then
+                if AI.FindPossessionSpellSlot("shield generator") then
+                    AI.RegisterPendingAction(function(self)
+                        return AI.UsePossessionSpell("shield generator")
+                    end)
                 end
             end
         end
@@ -316,7 +305,7 @@ function flameLeviathan:SPELL_AURA_REMOVED(args)
 end
 
 function flameLeviathan:IsMyVehiclePursued()
-    if not AI.IsPossessing() then
+    if not AI.IsInVehicle() then
         return false
     end
     local vehicle = UnitName("playerpet"):lower()
@@ -336,12 +325,11 @@ function flameLeviathan:IsMyVehiclePursued()
 end
 
 function flameLeviathan:AmIDriver()
-    if not AI.IsPossessing() then
+    if not AI.IsInVehicle() then
         return false
     end
     local vehicle = UnitName("playerpet"):lower()
-    if vehicle == "salvaged siege engine" or vehicle == "salvaged demolisher" or
-        vehicle == "salvaged chopper" then
+    if vehicle == "salvaged siege engine" or vehicle == "salvaged demolisher" or vehicle == "salvaged chopper" then
         return true
     end
 
@@ -528,22 +516,22 @@ local kologarn = MosDefBossModule:new({
                     and AI.IsPointWithinCone(x, y, eyebeam[1].x, eyebeam[1].y, eyeFacing, rad5)) and
                         not AI.HasMoveToPosition() then
                         if AI.IsDpsPosition(1) then
-                            AI.SetMoveToPosition(self.dps1evadeX, self.dps1evadeY, 3)
+                            AI.SetMoveToPosition(self.dps1evadeX, self.dps1evadeY)
                         elseif AI.IsDpsPosition(2) then
-                            AI.SetMoveToPosition(self.dps2evadeX, self.dps2evadeY, 3)
+                            AI.SetMoveToPosition(self.dps2evadeX, self.dps2evadeY)
                         elseif AI.IsDpsPosition(3) then
-                            AI.SetMoveToPosition(self.dps3evadeX, self.dps3evadeY, 3)
+                            AI.SetMoveToPosition(self.dps3evadeX, self.dps3evadeY)
                         end
                         AI.DISABLE_CDS = true
                         self.eyeEvadeTime = GetTime() + 10
                     end
                 end
             elseif self.gripTarget == nil and not AI.HasMoveToPosition() then
-                if AI.IsDpsPosition(1) and AI.GetDistanceTo(self.dps1x, self.dps1y) > 2 then
+                if AI.IsDpsPosition(1) and AI.GetDistanceTo(self.dps1x, self.dps1y) > 2 and not AI.IsCasting() then
                     AI.SetMoveToPosition(self.dps1x, self.dps1y)
-                elseif AI.IsDpsPosition(2) and AI.GetDistanceTo(self.dps2x, self.dps2y) > 2 then
+                elseif AI.IsDpsPosition(2) and AI.GetDistanceTo(self.dps2x, self.dps2y) > 2 and not AI.IsCasting() then
                     AI.SetMoveToPosition(self.dps2x, self.dps2y)
-                elseif AI.IsDpsPosition(3) and AI.GetDistanceTo(self.dps3x, self.dps3y) > 2 then
+                elseif AI.IsDpsPosition(3) and AI.GetDistanceTo(self.dps3x, self.dps3y) > 2 and not AI.IsCasting() then
                     AI.SetMoveToPosition(self.dps3x, self.dps3y)
                 end
             end
@@ -758,7 +746,7 @@ function razorscale:CHAT_MSG_MONSTER_YELL(s, t)
 end
 
 function razorscale:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
-    if MaloWUtils_StrContains(s, "deep breath") then
+    if strcontains(s, "deep breath") then
         if not AI.IsTank() then
             local tX, tY = AI.GetPosition(AI.GetPrimaryTank())
             AI.SetMoveTo(tX, tY)
@@ -921,25 +909,41 @@ local assemblyOfIron = MosDefBossModule:new({
     name = "Assembly of Iron",
     creatureId = {32867, 32857, 32927},
     onStart = function(self)
+        AI.DISABLE_DRAIN = true
         if AI.IsHealer() then
             AI.AUTO_CLEANSE = false
         end
-        if AI.IsDps() then
-            TargetUnit("stormcaller brundir")
-            FocusUnit("target")
-        end
-        AI.PRE_DO_DPS = function(isAoe)
-            local tick = GetTime()
-            if AI.IsDps() and AI.IsValidOffensiveUnit() then
-                if AI.GetDistanceToUnit("target") > 40 and not self.tendrilsActive and not AI.HasMoveTo() and tick >
-                    self.lastOverloadTime + 7 then
-                    local obstacles = self:GetRunesOfDeath()
-                    local p = AI.PathFinding.FindSafeSpotInCircle("target", 35, obstacles)
-                    if p then
-                        AI.PathFinding.MoveSafelyTo(p, obstacles)
-                    end
+        -- if AI.IsDps() then
+        --     AI.FocusUnit("brundir")
+        -- end
+        AI.do_PriorityTarget = function()
+            if AI.IsTank() then
+                TargetUnit("steelbreaker")
+                return true
+            else
+                if self:IsBrundirActive() then
+                    TargetUnit("stormcaller brundir")
+                    return AI.IsValidOffensiveUnit()
+                elseif self:IsMolgeimActive() then
+                    TargetUnit("runemaster molgeim")
+                    return AI.IsValidOffensiveUnit()
                 end
             end
+            return false
+        end
+        AI.PRE_DO_DPS = function(isAoe)
+            -- local tick = GetTime()
+            -- if AI.IsDps() and AI.IsValidOffensiveUnit() then
+            --     if AI.GetDistanceToUnit("target") > 40 and not self.tendrilsActive and not AI.HasMoveTo() and tick >
+            --         self.lastOverloadTime + 7 then
+            --         local obstacles = self:GetRunesOfDeath()
+            --         local p = AI.PathFinding.FindSafeSpotInCircle("target", 35, obstacles)
+            --         if p then
+            --             AI.PathFinding.MoveSafelyTo(p, obstacles)
+            --         end
+            --     end
+            -- end
+            return false
         end
     end,
     onStop = function(self)
@@ -949,46 +953,64 @@ local assemblyOfIron = MosDefBossModule:new({
         local tick = GetTime()
         local deathRunes = self:GetRunesOfDeath()
         local brundir = AI.FindNearbyUnitsByName("brundir")
+        if self:IsBrundirActive() then
+            local brundirObj = brundir[1]
+            if not brundirObj:IsCasting() and brundir[1].targetGUID ~= self.lastBrundirTarget then
+                self.lastBrundirTarget = brundir[1].targetGUID or self.lastBrundirTarget
+                print("brundir target:" .. (self.lastBrundirTarget or "N/A"))
+            end
+        else
+            self.lastBrundirTarget = nil
+        end
+        if AI.IsDps() then
+            local runeOfPower = self:findRuneOfPower()
+            if runeOfPower and
+                (AI.HasBuffOrDebuff("rune of power") or (#brundir > 0 and brundir[1]:HasAura("rune of power"))) and
+                not AI.HasMoveTo() and not self.tendrilsActive and GetTime() >= self.lastOverloadTime + 7 then
+                if self:IsBrundirActive() and self.lastBrundirTarget == UnitGUID("player") then
+                    AI.SendAddonMessage("mark-me")
+                    -- print("brundir in rune of power, moving out")
+                    -- runeOfPower.radius = 8
+                    -- local obstacles = self:GetRunesOfDeath()
+                    -- table.insert(obstacles, runeOfPower)
+                    -- local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), 25, obstacles, 3)
+                    -- AI.SetMoveTo(p.x, p.y)
+                    -- return false
+                    -- if p then
+                    --     AI.PathFinding.MoveSafelyTo(p, self:GetRunesOfDeath())
+                    --     return false
+                    -- end
+                end
+            end
+        end
         if AI.IsDps() and tick > self.lastOverloadTime + 7 and not self.tendrilsActive and not AI.HasMoveTo() and
             not AI.HasBuff("rune of power") then
             local runeOfPower = self:findRuneOfPower()
             local tx, ty = AI.GetPosition(AI.GetPrimaryTank())
             local runeToUse
-            if runeOfPower and runeOfPower.distance > 5 and AI.CalcDistance(runeOfPower.x, runeOfPower.y, tx, ty) > 5 and
+            if runeOfPower and runeOfPower.distance > 5 and
                 (#deathRunes == 0 or AI.CalcDistance(runeOfPower.x, runeOfPower.y, deathRunes[1].x, deathRunes[1].y) >
-                    deathRunes[1].radius) and (#brundir == 0 or brundir[1].targetGUID ~= UnitGUID("player")) then
-                if AI.HasObjectAvoidance() then
-                    AI.ClearObjectAvoidance()
-                end
+                    deathRunes[1].radius) and
+                (not self:IsBrundirActive() or self.lastBrundirTarget ~= UnitGUID("player")) then
                 print("moving to rune of power")
                 AI.PathFinding.MoveSafelyTo(runeOfPower, self:GetRunesOfDeath())
+                return false
             end
         end
-        if AI.IsDps() then
-            if AI.HasBuffOrDebuff("rune of power") or (#brundir > 0 and brundir[1]:HasAura("rune of power")) and
-                not AI.HasMoveTo() and not self.tendrilsActive then
-                if #brundir > 0 and brundir[1].targetGUID == UnitGUID("player") then
-                    print("brundir in rune of power, moving out")
-                    local runeOfPower = self:findRuneOfPower()
-                    runeOfPower.radius = 5
-                    local obstacles = self:GetRunesOfDeath()
-                    table.insert(obstacles, runeOfPower)
-                    local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), 25, obstacles, 3)
-                    if p then
-                        AI.PathFinding.MoveSafelyTo(p, self:GetRunesOfDeath())
-                    end
-                end
-            end
+
+        if AI.IsMage() and self:IsMolgeimActive() and
+            AI.FindNearbyUnitsByName("runemaster molgeim")[1]:HasAura("shield of runes") and not AI.HasMoveTo() then
+            local molgeim = AI.FindNearbyUnitsByName("runemaster molgeim")[1]
+            AI.FocusUnit("runemaster molgeim")
+            AI.CastSpell("spellsteal", "focus")
         end
+        return false
     end,
     lastOverloadTime = 0,
     tendrilsActive = false,
-    centerP = AI.PathFinding.Vector3.new({
-        x = 1587.4993896484,
-        y = 119.86359405518,
-        z = 427.26727294922
-    }),
-    r = 39
+    centerP = AI.PathFinding.Vector3.new(1587.4993896484, 119.86359405518, 427.26727294922),
+    r = 39,
+    lastBrundirTarget = nil
 })
 
 function assemblyOfIron:findRuneOfPower()
@@ -1013,30 +1035,8 @@ end
 
 function assemblyOfIron:SPELL_AURA_APPLIED(args)
     if strcontains(args.spellName, "fusion punch") then
-        if AI.IsPriest() then
-            AI.StopCasting()
-            AI.MustCastSpell("dispel magic", args.target)
-        end
-    end
-    if strcontains(args.spellName, "shield of runes") then
-        if AI.IsMage() and args.target ~= UnitName("player") then
-            print("shield of runes on " .. args.target)
-            TargetUnit(args.target)
-            FocusUnit("target")
-            if AI.GetDistanceToUnit("focus") > 30 then
-                print('will move to to runemaster')
-                local obstacles = self:GetRunesOfDeath()
-                local p = AI.PathFinding.FindSafeSpotInCircle("focus", 30, obstacles)
-                if p then
-                    AI.PathFinding.MoveSafelyTo(p, obstacles, function(self)
-                        print('stealing shield of runes')
-                        AI.MustCastSpell("spellsteal", "focus")
-                    end)
-                end
-            else
-                print('stealing shield of runes')
-                AI.MustCastSpell("spellsteal", "focus")
-            end
+        if AI.IsPaladin() then
+            AI.MustCastSpell("cleanse", args.target)
         end
     end
     if strcontains(args.spellName, "rune of death") and args.target == UnitName("player") then
@@ -1064,7 +1064,7 @@ function assemblyOfIron:SPELL_AURA_APPLIED(args)
         if #brundir > 0 then
             if not AI.IsTank() then
                 brundir[1].radius = 20
-                local poly = AI.PathFinding.createCircularPolygon(self.centerP, self.r)                
+                local poly = AI.PathFinding.createCircularPolygon(self.centerP, self.r)
                 AI.SetObjectAvoidance({
                     guids = brundir,
                     safeDistance = 3,
@@ -1108,21 +1108,40 @@ function assemblyOfIron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
             end
             local brundir = AI.FindNearbyUnitsByName("brundir")
             if #brundir > 0 and brundir[1].distance <= 22 then
-                local runeOfPower = self:findRuneOfPower()
-                if AI.IsDps() and runeOfPower and
-                    AI.CalcDistance(runeOfPower.x, runeOfPower.y, brundir[1].x, brundir[1].y) > 22 then
-                    AI.PathFinding.MoveSafelyTo(runeOfPower, self:GetRunesOfDeath())
-                    return;
-                end
+                -- local runeOfPower = self:findRuneOfPower()
+                -- if AI.IsDps() and runeOfPower and
+                --     AI.CalcDistance(runeOfPower.x, runeOfPower.y, brundir[1].x, brundir[1].y) > 22 then
+                --     AI.PathFinding.MoveSafelyTo(runeOfPower, self:GetRunesOfDeath())
+                --     return;
+                -- end
                 -- if rune of power is not safe, move a safe spot around the healer's location                
                 local obstacles = self:GetRunesOfDeath()
                 brundir[1].radius = 20
                 table.insert(obstacles, brundir[1])
-                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), 25, obstacles, 5)
+                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), 30, obstacles, 5)
                 if p then
                     AI.PathFinding.MoveSafelyTo(p, obstacles)
                 end
             end
+        end
+    end
+end
+
+function assemblyOfIron:IsBrundirActive()
+    local brundir = AI.FindNearbyUnitsByName("stormcaller brundir")
+    return #brundir > 0 and not brundir[1].isDead and brundir[1].isAttackable
+end
+
+function assemblyOfIron:IsMolgeimActive()
+    local molgeim = AI.FindNearbyUnitsByName("runemaster molgeim")
+    return #molgeim > 0 and not molgeim[1].isDead and molgeim[1].isAttackable
+end
+
+function assemblyOfIron:ON_ADDON_MESSAGE(from, cmd, params)
+    if AI.IsTank() and cmd == "mark-me" then
+        local info = AI.GetObjectInfo(from)
+        if info and info.raidTargetIndex ~= 1 then
+            SetRaidTarget(from, 1)
         end
     end
 end
@@ -1137,31 +1156,33 @@ local thorim = MosDefBossModule:new({
         local mod = self
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
+            local gLeaderName = AI.GetDpsPositionName(mod.gauntletLeaderPos)
+            local followerName = AI.GetDpsPositionName(mod.followerPos)
             if mod.thorimDropped or not mod.gauntletStarted then
                 return false
             end
-            if UnitName("player") ~= mod.gauntletLeader and UnitName("player") ~= mod.follower then
-                TargetUnit("dark rune evoker")
+            if not mod:IsGauntletTeam() then
                 if AI.IsTank() then
+                    TargetUnit("dark rune evoker")
                     if not AI.IsValidOffensiveUnit() or not AI.CanHitTarget() then
                         TargetNearestEnemy()
                     end
                 else
-                    AssistUnit(AI.Config.tank)
+                    AssistUnit(AI.GetPrimaryTank())
                 end
                 return true
             else
-                if UnitName("player") == mod.gauntletLeader then
+                if UnitName("player") == gLeaderName then
                     TargetUnit("runic colossus")
                     if not AI.IsValidOffensiveUnit() or not AI.CanHitTarget() then
                         TargetUnit("ancient rune giant")
                         if not AI.IsValidOffensiveUnit() or not AI.CanHitTarget() then
-                            AssistUnit(AI.Config.tank)
+                            AssistUnit(AI.GetPrimaryTank())
                         end
                     end
                 end
-                if UnitName("player") == mod.follower then
-                    AssistUnit(mod.gauntletLeader)
+                if UnitName("player") == followerName then
+                    AssistUnit(gLeaderName)
                 end
                 return true
             end
@@ -1169,7 +1190,8 @@ local thorim = MosDefBossModule:new({
         end
         -- guy going into tunnel
         AI.PRE_DO_DPS = function(isAoe)
-
+            local gLeaderName = AI.GetDpsPositionName(mod.gauntletLeaderPos)
+            local followerName = AI.GetDpsPositionName(mod.followerPos)
             if mod.thorimDropped or not self.gauntletStarted then
                 return false
             end
@@ -1179,10 +1201,10 @@ local thorim = MosDefBossModule:new({
                 return true
             end
 
-            if UnitName("player") ~= mod.gauntletLeader and UnitName("player") ~= mod.follower then
+            if not mod:IsGauntletTeam() then
                 return false
             else
-                if self.gauntletStarted and not self.thorimDropped then
+                if mod.gauntletStarted and not mod.thorimDropped then
                     AI.DO_DPS(false)
                     return true
                 end
@@ -1200,10 +1222,13 @@ local thorim = MosDefBossModule:new({
         AI.AUTO_CLEANSE = true
     end,
     onUpdate = function(self)
-        if self.gauntletStarted and not self.thorimDropped and UnitName("player") == self.follower then
-            if AI.GetDistanceTo(AI.GetPosition(self.gauntletLeader)) > 2 then
-                local x, y = AI.GetPosition(self.gauntletLeader)
-                AI.SetMoveTo(x, y)
+        local gLeaderName = AI.GetDpsPositionName(self.gauntletLeaderPos)
+        local followerName = AI.GetDpsPositionName(self.followerPos)
+        if self.gauntletStarted and not self.thorimDropped and UnitName("player") == followerName then
+            if AI.GetDistanceTo(AI.GetPosition(gLeaderName)) > 2 then
+                FollowUnit(gLeaderName)
+                -- local x, y = AI.GetPosition(gLeaderName)
+                -- AI.SetMoveTo(x, y)
             end
         end
 
@@ -1257,7 +1282,7 @@ local thorim = MosDefBossModule:new({
                                         AI.SetMoveToPosition(self.dpsSpot3X, self.dpsSpot3Y)
                                     end
                                     return true
-                                end, 7, "RETURN_TO_POSITION")
+                                end, 6, "RETURN_TO_POSITION")
                             end
                         end
                     end
@@ -1278,8 +1303,8 @@ local thorim = MosDefBossModule:new({
             end
         end
     end,
-    gauntletLeader = "Mosdefswp",
-    follower = "",
+    gauntletLeaderPos = 1,
+    followerPos = 0,
 
     dpsSpot1X = 2126.8469238281,
     dpsSpot1Y = -277.53002929688,
@@ -1325,15 +1350,15 @@ function thorim:ON_ADDON_MESSAGE(from, cmd, params)
 end
 
 function thorim:IsGauntletTeam()
-    local name = UnitName("player")
-    return strcontains(name, self.gauntletLeader) or strcontains(name, self.follower)
+    return AI.IsDpsPosition(self.gauntletLeaderPos) or AI.IsDpsPosition(self.followerPos)
 end
 
 function thorim:SPELL_AURA_APPLIED(args)
     if args.spellName:lower() == "nitro boosts" then
         -- AI.Print("nitro boosts on " .. args.caster)
-        if (args.target == self.gauntletLeader or args.caster == self.gauntletLeader) and UnitName("player") ==
-            self.follower then
+        local gLeaderName = AI.GetDpsPositionName(self.gauntletLeaderPos)
+        local followerName = AI.GetDpsPositionName(self.followerPos)
+        if (args.target == gLeaderName or args.caster == gLeaderName) and UnitName("player") == followerName then
             AI.UseInventorySlot(8)
         end
     end
@@ -1355,13 +1380,15 @@ function thorim:CHAT_MSG_MONSTER_YELL(text, monster)
             AI.SetMoveTo(self.gauntletEnter.x, self.gauntletEnter.y)
         end
     end
-    if monster == "Thorim" and MaloWUtils_StrContains(text:lower(), "you dare challenge") then
+    if monster == "Thorim" and strcontains(text:lower(), "you dare challenge") then
         self.thorimDropped = true
         AI.AUTO_CLEANSE = false
         TargetUnit("Thorim")
         AI.ResetMoveTo()
-        if UnitName("player") == self.follower then
-            FollowUnit(self.gauntletLeader)
+        local gLeaderName = AI.GetDpsPositionName(self.gauntletLeaderPos)
+        local followerName = AI.GetDpsPositionName(self.followerPos)
+        if UnitName("player") == followerName then
+            FollowUnit(gLeaderName)
         end
         if AI.IsDps() then
             if AI.IsPriest() then

@@ -11,7 +11,7 @@ local lastVampiricTouch = 0
 
 local function upkeepShadowForm()
 
-    if AI.IsInDungeonOrRaid() then
+    if AI.IsInDungeonOrRaid() and not AI.IsInVehicle() then
         if GetShapeshiftForm() ~= 1 and AI.CastSpell("Shadowform") then
             return true
         end
@@ -64,10 +64,10 @@ local function useHealthStone()
 end
 
 local function getProcTier()
-    if AI.HasBuff("bloodlust") or AI.HasBuff("flame of the heavens") then
+    if AI.HasBuff("bloodlust") or AI.HasBuff("flame of the heavens") or AI.HasBuff("dying curse") then
         return 1
     end
-    if AI.HasBuff("bloodlust") and AI.HasBuff("flame of the heavens") then
+    if AI.HasBuff("bloodlust") and (AI.HasBuff("flame of the heavens") and AI.HasBuff("dying curse")) then
         return 2
     end
     return 0
@@ -96,8 +96,7 @@ local function manageThreat()
 end
 
 local function doOnUpdate_ShadowPriest()
-    if not isAIEnabled or IsMounted()  or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() then
+    if not isAIEnabled or IsMounted() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() then
         return
     end
 
@@ -137,19 +136,19 @@ local function doOnUpdate_ShadowPriest()
             AI.CastSpell("Hymn of Hope") then
             return
         end
-        if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 2) and (AI.GetUnitPowerPct("player") <= 30 or hasBloodLust) and
-            AI.CastSpell("shadowfiend", "target") then
+        if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() >= 2) and
+            (AI.GetUnitPowerPct("player") <= 20 or hasBloodLust) and AI.CastSpell("shadowfiend", "target") then
             return
         end
         if (AI.IsHeroicRaidOrDungeon() or AI.GetTargetStrength() > 2) and AI.GetUnitPowerPct("player") <
-            (hasBloodLust and 10 or 50) and not AI.DISABLE_PRIEST_DISPERSION and AI.CastSpell("Dispersion") then
+            (hasBloodLust and 10 or 30) and not AI.DISABLE_PRIEST_DISPERSION and AI.CastSpell("Dispersion") then
             return
         end
     end
 
     if not AI.DISABLE_CDS and AI.IsInCombat() and (AI.GetTargetStrength() >= 3 or AI.IsHeroicRaidOrDungeon()) then
 
-        if AI.HasBuff("flame of the heavens") or AI.HasBuff("bloodlust") then
+        if AI.HasBuff("flame of the heavens") or AI.HasBuff("dying curse") or AI.HasBuff("bloodlust") then
             AI.UseInventorySlot(10)
         end
         if AI.HasBuff("bloodlust") then
@@ -174,13 +173,13 @@ local function doAutoDps()
         return
     end
 
-    if not isAIEnabled or IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() then
+    if not isAIEnabled or IsMounted() or not AI.CanCast() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or
+        AI.IsMoving() then
         return
     end
 
     if type(AI.do_PriorityTarget) ~= "function" or not AI.do_PriorityTarget() then
-        AssistUnit(primaryTank)
+        AssistUnit(AI.GetPrimaryTank())
     end
 
     if not AI.IsValidOffensiveUnit("target") then
@@ -192,8 +191,8 @@ local function doAutoDps()
     end
 
     if not AI.AUTO_AOE then
-        if AI.GetTargetStrength() >= 1 and GetTime() > lastVampiricTouch + 1.3 and
-            AI.DoCastSpellChain("target", "vampiric touch") then
+        if AI.GetTargetStrength() >= 1 and GetTime() > lastVampiricTouch + 1.3 and AI.GetUnitCreatureId("target") ~=
+            16243 and AI.DoCastSpellChain("target", "vampiric touch") then
             lastVampiricTouch = GetTime()
             return
         end
@@ -205,10 +204,9 @@ local function doAutoDps()
             return
         end
 
-
-        if AI.CanCastSpell("shadow word: death", "target", true) then
-            RunMacro("mindblast-swd")
-        end
+        -- if AI.CanCastSpell("shadow word: death", "target", true) then
+        --     RunMacro("mindblast-swd")
+        -- end
 
         if AI.Config.useMindBlast and AI.DoCastSpellChain("target", "mind blast") then
             return
@@ -241,8 +239,8 @@ end
 
 local function doDps(isAoE)
 
-    if IsMounted()  or not AI.CanCast() or UnitIsDeadOrGhost("player") or
-        AI.HasBuff("drink") or AI.IsMoving() or AI.AUTO_DPS then
+    if IsMounted() or not AI.CanCast() or UnitIsDeadOrGhost("player") or AI.HasBuff("drink") or AI.IsMoving() or
+        AI.AUTO_DPS then
         return
     end
 
@@ -259,8 +257,8 @@ local function doDps(isAoE)
             return
         end
     else
-        if AI.GetTargetStrength() >= 1 and GetTime() > lastVampiricTouch + 1.3 and
-            AI.DoCastSpellChain("target", "vampiric touch") then
+        if AI.GetTargetStrength() >= 1 and GetTime() > lastVampiricTouch + 1.3 and AI.GetUnitCreatureId("target") ~=
+            16243 and AI.DoCastSpellChain("target", "vampiric touch") then
             lastVampiricTouch = GetTime()
             return
         end
@@ -272,9 +270,9 @@ local function doDps(isAoE)
             return
         end
 
-        if AI.CanCastSpell("shadow word: death", "target", true) then
-            RunMacro("mindblast-swd")
-        end
+        -- if AI.CanCastSpell("shadow word: death", "target", true) then
+        --     RunMacro("mindblast-swd")
+        -- end
 
         if AI.Config.useMindBlast and AI.DoCastSpellChain("target", "mind blast") then
             return

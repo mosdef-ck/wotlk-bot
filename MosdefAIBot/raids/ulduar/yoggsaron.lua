@@ -82,6 +82,7 @@ local yoggSaron = MosDefBossModule:new({
             if AI.IsValidOffensiveUnit() and
                 (AI.HasBuff("shadowy barrier", "target") or
                     (not mod:isDescentTeam() and strcontains("brain", UnitName("target")))) then
+                        ClearTarget()
                 return false
             end
 
@@ -285,7 +286,7 @@ local yoggSaron = MosDefBossModule:new({
                             if AI.IsWarlock() then
                                 AI.USE_MANA_REGEN = false
                             end
-                            if strcontains(UnitName("player"), self.descentDps2) then -- face away from skulls upon teleporting
+                            if strcontains(UnitName("player"), AI.GetDpsPositionName(self.descentDpsPos2)) then -- face away from skulls upon teleporting
                                 AI.RegisterOneShotAction(function(self)
                                     -- local doors = AI.FindNearbyGameObjects(194635, 194636, 194637)
                                     -- for i, o in ipairs(doors) do
@@ -350,8 +351,8 @@ local yoggSaron = MosDefBossModule:new({
 
             if self.brainLinkCaster ~= nil and self.brainLinkVictim and UnitName("player") == self.brainLinkCaster and
                 not self.portalToUse and not self.usedDescentPortal and not AI.IsHealer() and (not self.portalsOpen or
-                (UnitName(self.brainLinkVictim) ~= UnitName(self.descentDps2) and UnitName(self.brainLinkVictim) ~=
-                    UnitName(self.descentDps1))) and not self.squeezeTarget then
+                (UnitName(self.brainLinkVictim) ~= AI.GetDpsPositionName(self.descentDpsPos2) and UnitName(self.brainLinkVictim) ~=
+                    AI.GetDpsPositionName(self.descentDpsPos1))) and not self.squeezeTarget then
                 if AI.HasObjectAvoidance() and AI.GetObjectAvoidanceTarget() ~= UnitGUID(self.brainLinkVictim) and
                     AI.GetDistanceToUnit(self.brainLinkVictim) > 20 then
                     AI.SetObjectAvoidanceTarget(UnitGUID(self.brainLinkVictim), 20)
@@ -369,8 +370,8 @@ local yoggSaron = MosDefBossModule:new({
             if self.brainLinkVictim ~= nil and self.brainLinkCaster ~= nil and UnitName("player") ==
                 self.brainLinkVictim and not self.portalToUse and not self.usedDescentPortal and not AI.IsHealer() and
                 (not self.portalsOpen or
-                    (UnitName(self.brainLinkCaster) ~= UnitName(self.descentDps2) and UnitName(self.brainLinkCaster) ~=
-                        UnitName(self.descentDps1))) and not self.squeezeTarget then
+                    (UnitName(self.brainLinkCaster) ~= AI.GetDpsPositionName(self.descentDpsPos2) and UnitName(self.brainLinkCaster) ~=
+                        AI.GetDpsPositionName(self.descentDpsPos1))) and not self.squeezeTarget then
                 if AI.HasObjectAvoidance() and AI.GetObjectAvoidanceTarget() ~= UnitGUID(self.brainLinkCaster) and
                     AI.GetDistanceToUnit(self.brainLinkCaster) > 20 then
                     AI.SetObjectAvoidanceTarget(UnitGUID(self.brainLinkCaster), 20)
@@ -414,7 +415,7 @@ local yoggSaron = MosDefBossModule:new({
             end
 
             if ((math.abs(tick - self.nextLunaticGazeTime) <= 0.5) or AI.IsChanneling("focus")) and
-                (AI.GetDebuffCount("sanity") <= 15 or AI.GetUnitHealthPct() < 50) and not AI.IsTank() then
+                (AI.GetDebuffCount("sanity") <= 20 or AI.GetUnitHealthPct() < 50) and not AI.IsTank() then
                 local facing = AI.GetFacingForPosition(AI.GetPosition("focus")) + math.pi
                 AI.SetFacing(facing)
             end
@@ -422,8 +423,8 @@ local yoggSaron = MosDefBossModule:new({
         return false
     end,
     phase = 1,
-    descentDps1 = "mosdeflocka",
-    descentDps2 = "mosdeffmage",
+    descentDpsPos1 = 2,
+    descentDpsPos2 = 1,
     portalToUse = nil,
     illusionShattered = false,
     usedDescentPortal = false,
@@ -451,7 +452,9 @@ local yoggSaron = MosDefBossModule:new({
 })
 
 function yoggSaron:isDescentTeam()
-    return strcontains(UnitName("player"), self.descentDps1) or strcontains(UnitName("player"), self.descentDps2)
+    local dps1 = AI.GetDpsPositionName(self.descentDpsPos1)
+    local dps2 = AI.GetDpsPositionName(self.descentDpsPos2)
+    return strcontains(UnitName("player"), dps1) or strcontains(UnitName("player"), dps2)
 end
 
 function yoggSaron:doesPortalExist(portal)
@@ -586,20 +589,21 @@ end
 
 function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     if strcontains(s, "illusion shatters") then
-        print("illusion shattered")
-        AI.toggleAutoDps(true)
+        print("illusion shattered")        
         AI.USE_MANA_REGEN = true
         self.illusionShattered = true
         if self.usedDescentPortal then
+            TargetUnit("brain of")
             local escapePortal = AI.FindNearbyGameObjects("flee to the surface")
-            if #escapePortal > 0 and escapePortal[1].distance > 5 then
+            if #escapePortal > 0 and escapePortal[2].distance > 5 then
                 local path = CalculatePathToDetour(GetCurrentMapID(), AI.PathFinding.Vector3.new(AI.GetPosition()),
-                    AI.PathFinding.Vector3.new(escapePortal[1].x, escapePortal[1].y, escapePortal[1].z))
+                    AI.PathFinding.Vector3.new(escapePortal[2].x, escapePortal[2].y, escapePortal[2].z))
                 if type(path) == "table" and #path > 0 then
-                    print("moving to engage brain of yogg")
+                    print("moving to engage brain of yogg wpsize:" .. #path)
                     AI.SetMoveToPath(path, 0.3, function(self)
-                        TargetUnit("brain of")
+                        
                         AI.SetFacingUnit("target")
+                        AI.toggleAutoDps(true)
                     end)
                     AI.UseInventorySlot(8)
                 else
@@ -623,12 +627,12 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
 
         if AI.IsPriest() then
             AI.RegisterPendingAction(function()
-                return AI.HasMyBuff("abolish disease", self.descentDps1) or
-                           AI.CastSpell("abolish disease", self.descentDps1)
+                return AI.HasMyBuff("abolish disease", AI.GetDpsPositionName(self.descentDpsPos1)) or
+                           AI.CastSpell("abolish disease", AI.GetDpsPositionName(self.descentDpsPos1))
             end, nil, "CLEANSE_DESCENDER_1")
             AI.RegisterPendingAction(function()
-                return AI.HasMyBuff("abolish disease", self.descentDps2) or
-                           AI.CastSpell("abolish disease", self.descentDps2)
+                return AI.HasMyBuff("abolish disease", AI.GetDpsPositionName(self.descentDpsPos2)) or
+                           AI.CastSpell("abolish disease", AI.GetDpsPositionName(self.descentDpsPos2))
             end, nil, "CLEANSE_DESCENDER_2")
 
             AI.RegisterPendingAction(function(self)
@@ -645,7 +649,7 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                     if AI.IsWarlock() then
                         AI.MustCastSpell("shadow ward")
                     end
-                    if strcontains(UnitName("player"), self.descentDps1) then
+                    if strcontains(UnitName("player"), AI.GetDpsPositionName(self.descentDpsPos1)) then
                         local portal = portals[1]
                         self.portalToUse = portal
                         AI.ResetMoveTo()
@@ -658,7 +662,7 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                                 "Get to Brain Portal")
                         end
                     end
-                    if strcontains(UnitName("player"), self.descentDps2) then
+                    if strcontains(UnitName("player"), AI.GetDpsPositionName(self.descentDpsPos2)) then
                         AI.RegisterOneShotAction(function(self)
                             local portals = AI.FindNearbyUnitsByName("descend into madness")
                             -- if AI.IsMage() then
@@ -666,7 +670,7 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                             -- end
                             if #portals > 0 then
                                 if #portals == 2 then
-                                    local dx, dy = AI.GetPosition(self.descentDps1)
+                                    local dx, dy = AI.GetPosition(AI.GetDpsPositionName(self.descentDpsPos1))
                                     local dist = 0
                                     for i, o in ipairs(portals) do
                                         if AI.CalcDistance(dx, dy, o.x, o.y) > dist then
@@ -699,7 +703,7 @@ function yoggSaron:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                             self.portalToUse = escapePortal[1]
                         end
                     end
-                end, 58, "MOVE_TO_ESCAPE_PORTALS")
+                end, 55, "MOVE_TO_ESCAPE_PORTALS")
             end, 1)
         end
         if not self:isDescentTeam() then
@@ -807,7 +811,7 @@ function yoggSaron:SPELL_AURA_REMOVED(args)
             if args.target == UnitName("player") then
                 local healer = AI.GetPrimaryHealer()
                 local closestAlly, dist = AI.GetClosestAlly(function(ally)
-                    return UnitName(ally) ~= UnitName(self.descentDps1) and UnitName(ally) ~= UnitName(self.descentDps2)
+                    return UnitName(ally) ~= AI.GetDpsPositionName(self.descentDpsPos1) and UnitName(ally) ~= AI.GetDpsPositionName(self.descentDpsPos2)
                 end)
                 local targetToMoveTo = healer
                 if AI.IsHealer() then
@@ -834,7 +838,7 @@ function yoggSaron:SPELL_CAST_SUCCESS(args)
             TargetUnit("yogg")
             FocusUnit("target")
         end
-        if AI.GetDebuffCount("sanity") <= 15 or AI.GetUnitHealthPct() < 50 then
+        if AI.GetDebuffCount("sanity") <= 20 or AI.GetUnitHealthPct() < 50 then
             local facing = AI.GetFacingForPosition(AI.GetPosition("focus")) + math.pi
             AI.SetFacing(facing)
         end
