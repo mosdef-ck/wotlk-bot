@@ -553,17 +553,28 @@ function AI.GetMostDamagedFriendlyPet()
 end
 
 --
+-- Compare a wanted type against any candidate aura return value. Only string
+-- candidates are considered — this client's UnitBuff/UnitDebuff returns extra
+-- numeric fields (spellId/duration) before the dispel-type string, and the exact
+-- slot varies by build; scanning slots and skipping numbers is layout-agnostic.
+local function matchesAuraType(want, ...)
+    for k = 1, select("#", ...) do
+        local v = select(k, ...)
+        if type(v) == "string" and string.lower(v) == want then
+            return true
+        end
+    end
+    return false
+end
+
 local function UnitHasDebuffOfType(unit, ...)
-    -- 3.3.5 API: name, icon, count, debuffType, duration, expirationTime, caster, isStealable
-    -- The dispel type is the FOURTH return value (slot 5 is duration — a number).
     for i = 1, 40 do
-        local name, _, _, debuffType = UnitDebuff(unit, i, "HARMFUL")
+        local name, _, a3, a4, a5, a6 = UnitDebuff(unit, i)
         if not name then
             break -- aura slots are contiguous; nothing further to check
         end
-        local count = select("#", ...)
-        for j = 1, count, 1 do
-            if (debuffType or ""):lower() == select(j, ...):lower() then
+        for j = 1, select("#", ...) do
+            if matchesAuraType(string.lower(select(j, ...)), a3, a4, a5, a6) then
                 return true
             end
         end
@@ -721,13 +732,15 @@ function AI.HasStealableBuff(unit)
     if not AI.IsValidOffensiveUnit(unit) then
         return false
     end
-    -- 3.3.5 API: name, icon, count, debuffType, duration, expirationTime, caster, isStealable
+    -- Slot layout varies by client build (isStealable is slot 8 on stock 3.3.5, some
+    -- builds shift it +1). Check both slots but only accept a true boolean — numeric
+    -- fields (duration/spellId) would otherwise false-positive as "truthy".
     for i = 1, 40 do
-        local name, _, _, _, _, _, _, isStealable = UnitBuff(unit, i, "HELPFUL")
+        local name, _, _, _, _, _, _, a8, a9 = UnitBuff(unit, i)
         if not name then
             break
         end
-        if isStealable then
+        if a8 == true or a9 == true then
             return true
         end
     end
@@ -738,13 +751,14 @@ function AI.HasPurgeableBuff(unit)
     if not AI.IsValidOffensiveUnit(unit) then
         return false
     end
-    -- 3.3.5 API: name, icon, count, debuffType, ... (debuffType is 4th, not 5th)
+    -- Same layout-agnostic scan as UnitHasDebuffOfType: match "magic" against the
+    -- string-valued aura fields (numbers are skipped, never indexed).
     for i = 1, 40 do
-        local name, _, _, debuffType = UnitBuff(unit, i, "HELPFUL")
+        local name, _, a3, a4, a5, a6 = UnitBuff(unit, i)
         if not name then
             break
         end
-        if (debuffType or ""):lower() == "magic" then
+        if matchesAuraType("magic", a3, a4, a5, a6) then
             return true
         end
     end
