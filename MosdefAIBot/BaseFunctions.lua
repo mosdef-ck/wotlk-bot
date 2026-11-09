@@ -164,12 +164,15 @@ function AI.IsUnitValidFriendlyTarget(unit, spell)
         return false
     end
     if UnitIsDeadOrGhost(unit) then
+        -- print("unit is dead or ghost: "..unit)
         return false
     end
     if UnitCanAttack("player", unit) == 1 then
+        -- print("i can attack "..unit)
         return false
     end
     if spell ~= nil and not AI.IsSpellInRange(spell, unit) then
+        -- print(unit.." not in spell range "..spell)
         return false
     end
     if UnitBuff(unit, "Spirit of Redemption") then
@@ -202,24 +205,22 @@ function AI.CanCastSpell(spell, unit, ignoreCurrentCasting)
     if name == nil then
         return false
     end
-    return (ignoreCurrentCasting or AI.CanCast()) and AI.IsUsableSpell(spell, unit) and GetSpellCooldown(spell) == 0 and
+    local tick = GetTime()
+    local cd = GetSpellCooldown(spell)
+    return (ignoreCurrentCasting or AI.CanCast()) and AI.IsUsableSpell(spell, unit) and (cd == 0) and
                UnitPower("player") >= manaCost and (castTime == 0 or not AI.IsMoving())
 end
 
 function AI.CastSpell(spell, target)
     if AI.CanCastSpell(spell, target) then
+        if AI.IsDps() and AI.ALLOW_AUTO_REFACE and not AI.HasCTM() and AI.IsValidOffensiveUnit(target) then
+            -- StopFollowing()
+            AI.SetFacingCoords(AI.GetPosition(target))
+        end
         CastSpellByName(spell, target)
-        return true
-        -- local spellId = GetPlayerSpellIdByName(spell)
-        -- if not spellId then
-        --     spellId = GetPlayetPetSpellIdByName(spell)
-        -- end
-        -- if spellId then
-        --     -- print("CastSpellOnTarget :" ..tostring(AI.CanCastSpell(spell, target)))
-        --     CastSpellOnTarget(UnitGUID(target or "player"), spellId)
-        --     lastCastTime = GetTime()
-        --     return true
-        -- end
+        local castSpellId = GetLastCastSpellId()
+        local spellId = GetPlayerSpellIdByName(spell)
+        return castSpellId == spellId
     end
     return false
 end
@@ -243,9 +244,18 @@ end
 function AI.CastAOESpell(spell, target)
     if AI.CanCastSpell(spell, nil) then
         CastSpellByName(spell, nil)
-        if CastCursorAOESpell(AI.GetPosition(target or "player")) then
-            lastCastTime = GetTime()
-            return true
+        if type(target) == "table" then
+            if CastCursorAOESpell(target.x, target.y, target.z) then
+                local castSpellId = GetLastCastSpellId()
+                local spellId = GetPlayerSpellIdByName(spell)
+                return castSpellId == spellId
+            end
+        else
+            if CastCursorAOESpell(AI.GetPosition(target or "player")) then
+                local castSpellId = GetLastCastSpellId()
+                local spellId = GetPlayerSpellIdByName(spell)
+                return castSpellId == spellId
+            end
         end
     end
     return false
@@ -253,7 +263,7 @@ end
 
 function AI.GetDebuffDuration(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "HARMFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "HARMFUL")
     if name == nil then
         local info = AI.GetObjectInfo(unit or "player")
         if info then
@@ -269,7 +279,7 @@ end
 
 function AI.GetMyDebuffDuration(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "PLAYER|HARMFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "PLAYER|HARMFUL")
     if name == nil then
         local info = AI.GetObjectInfo(unit or "player")
         if info then
@@ -285,7 +295,7 @@ end
 
 function AI.GetDebuffCount(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "HARMFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "HARMFUL")
     if type(spell) == "string" and name then
         return count or 0
     end
@@ -298,7 +308,7 @@ end
 
 function AI.GetMyDebuffCount(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "PLAYER|HARMFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "PLAYER|HARMFUL")
     if type(spell) == "string" and name then
         return count or 0
     end
@@ -319,7 +329,7 @@ end
 
 function AI.GetBuffDuration(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "HELPFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "HELPFUL")
     if name == nil then
         local info = AI.GetObjectInfo(unit or "player")
         if info then
@@ -335,7 +345,7 @@ end
 
 function AI.GetMyBuffDuration(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "PLAYER|HELPFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "PLAYER|HELPFUL")
     if name == nil then
         local info = AI.GetObjectInfo(unit or "player")
         if info then
@@ -351,7 +361,7 @@ end
 
 function AI.GetBuffCount(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "HELPFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "HELPFUL")
     if type(spell) == "string" and name then
         return count or 0
     end
@@ -364,7 +374,7 @@ end
 
 function AI.GetMyBuffCount(spell, unit)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate,
-        spellId = UnitAura(unit or "player", spell, nil, "PLAYER|HELPFUL")
+        spellId = UnitAura(unit or "player", tostring(spell), nil, "PLAYER|HELPFUL")
     if type(spell) == "string" and name then
         return count or 0
     end
@@ -466,7 +476,8 @@ function AI.GetMostDamagedFriendly(spell)
         return a.missingHealth > b.missingHealth
     end)
 
-    local mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp = nil, nil, nil, nil
+    local mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp, thirdMostHurt, thirdMostHurtHp = nil, nil, nil,
+        nil, nil, nil
     local tsize = table.getn(healCandidates)
     if tsize > 0 then
         mostHurt = healCandidates[1].unit
@@ -474,9 +485,13 @@ function AI.GetMostDamagedFriendly(spell)
     end
     if tsize > 1 then
         secondMostHurt = healCandidates[2].unit
-        secondMostHurtHp = healCandidates[1].missingHealth
+        secondMostHurtHp = healCandidates[2].missingHealth
     end
-    return mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp
+    if tsize > 2 then
+        thirdMostHurt = healCandidates[3].unit
+        thirdMostHurtHp = healCandidates[3].missingHealth
+    end
+    return mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp, thirdMostHurt, thirdMostHurtHp
 end
 
 function AI.GetRaidOrPartyMemberUnits()
@@ -484,7 +499,9 @@ function AI.GetRaidOrPartyMemberUnits()
     local memberCount = AI.GetNumPartyOrRaidMembers()
     for i = 1, memberCount do
         local unit = AI.GetUnitFromPartyOrRaidIndex(i)
-        table.insert(members, unit)
+        if AI.GetObjectInfo(unit) ~= nil then
+            table.insert(members, unit)
+        end
     end
     return members
 end
@@ -495,7 +512,9 @@ function AI.GetRaidOrPartyPetMemberUnits()
     for i = 1, memberCount do
         local unit = AI.GetUnitFromPartyOrRaidIndex(i)
         local unitPet = unit .. "-pet"
-        table.insert(members, unitPet)
+        if AI.GetObjectInfo(unitPet) ~= nil then
+            table.insert(members, unitPet)
+        end
     end
     return members
 end
@@ -506,7 +525,7 @@ function AI.GetMostDamagedFriendlyPet()
     for i = 1, members do
         local unit = AI.GetUnitFromPartyOrRaidIndex(i)
         local unitPet = unit .. "-pet"
-        if UnitExists(unitPet) then
+        if AI.GetObjectInfo(unitPet) ~= nil then
             local missingHealth = AI.GetMissingHealth(unitPet)
             if missingHealth >= 0 then
                 table.insert(healCandidates, {
@@ -528,21 +547,24 @@ function AI.GetMostDamagedFriendlyPet()
     end
     if tsize > 1 then
         secondMostHurt = healCandidates[2].unit
-        secondMostHurtHp = healCandidates[1].missingHealth
+        secondMostHurtHp = healCandidates[2].missingHealth
     end
     return mostHurt, mostHurtMissingHp, secondMostHurt, secondMostHurtHp
 end
 
 --
 local function UnitHasDebuffOfType(unit, ...)
+    -- 3.3.5 API: name, icon, count, debuffType, duration, expirationTime, caster, isStealable
+    -- The dispel type is the FOURTH return value (slot 5 is duration — a number).
     for i = 1, 40 do
-        local name, _, _, _, type = UnitDebuff(unit, i)
-        if name then
-            local count = select("#", ...)
-            for j = 1, count, 1 do
-                if (type or ""):lower() == select(j, ...):lower() then
-                    return true
-                end
+        local name, _, _, debuffType = UnitDebuff(unit, i, "HARMFUL")
+        if not name then
+            break -- aura slots are contiguous; nothing further to check
+        end
+        local count = select("#", ...)
+        for j = 1, count, 1 do
+            if (debuffType or ""):lower() == select(j, ...):lower() then
+                return true
             end
         end
     end
@@ -555,14 +577,19 @@ function AI.CleanseSelf(spell, ...)
     if UnitHasDebuffOfType("player", ...) then
         return AI.CastSpell(spell, "player")
     end
-    return false
+    return nil
 end
 
 function AI.CleanseRaid(spell, ...)
-    for i = 1, AI.GetNumPartyOrRaidMembers() do
-        local unit = AI.GetUnitFromPartyOrRaidIndex(i)
-        if UnitHasDebuffOfType(unit, ...) and AI.IsUnitValidFriendlyTarget(unit, spell) then
-            return AI.CastSpell(spell, unit)
+    local allies = AI.GetRaidOrPartyMemberUnits()
+    for _, unit in ipairs(allies) do
+        if UnitHasDebuffOfType(unit, ...) then
+            -- print("cleanse candidate: " .. UnitName(unit))
+            if AI.IsUnitValidFriendlyTarget(unit) then
+                return AI.CastSpell(spell, unit)
+            end
+            -- Debuffed but not a valid target right now (out of range/LOS/dead):
+            -- keep scanning — someone else may be cleansable.
         end
     end
     return false
@@ -572,6 +599,8 @@ function AI.CleanseFriendly(spell, unit, ...)
     if AI.IsUnitValidFriendlyTarget(unit) then
         if UnitHasDebuffOfType(unit, ...) then
             return AI.CastSpell(spell, unit)
+        else
+            return nil
         end
     end
     return false
@@ -692,9 +721,13 @@ function AI.HasStealableBuff(unit)
     if not AI.IsValidOffensiveUnit(unit) then
         return false
     end
+    -- 3.3.5 API: name, icon, count, debuffType, duration, expirationTime, caster, isStealable
     for i = 1, 40 do
-        local name, _, _, _, debuffType, _, _, _, isStealable, shouldConsolidate, spellId = UnitBuff(unit, i)
-        if name and isStealable then
+        local name, _, _, _, _, _, _, isStealable = UnitBuff(unit, i, "HELPFUL")
+        if not name then
+            break
+        end
+        if isStealable then
             return true
         end
     end
@@ -705,9 +738,13 @@ function AI.HasPurgeableBuff(unit)
     if not AI.IsValidOffensiveUnit(unit) then
         return false
     end
+    -- 3.3.5 API: name, icon, count, debuffType, ... (debuffType is 4th, not 5th)
     for i = 1, 40 do
-        local name, _, _, _, debuffType, _, _, _, _, shouldConsolidate, spellId = UnitBuff(unit, i)
-        if name and debuffType and debuffType:lower() == "magic" then
+        local name, _, _, debuffType = UnitBuff(unit, i, "HELPFUL")
+        if not name then
+            break
+        end
+        if (debuffType or ""):lower() == "magic" then
             return true
         end
     end
@@ -899,6 +936,14 @@ function AI.DoesLineIntersect(x1, y1, x2, y2, x_c, y_c, radius)
     end
 end
 
+function AI.DoCirclesOverlap(x1, y1, r1, x2, y2, r2)
+    local dx = x1 - x2
+    local dy = y1 - y2
+    local distanceSquared = dx * dx + dy * dy
+    local radiusSum = r1 + r2
+    return distanceSquared <= radiusSum * radiusSum
+end
+
 function AI.CalcFacing(x1, y1, x2, y2)
     if not x1 or not y1 or not x2 or not y2 then
         return nil
@@ -1029,6 +1074,11 @@ function AI.IsFacingTowards(x, y)
     return math.abs(desiredFacing - facing) <= 0.1745329
 end
 
+function AI.IsFacingTowardsAngle(rads)
+    local facing = GetPlayerFacing()
+    return math.abs(rads - facing) <= 0.1745329
+end
+
 function AI.IsPointWithinCone(x, y, x2, y2, theta, coneAngleRads)
     local half_cone_angle_radians = coneAngleRads / 2
 
@@ -1065,6 +1115,22 @@ end
 
 function AI.GetSpeed(unit)
     return GetUnitSpeed(unit or "player")
+end
+
+function AI.GetRunSpeed()
+    return AI.GetObjectInfo("player").runSpeed
+end
+
+function AI.GetFlySpeed()
+    return AI.GetObjectInfo("player").flySpeed
+end
+
+function AI.SetRunSpeed(speed)
+    AI.GetObjectInfo("player"):SetRunSpeed(speed);
+end
+
+function AI.SetFlySpeed(speed)
+    AI.GetObjectInfo("player"):SetFlySpeed(speed);
 end
 
 function AI.GetUnitCreatureId(unit)
@@ -1240,6 +1306,9 @@ local function adornObject(obj)
             bit.band(obj.unitFlags, notAttackable1) == 0 and bit.band(obj.unitFlags, notAttackable2) == 0 and
                 bit.band(obj.unitFlags, notAttackable3) == 0
         obj.isAttackable = obj.attackable
+        obj.attackable1 = bit.band(obj.unitFlags, notAttackable1) == 0
+        obj.attackable2 = bit.band(obj.unitFlags, notAttackable2) == 0
+        obj.attackable3 = bit.band(obj.unitFlags, notAttackable3) == 0
     end
     if obj ~= nil and type(obj.health) == "number" then
         obj.isDead = obj.health == 0
@@ -1318,6 +1387,19 @@ local function adornObject(obj)
             return 0
         end
 
+        obj.HasAuraBy = function(self, spell, casterGUID)
+            local auras = self:auras()
+            for i, a in ipairs(auras) do
+                if type(spell) == "number" and a.spellId == spell and a.casterGUID == casterGUID then
+                    return true
+                end
+                if type(spell) == "string" and strcontains(spell, a.name) and a.casterGUID == casterGUID then
+                    return true
+                end
+            end
+            return false
+        end
+
         obj.IsCasting = function(self)
             return self.castingSpellId > 0 or self.castingSpellId > 0
         end
@@ -1362,6 +1444,11 @@ function AI.FindNearbyUnitsByName(...)
     return objs
 end
 
+function AI.FindNearbyPlayers()
+    local objs = AI.GetNearbyObjects(AI.ObjectTypeFlag.Player)
+    return objs
+end
+
 function AI.FindNearbyDynamicObjects(...)
     return AI.FindNearbyObjectsOfTypeAndName(AI.ObjectTypeFlag.DynamicObject, ...)
 end
@@ -1388,6 +1475,21 @@ function AI.FindUnitsWithinXOf(unit, r)
     return result
 end
 
+function AI.FindUnitClosestToXYZ(p, unitName)
+    local x, y = p.x, p.y
+    local nearbyUnits = AI.FindNearbyUnitsByName(unitName)
+    local closestUnit = nil
+    local closestDistance = math.huge
+    for i, u in ipairs(nearbyUnits) do
+        local dist = AI.CalcDistance(x, y, u.x, u.y)
+        if dist < closestDistance then
+            closestDistance = dist
+            closestUnit = u
+        end
+    end
+    return closestUnit
+end
+
 function AI.FindUnitYWithinXOf(haystack, needle, r)
     local unitInQuestion
     if type(haystack) == "string" then
@@ -1395,16 +1497,16 @@ function AI.FindUnitYWithinXOf(haystack, needle, r)
         if type(unitName) ~= "string" then
             return {}
         end
-        unitInQuestion = AI.FindNearbyUnitsByName(unitName)
+        local foundUnit = AI.FindNearbyUnitsByName(unitName)
+        unitInQuestion = (#foundUnit > 0) and foundUnit[1] or nil
     else
         unitInQuestion = haystack
     end
     local result = {}
-    if #unitInQuestion > 0 then
+    if unitInQuestion then
         local nearbyObjs = AI.FindNearbyUnitsByName(needle)
         for i, o in ipairs(nearbyObjs) do
-            if o.guid ~= unitInQuestion[1].guid and strcontains(o.name:lower(), needle:lower()) and
-                AI.CalcDistance(o.x, o.y, unitInQuestion[1].x, unitInQuestion[1].y) <= r then
+            if o.guid ~= unitInQuestion.guid and AI.CalcDistance(o.x, o.y, unitInQuestion.x, unitInQuestion.y) <= r then
                 table.insert(result, o)
             end
         end
@@ -1460,7 +1562,7 @@ function AI.DoTargetChain(...)
         for i = 1, count, 1 do
             local name = select(i, ...)
             -- print("DoTargetChain " .. name)
-            if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), name) then
+            if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), tostring(name)) then
                 return true
             end
             local targets = AI.FindNearbyUnitsByName(name)
@@ -1469,7 +1571,7 @@ function AI.DoTargetChain(...)
                     if not o.isDead then
                         o:Target()
                         -- print("Targeted " .. o.name)
-                        if UnitExists("target") and strcontains(UnitName("target"), name) then
+                        if UnitExists("target") then
                             return true
                         end
                     end
@@ -1626,8 +1728,8 @@ function AI.IsUnitABoss(unit)
 end
 
 function AI.FocusUnit(name)
-    if UnitExists(name) then
-        local info = AI.GetObjectInfo(name)
+    if UnitExists(tostring(name)) then
+        local info = AI.GetObjectInfo(tostring(name))
         if info then
             info:Focus()
             return true
@@ -1641,4 +1743,52 @@ function AI.FocusUnit(name)
         end
     end
     return false
+end
+
+function AI.LevitateFor(duration, onArrive)
+    local x, y, z = AI.GetPosition("player")
+    -- set fly
+    AI.GetObjectInfo("player"):SetFlying(1)
+    JumpOrAscendStart()
+    AI.RegisterOneShotAction(function(self)
+        AscendStop()
+        if type(onArrive) == "function" then
+            onArrive()
+        end
+    end, duration)
+end
+
+function AI.SetFlying(enable)
+    AI.GetObjectInfo("player"):SetFlying(enable)
+end
+
+function AI.StopLevitating()
+    AI.GetObjectInfo("player"):SetFlying(0)
+end
+
+function AI.ResetHacks()
+    AI.SetFlying(false);
+    local result = ResetHacks()
+    print("hax reset")
+    return result
+end
+
+function AI.GetRunTravelTimeTo(x, y, z)
+    local mX, mY, mZ = AI.GetPosition()
+    local distance = AI.GetDistanceTo(x, y)
+    local speed = AI.GetRunSpeed()
+    if speed > 0 then
+        return distance / speed
+    end
+    return math.huge
+end
+
+function AI.GetFlightTravelTimeTo(x, y, z)
+    local mX, mY, mZ = AI.GetPosition()
+    local distance = AI.GetDistance3DTo(x, y, z)
+    local speed = AI.GetFlySpeed()
+    if speed > 0 then
+        return distance / speed
+    end
+    return math.huge
 end
