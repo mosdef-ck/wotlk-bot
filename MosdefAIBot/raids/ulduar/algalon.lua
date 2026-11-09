@@ -6,8 +6,13 @@ local algalon = MosDefBossModule:new({
             AI.ALLOW_AUTO_REFACE = false
         end
         AI.DISABLE_PRIEST_DISPERSION = true
+        AI.DISABLE_DRAIN = true
+        AI.DISABLE_PET_AA = true
         -- AI.Config.startHealOverrideThreshold = 90
         AI.Config.manaTideThreshold = 20
+        AI.Config.judgementToUse = "judgement of light"
+        AI.FocusUnit("algalon")
+        AI.Config.useHealingWaveOnToons = true
 
         AI.PRE_DO_DPS = function(isAoE)
             if GetTime() < self.bigBangTime + 8 then
@@ -17,7 +22,7 @@ local algalon = MosDefBossModule:new({
             if AI.IsDps() and AI.IsValidOffensiveUnit() and AI.GetDistanceToUnit("target") > 35 and not AI.HasMoveTo() and
                 GetTime() > self.lastCosmicSmashTime + 5 then
                 local obstacles = self:GetObstacles(true)
-                local p = AI.PathFinding.FindSafeSpotInCircle("target", 30, obstacles, 5)
+                local p = AI.PathFinding.FindSafeSpotInCircle("target", 30, obstacles, 3)
                 if p then
                     self:MoveSafelyToSpot(p.x, p.y, p.z)
                 end
@@ -32,10 +37,15 @@ local algalon = MosDefBossModule:new({
             end
         end
         AI.do_PriorityTarget = function()
-            if not AI.IsTank() then
-                local stars = AI.FindNearbyUnitsByName("collapsing star")
-                for i, o in ipairs(stars) do
-                    if not o.isDead and o.raidTargetIndex then
+            RunMacroText(
+                "/petattack [target=focus, exists]; /stopmacro [target=focus, exists]; /petattack [target=target, exists]")
+            local stars = AI.FindNearbyUnitsByName("collapsing star")
+            for i, o in ipairs(stars) do
+                if not o.isDead and o.raidTargetIndex then
+                    if UnitGUID("focus") ~= o.guid then
+                        o:Focus()
+                    end
+                    if AI.IsDpsPosition(3) then
                         o:Target()
                         return true
                     end
@@ -56,6 +66,11 @@ local algalon = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         local tick = GetTime()
+        local combatReach = AI.GetObjectInfo("player").combatReach
+        if AI.GetRunSpeed() < 20 then
+            local speed = 20
+            AI.SetRunSpeed(AI.GetRunSpeed() > speed and AI.GetRunSpeed() or speed)
+        end
         if not AI.IsTank() then
             local stars = AI.FindNearbyUnitsByName("collapsing star")
             local blackHoles = self:GetBlackHoles()
@@ -80,10 +95,10 @@ local algalon = MosDefBossModule:new({
             end
         end
         if AI.IsHealer() and not AI.HasDebuff("black hole") then
-            if AI.GetDistanceToUnit(AI.GetPrimaryTank()) > 30 and not AI.IsCasting() and not AI.HasMoveTo() and tick >
+            if AI.GetDistanceToUnit(AI.GetPrimaryTank()) > 35 and not AI.IsCasting() and not AI.HasMoveTo() and tick >
                 self.lastCosmicSmashTime + 5 and tick > self.bigBangTime + 8 then
                 local obstacles = self:GetObstacles(true)
-                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 30, obstacles, 1)
+                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 35, obstacles, combatReach)
                 if p then
                     -- print('moving to tank')
                     if not AI.PathFinding.MoveSafelyTo(p, obstacles) then
@@ -124,21 +139,55 @@ local algalon = MosDefBossModule:new({
                     self.blackHoleToUse = holes[1]
                 end
             end
+            local targetHp = AI.IsHeroicRaidOrDungeon() and 40000 or 30000
             if not AI.HasMoveTo() then
+                -- and (not AI.IsHealer() or UnitHealth(AI.GetPrimaryTank()) >= targetHp) then
                 local obstacles = self:GetObstacles(false)
-                local p = AI.PathFinding.FindSafeSpotInCircle(self.blackHoleToUse, 3, obstacles)
+                local speed = AI.GetRunSpeed()
+                local distanceToHole = AI.GetDistanceToUnit(self.blackHoleToUse)
+                local timeToHole = (distanceToHole / speed) + 0.5
+                local timeToCosmicImpact = self.lastCosmicSmashTime + 5
+                if tick - self.lastCosmicSmashTime <= 5 and timeToHole < timeToCosmicImpact then
+                    print("we can get to hole b4 cosmic smash impact, going!")
+                    obstacles = {}
+                end
+                local p = AI.PathFinding.FindSafeSpotInCircle(self.blackHoleToUse, 1, obstacles, 0)
                 if p then
                     AI.PathFinding.MoveSafelyTo(p, obstacles)
+                    print("moving into black hole")
+                else
+                    print("failed to find safe point to black hole")
                 end
             end
+        end
+
+        if AI.IsPriest() and AI.IsCasting("focus") and (GetTime() - self.bigBangTime) > 5 and
+            not AI.HasBuff("dispersion") then
+            if AI.CanCast("dispersion") and AI.CastSpell("dispersion") then
+                print("casted dispersion")
+            end
+        end
+
+        if AI.IsDps() then
+            AI.UseInventorySlot(13)
+            AI.UseInventorySlot(14)
+            AI.UseInventorySlot(10)
         end
     end,
     cachedBlackHoles = nil,
     bigBangTime = 0,
     isPhasedPunched = false,
     lastCosmicSmashTime = 0,
-    blackHoleToUse = nil
+    blackHoleToUse = nil,
+    p2 = false
 })
+
+function algalon:CHAT_MSG_MONSTER_YELL(s)
+    if strcontains(s, "behold the tools") then
+        self.p2 = true
+        print("algalon phase 2 started")
+    end
+end
 
 function algalon:MoveSafelyToSpotWithin(r, tx, ty, tz, ignoreBlackHoles, force)
     local x, y = AI.GetPosition()
@@ -173,14 +222,14 @@ function algalon:ON_ADDON_MESSAGE(from, cmd, params)
             local obstacles = self:GetObstacles(true)
             local source = AI.GetObjectInfo(AI.GetPrimaryHealer())
             -- if close enough to healer, then ignore asteroid in path finding. otherwise include it
-            if source:GetDistanceToUnit("player") <= 5 then
+            if source:GetDistanceToUnit("player") <= 20 then
                 table_removeif(obstacles, function(o)
                     return strcontains(o.name, "stalker asteroid")
                 end)
             end
             if not AI.PathFinding.MoveSafelyTo(p, obstacles) then
-                for r = 20, 30, 5 do
-                    p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), r, self:GetObstacles(true))
+                for r = 20, 40, 2 do
+                    p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryHealer(), r, self:GetObstacles(true))
                     if p then
                         if AI.PathFinding.MoveSafelyTo(p, obstacles) then
                             return
@@ -211,7 +260,7 @@ function algalon:CHAT_MSG_RAID_BOSS_EMOTE(s)
                 table_removeif(obstacles, function(o)
                     return strcontains(o.name, "stalker asteroid")
                 end)
-                for r = 30, 40, 5 do
+                for r = 1, 30, 5 do
                     local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), r, self:GetObstacles(true))
                     if p then
                         if not AI.IsHealer() then
@@ -238,7 +287,7 @@ function algalon:CHAT_MSG_RAID_BOSS_EMOTE(s)
 end
 
 function algalon:GetBlackHoles()
-    local bHoles = AI.FindNearbyUnitsByName("black hole")
+    local bHoles = AI.FindNearbyUnitsByName("black hole", "worm hole")
     if #bHoles > 0 then
         return bHoles
     end
@@ -259,18 +308,18 @@ function algalon:GetObstacles(includeHoles)
     local collapsingStars = AI.FindNearbyUnitsByName("collapsing star")
     local obstacles = {}
     for i, o in ipairs(asteroids) do
-        o.radius = 15
+        o.radius = 14
         table.insert(obstacles, o)
     end
     if includeHoles and holes then
         for i, o in ipairs(holes) do
-            o.radius = 8
+            o.radius = 9
             table.insert(obstacles, o)
         end
     end
     for i, o in ipairs(collapsingStars) do
         if not o.isDead and o.health <= 30000 then
-            o.radius = 10
+            o.radius = 9
             table.insert(obstacles, o)
         end
     end
@@ -334,6 +383,7 @@ end
 
 function algalon:SPELL_CAST_START(args)
     if strcontains(args.spellName, "big bang") then
+        AI.FocusUnit("algalon")
         self.bigBangTime = GetTime()
         -- print("algalon casting big bang")
         -- AI.ClearObjectAvoidance()
@@ -347,30 +397,40 @@ function algalon:SPELL_CAST_START(args)
         local holes = self:GetBlackHoles()
         self.cachedBlackHoles = holes
         if not AI.IsTank() then
-            if holes then
+            -- if AI.IsPriest() or AI.IsHealer() then
+            --     local spell = AI.IsHealer() and "power word: shield" or "riptide"
+            --     AI.MustCastSpell(spell, AI.GetPrimaryTank())
+            -- end
+            if AI.IsPriest() then
+                AI.StopCasting()
                 AI.RegisterPendingAction(function(self)
-                    if not AI.IsHealer() or not AI.IsCasting() then
+                    return AI.CastSpell("dispersion")
+                end, 5, "SHIELD_THEN_DISPERSION")
+            elseif holes then
+                -- if AI.IsHealer() then
+                --     AI.MustCastSpell("riptide", AI.GetDpsPositionName(1))
+                -- end
+                AI.RegisterPendingAction(function(self)
+                    if (not AI.IsHealer() or (not AI.IsCasting() or UnitHealth(AI.GetPrimaryTank()) > 40000)) then
                         local holes = self:GetBlackHoles()
                         local obstacles = self:GetObstacles(false)
                         if holes then
-                            local asteroids = AI.FindNearbyUnitsByName("stalker asteroid")
-                            if #asteroids == 0 and GetTime() > self.lastCosmicSmashTime + 5 then
-                                self.blackHoleToUse = holes[1]
+                            -- local asteroids = AI.FindNearbyUnitsByName("stalker asteroid")
+                            local bestHole = nil
+                            local bestDist = 100
+                            local tx, ty = AI.GetPosition(AI.GetPrimaryTank())
+                            for i, o in ipairs(holes) do
+                                local dist = AI.CalcDistance(o.x, o.y, tx, ty)
+                                if dist < bestDist then
+                                    bestDist = dist
+                                    bestHole = o
+                                end
+                            end
+                            if bestHole then
+                                self.blackHoleToUse = bestHole
                             else
-                                local bestHole = nil
-                                for i, o in ipairs(holes) do
-                                    if AI.CalcDistance(o.x, o.y, asteroids[1].x, asteroids[1].y) >= 15 and
-                                        AI.PathFinding.CanMoveSafelyTo(o, obstacles) then
-                                        bestHole = o
-                                        break
-                                    end
-                                end
-                                if bestHole then
-                                    self.blackHoleToUse = bestHole
-                                else
-                                    print('no best blackhole could be determined, using closest one')
-                                    self.blackHoleToUse = holes[1]
-                                end
+                                print('no best blackhole could be determined, using closest one ' .. holes[1].guid)
+                                self.blackHoleToUse = holes[1]
                             end
                             self.cachedBlackHoles = holes
                             AI.ResetMoveTo()
@@ -381,7 +441,6 @@ function algalon:SPELL_CAST_START(args)
                 end)
             end
         end
-
     end
 end
 

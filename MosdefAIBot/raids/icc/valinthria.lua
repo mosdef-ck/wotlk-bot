@@ -2,18 +2,25 @@ local valithria = MosDefBossModule:new({
     name = "Valithria Dreamwalker",
     creatureId = {36789, 37868},
     onStart = function(self)
-        AI.FindNearbyUnitsByName("valithria dreamwalker")[1]:Focus()
+        AI.FocusUnit("valithria dreamwalker")
         AI.Config.judgmentToUse = "judgement of light"
         AI.AUTO_CLEANSE = false
         if AI.IsHealer() then
             -- AI.Config.startHealOverrideThreshold = 60
             AI.doPost_Update = function()
                 -- have the healer start healing valinthria once we get twisted nightmare stacks
-                if AI.HasBuffOrDebuff("twisted nightmares") and AI.GetDistanceToUnit("focus") <= 40 and
-                    AI.GetUnitHealthPct("focus") < 100 and not AI.IsMoving() then
-                    local spell = AI.HasBuff("tidal waves") and "healing wave" or "chain heal"
-                    if AI.CastSpell(spell, "focus") then
-                        -- print("healing valithria")
+                if not self.nextCloud and AI.HasBuffOrDebuff("twisted nightmares") and AI.GetDistanceToUnit("focus") <
+                    40 then
+                    if AI.CastSpell("riptide", "focus") then
+                        print("riptiding valithria")
+                        return true
+                    end
+                    if AI.GetUnitHealthPct("focus") < 100 and not AI.IsMoving() then
+                        local spell = AI.HasBuff("tidal waves") and "healing wave" or "chain heal"
+                        if AI.CastSpell(spell, "focus") then
+                            print("healing valithria with " .. spell)
+                            return true
+                        end
                     end
                 end
             end
@@ -41,14 +48,34 @@ local valithria = MosDefBossModule:new({
         AI.ALLOW_AUTO_REFACE = true
     end,
     onUpdate = function(self)
+        if AI.Config.enableSpeedHacks and (not AI.IsHealer() and not AI.IsDpsPosition(self.dreamWalkerDpsPos)) or
+            GetTime() > self.lastPortalOpenTime + 5 then
+            if AI.GetRunSpeed() < AI.Config.targetSpeed then
+                AI.SetRunSpeed(AI.Config.targetSpeed)
+            end
+            if AI.GetFlySpeed() < 20 then
+                AI.SetFlySpeed(20)
+            end
+        end
+        if AI.IsHealer() and AI.GetUnitHealthPct("focus") >= 85 and AI.HasBuffOrDebuff("twisted nightmares") then
+            local spell = AI.HasBuff("tidal waves") and "healing wave" or "chain heal"
+            if AI.CastSpell(spell, "focus") then
+                -- print("speed healing valinthria to finish")
+            end
+            return true
+        end
         if AI.IsHealer() and self.nextCloud then
+            if AI.HasBuffOrDebuff("dream state") and AI.GetUnitHealthPct() <= 50 and not AI.HasBuff("riptide") then -- top up the healer while navigating clouds so we don't get caught with low hp if dream state expires while we're in the middle of the clouds
+                if AI.CastSpell("riptide", "player") then
+                    return true
+                end
+            end
             -- no dream state but we have a next cloud to go to, abort and return to field
-            if not AI.HasBuffOrDebuff("dream state") then
+            if not AI.HasBuffOrDebuff("dream state") and not AI.HasMoveTo() then
                 self.nextCloud = nil
                 self.cloudList = {}
                 print("dream state expired while in cloud, moving back to engage point")
-                local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 20, self:GetObstacles(), 1)
-                local tx, ty, tz = AI.GetPosition(AI.GetPrimaryTank())
+                local p = AI.PathFinding.FindSafeSpotInCircle("focus", 15, self:GetObstacles(), 1)
                 AI.SetMoveTo(p.x, p.y, 370.0)
                 AI.SendAddonMessage("move-back-to-engage")
                 return
@@ -78,7 +105,7 @@ local valithria = MosDefBossModule:new({
                 SetFollowTarget(self.nextCloud)
 
                 if self.timeWhenReachedCloud and GetTime() > self.timeWhenReachedCloud + 0.5 and AI.GetUnitHealthPct() >=
-                    50 then
+                    80 then
                     self:GoToNextCloud()
                     self.timeWhenReachedCloud = nil
                 end
@@ -86,12 +113,12 @@ local valithria = MosDefBossModule:new({
                 self:GoToNextCloud()
             end
         end
-        if strcontains(UnitName("player"), self.dreamWalkerDps) and AI.HasBuffOrDebuff("dream state") and
-            GetFollowTarget() ~= UnitGUID(AI.GetPrimaryHealer()) then
+        if AI.IsDpsPosition(self.dreamWalkerDpsPos) and AI.HasBuffOrDebuff("dream state") and GetFollowTarget() ~=
+            UnitGUID(AI.GetPrimaryHealer()) then
             SetFollowTarget(UnitGUID(AI.GetPrimaryHealer()))
         end
     end,
-    dreamWalkerDps = "Mosdeflocka",
+    dreamWalkerDpsPos = 2,
     cloudList = {},
     nextCloud = nil,
     startP = AI.PathFinding.Vector3.new(4235.9560546875, 2481.4431152344, 364.87030029297),
@@ -103,16 +130,16 @@ local valithria = MosDefBossModule:new({
     timeWhenReachedCloud = nil,
     lastPortalOpenTime = 0,
     companionAtPortal = false,
-    prePortalTime = 0,
+    prePortalTime = 0
 })
 
 function valithria:GetObstacles()
     local obstacles = AI.FindNearbyUnitsByName("column of frost", "mana void")
     for i, o in ipairs(obstacles) do
         if strcontains(o.name, "column of frost") then
-            o.radius = normalizeObstacleRadius(4)
+            o.radius = normalizeObstacleRadius(5)
         else
-            o.radius = normalizeObstacleRadius(6)
+            o.radius = normalizeObstacleRadius(7)
         end
     end
     return obstacles
@@ -128,13 +155,13 @@ function valithria:SPELL_AURA_APPLIED(args)
     --     print("i have dream state")
     -- end'
     -- We get frostbolt volley while in dream state(cleanse it asap)
-    if strcontains(args.spellName, "frostbolt volley") and (AI.IsHealer() or AI.IsPriest()) and
-        (UnitName("player") == args.target or args.target == UnitName(self.dreamWalkerDps)) then
-        print("frostbolt on dream wlker, cleansing")
-        AI.RegisterPendingAction(function(self)
-            return AI.CleanseFriendly("dispel magic", args.target, "magic")
-        end)
-    end
+    -- if strcontains(args.spellName, "frostbolt volley") and (AI.IsHealer() or AI.IsPriest()) and
+    --     (UnitName("player") == args.target or args.target == UnitName(self.dreamWalkerDps)) then
+    --     print("frostbolt on dream wlker, cleansing")
+    --     AI.RegisterPendingAction(function(self)
+    --         return AI.CleanseFriendly("dispel magic", args.target, "magic")
+    --     end)
+    -- end
 
     -- if (args.spellId == 71940 or args.spellId == 71941) and strcontains(args.target, UnitName("player")) and
     --     AI.IsHealer() then
@@ -193,24 +220,25 @@ function valithria:SPELL_AURA_REMOVED(args)
     --     self.nextCloud = nil
     -- end
 
-    if strcontains(args.spellName, "twisted nightmares") and AI.IsHealer() then
-        print("twisted nightmares removed")
-    end
+    -- if strcontains(args.spellName, "twisted nightmares") and AI.IsHealer() then
+    --     print("twisted nightmares removed")
+    -- end
 end
 
 function valithria:ON_ADDON_MESSAGE(from, cmd, args)
-    if cmd == "move-to-portal" and strcontains(UnitName("player"), self.dreamWalkerDps) then
+    if cmd == "move-to-portal" and AI.IsDpsPosition(self.dreamWalkerDpsPos) and AI.GetDebuffCount("twisted nightmares") <=
+        10 then
         print("moving to nightmare portal")
         local portal = AI.GetObjectInfoByGUID(args)
         if portal then
             AI.SetMoveTo(portal.x, portal.y)
         end
     end
-    if cmd == "move-back-to-engage" and strcontains(UnitName("player"), self.dreamWalkerDps) then
+    if cmd == "move-back-to-engage" and AI.IsDpsPosition(self.dreamWalkerDpsPos) then
         StopFollowing()
         local obstacles = self:GetObstacles()
         local tx, ty, tz = AI.GetPosition(AI.GetPrimaryTank())
-        local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 10, obstacles, 1)
+        local p = AI.PathFinding.FindSafeSpotInCircle("focus", 15, obstacles, 1)
         if p then
             AI.SetMoveTo(p.x, p.y, 370.0)
         end
@@ -222,38 +250,43 @@ end
 
 function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID, src, dest)
     -- portal pre-effect
-    if (spellId == 72480 or spellId == 72481 or spellId == 72482) and AI.IsHealer() and (AI.GetUnitHealthPct("focus") <=
-        90 or AI.GetDebuffDuration("twisted nightmares") <= 10) then
+    if (spellId == 72480 or spellId == 72481 or spellId == 72482) and AI.IsHealer() and
+        (AI.GetUnitHealthPct("focus") < 90) then
         self.nextCloud = nil
         self.cloudList = {}
         self.companionAtPortal = false
         -- print("portals are preparing")
-        AI.RegisterPendingAction(function(self)
-            local skeletons = AI.FindNearbyUnitsByName("suppresser")
-            -- only head to portals if there's no blazing skeles
-            -- if #skeletons == 0 or skeletons[1].isDead then
-            print("moving towards pre-portals")
-            local portals = AI.FindNearbyUnitsByName(38429)
-            if #portals >= 2 then
+        local timeToRealPortal = 15 -- takes 15s for pre-portals to turn to real portals
+        local portals = AI.FindNearbyUnitsByName(38429)
+        if #portals >= 2 then
+            local travelTimeToPortal = AI.GetRunTravelTimeTo(portals[1].x, portals[1].y, portals[1].z)
+            local delay = timeToRealPortal - travelTimeToPortal - 0.5
+            print("time till real portals open: " .. delay .. "s, travel time to portal: " .. travelTimeToPortal .. "s")
+            AI.RegisterOneShotAction(function(self)
+                -- local skeletons = AI.FindNearbyUnitsByName("suppresser")
+                -- only head to portals if there's no blazing skeles
+                -- if #skeletons == 0 or skeletons[1].isDead then
+                print("moving towards pre-portals")
                 AI.SetMoveTo(portals[1].x, portals[1].y)
-                -- local closestPortal = self:FindNextClosestPortal(portals[1], portals)
-                if #skeletons == 0 or skeletons[1].isDead then
-                    AI.SendAddonMessage("move-to-portal", portals[2].guid)
-                end
-                return true
-            end
-            -- end
-            self.prePortalTime = GetTime()
-        end, 10, "VALITHRIA_PRE_PORTAL_OPEN")
+                AI.SendAddonMessage("move-to-portal", portals[2].guid)
+                -- end                
+                self.prePortalTime = GetTime()
+            end, delay, "VALITHRIA_PRE_PORTAL_OPEN")
+        end
     end
 
     -- portals actually summoned
-    if spellId == 71987 and (AI.IsHealer() or UnitName("player") == self.dreamWalkerDps) and
-        AI.GetUnitHealthPct("focus") <= 90 then
+    if spellId == 71987 and (AI.IsHealer() or AI.IsDpsPosition(self.dreamWalkerDpsPos)) and AI.GetUnitHealthPct("focus") <=
+        90 then
         self.lastPortalOpenTime = GetTime()
         self.nextCloud = nil
         self.cloudList = {}
         self.companionAtPortal = false
+        if AI.IsDpsPosition(self.dreamWalkerDpsPos) and AI.GetDebuffCount("twisted nightmares") > 10 then
+            print("I have enough stacks of nightwares, ignoring portals")
+            return
+        end
+        AI.ResetHacks()
         AI.RegisterPendingAction(function(self)
             -- if AI.HasCTM() or (AI.IsHealer() and not self.companionAtPortal) then
             --     return false
@@ -267,21 +300,17 @@ function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID
                 print("no portals found")
                 return true
             end
-            if portals[1].distance <= 4.5 then
+            if portals[1].distance <= 5 then
+                -- print("using dream portal")
                 portals[1]:InteractWith()
-                -- if not AI.IsHealer() then
-                --     AI.SendAddonMessage("companion-at-portal")
-                -- end
             else
-                AI.SetMoveTo(portals[1].x, portals[1].y, portals[1].z, 4.5, function()
+                AI.SetMoveTo(portals[1].x, portals[1].y, portals[1].z, 5, function()
                     portals[1]:InteractWith()
-                    -- if not AI.IsHealer() then
-                    --     AI.SendAddonMessage("companion-at-portal")
-                    -- end
+                    -- print("using dream portal")
                 end)
             end
             return true
-        end, 0.1, "VALITHRIA_PORTALS_OPENED")
+        end, 0.5, "VALITHRIA_PORTALS_OPENED")
     end
 
     if spellId == 70766 and casterGUID == UnitGUID("player") then
@@ -291,12 +320,14 @@ function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID
         end
         local delay = AI.GetDebuffDuration("twisted nightmares") < 5 and 0.5 or 1
         AI.RegisterPendingAction(function(self)
-            -- to stop us from continually ascending
             AscendStop()
+            if AI.Config.enableSpeedHacks and AI.GetFlySpeed() < 20 then
+                AI.SetFlySpeed(20)
+            end
             -- jump to launch the toon to flight(makes it faster to start flying to nightmare orbs)        
-            if AI.IsHealer() and
-                (AI.GetUnitHealthPct(AI.GetPrimaryTank()) >= 30 or AI.GetDistanceToUnit(AI.GetPrimaryTank()) >= 35) then
-                local delay = AI.GetDebuffCount("twisted nightmares") > 20 and 5 or 0
+            if AI.IsHealer() -- and (AI.GetUnitHealthPct(AI.GetPrimaryTank()) >= 40 or AI.GetDistanceToUnit(AI.GetPrimaryTank()) >= 40) 
+            then
+                -- local delay = AI.GetDebuffCount("twisted nightmares") > 20 and 5 or 0
                 -- AI.RegisterPendingAction(function(self)
                 --     -- don't start moving  towards clouds until our fellow dps buddy is close enough to us
                 --     if AI.GetDistanceToUnit(self.dreamWalkerDps) <= 5 and
@@ -316,26 +347,53 @@ function valithria:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID
 
     if (spellId == 71179 or spellId == 70704) and not AI.IsTank() and not AI.HasBuffOrDebuff("dream state") then
         -- don't dodge if we waiting to use portal
-        if (AI.IsHealer() or strcontains(UnitName("player"), self.dreamWalkerDps)) and GetTime() < self.prePortalTime + 5 then
+        if (AI.IsHealer() or AI.IsDpsPosition(self.dreamWalkerDpsPos)) and GetTime() < self.prePortalTime + 5 then
             return
         end
         if AI.GetDistanceTo(dest.x, dest.y) <= 7 then
-            print("avoid this", spellId, spellName, casterGUID, targetGUID, table2str(src), table2str(dest))
+            -- print("avoid this", spellId, spellName, casterGUID, targetGUID, table2str(src), table2str(dest))
 
             AI.RegisterOneShotAction(function(self)
                 local obstacles = self:GetObstacles()
-                local p = AI.PathFinding.FindSafeSpotInCircle(self.engageP, 15, obstacles, 1)
+                local p = AI.PathFinding.FindSafeSpotInCircle(self.engageP, 20, obstacles, 1)
                 if p then
                     AI.SetMoveTo(p.x, p.y)
                 end
             end, 0.1, "VALITHRIA_AVOID_OBSTACLE")
         end
     end
+
+    if AI.IsHealer() and strcontains(spellName, "twisted nightmares") then
+        print("nightmares cast guid:", casterGUID)
+    end
+end
+
+function valithria:SPELL_DAMAGE(args)
+    if strcontains(args.spellName, "mana void") and not AI.HasDebuff("dream state") and args.target ==
+        UnitName("player") then
+        print("got hit by mana void, dodging")
+        local obstacles = self:GetObstacles()
+        local p = AI.PathFinding.FindSafeSpotInCircle(self.engageP, 20, obstacles, 1)
+        if p then
+            AI.SetMoveTo(p.x, p.y)
+        end
+    end
 end
 
 function valithria:MoveToClouds()
-    local clouds = self:GenerateCloudsToMoveTo()
-    self.cloudList = clouds
+    local cloudGuids = self:GenerateCloudsToMoveTo()
+    local clouds = {}
+    for i, guid in ipairs(cloudGuids) do
+        local cloud = AI.GetObjectInfoByGUID(guid)
+        if cloud then
+            table.insert(clouds, cloud)
+        end
+    end
+    local path = findShortestPath(AI.PathFinding.Vector3.new(AI.GetPosition()), clouds)
+    self.cloudList = {}
+    for i, cloud in ipairs(path) do
+        table.insert(self.cloudList, cloud.guid)
+    end
     self.nextCloud = nil
     self:GoToNextCloud()
 end
@@ -358,10 +416,10 @@ function valithria:GoToNextCloud()
         SetFollowTarget(self.nextCloud)
     else
         print("exhausted cloud list moving back to engage point")
-        local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 10, self:GetObstacles(), 1)
-        local tx, ty, tz = AI.GetPosition(AI.GetPrimaryTank())
+        local p = AI.PathFinding.FindSafeSpotInCircle("focus", 20, self:GetObstacles(), 1)
+        local tx, ty, tz = AI.GetPosition("focus")
         AI.SetMoveTo(p.x, p.y, 373.0, 0, function()
-            AI.MustCastSpell("healing stream totem", nil)            
+            AI.MustCastSpell("healing stream totem", nil)
         end)
         AI.SendAddonMessage("move-back-to-engage")
     end
@@ -373,14 +431,14 @@ function valithria:GenerateCloudsToMoveTo()
     local me = self
     table_removeif(clouds, function(c)
         -- return c.z < 380.0 or c.z > 388.0
-        return c:GetDistanceTo(me.portalP.x, me.portalP.y) > 40
+        return c:GetDistanceTo(me.portalP.x, me.portalP.y) > 50
     end)
     local cloudGuids = {}
     -- try to grab a max of 5 clouds per dream state
-    local maxCount = 5
-    -- if AI.GetDebuffCount("twisted nightmares") > 20 then
-    --     maxCount = 2
-    -- end
+    local maxCount = 7
+    if AI.GetDebuffCount("twisted nightmares") > 25 then
+        maxCount = 4
+    end
     if #clouds > 0 then
         local count = 0
         local nextCloud = clouds[1]
@@ -390,26 +448,10 @@ function valithria:GenerateCloudsToMoveTo()
             table_removeif(clouds, function(c)
                 return c == nextCloud
             end)
-            -- nextCloud = self:FindNextClosestCloudTo(nextCloud, clouds)
             nextCloud = #clouds > 0 and clouds[#clouds] or nil
         end
     end
     return cloudGuids
-end
-
-function valithria:FindNextClosestCloudTo(currentCloud, cloudList)
-    local closestCloud = nil
-    local closestDistance = math.huge
-    for i, cloud in ipairs(cloudList) do
-        if cloud ~= currentCloud then
-            local distance = AI.CalcDistance(currentCloud.x, currentCloud.y, cloud.x, cloud.y)
-            if distance <= closestDistance then
-                closestDistance = distance
-                closestCloud = cloud
-            end
-        end
-    end
-    return closestCloud
 end
 
 function valithria:FindNextClosestPortal(currentPortal, portalList)

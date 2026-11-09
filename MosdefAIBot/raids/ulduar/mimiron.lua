@@ -11,17 +11,41 @@ local mimiron = MosDefBossModule:new({
         AI.do_PriorityTarget = function()
             -- return AI.DoTargetChain("assault bot", "aerial command unit")
         end
-        AI.Config.startHealOverrideThreshold = 95
+        AI.Config.startHealOverrideThreshold = 90
+        if not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
+            AI.UseContainerItem("lesser flask of resistance")
+        end
+        AI.judgementToUse = nil
+
+        -- if not AI.IsTank() then
+        --     AI.SetFlySpeed(10)
+        --     AI.LevitateFor(1)
+        -- else
+        --     AI.SetRunSpeed(10)
+        -- end
     end,
     onStop = function(self)
         AI.ALLOW_AUTO_REFACE = true
         AI.do_PriorityTarget = oldPriorityTargetFn
         AI.Config.startHealOverrideThreshold = 100
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
+        -- if not AI.IsTank() then
+        --     if not AI.GetObjectInfo("player"):IsFlying() then
+        --         AI.LevitateFor(1)                
+        --     end
+        --     if AI.GetFlySpeed() < 10 then
+        --         AI.SetFlySpeed(10)
+        --     end
+        -- else
+        --     if AI.GetRunSpeed() < 10 then
+        --         AI.SetRunSpeed(10)
+        --     end
+        -- end
         if AI.IsDps() then
             local healer = AI.GetPrimaryHealer()
-            if healer and AI.GetDistanceToUnit(healer) > 2 then
+            if healer and not UnitIsDeadOrGhost(healer) and AI.GetDistanceToUnit(healer) > 2 then
                 -- print("too far from healer, moving towards")
                 local x, y = AI.GetPosition(healer)
                 if AI.IsCasting() then
@@ -56,22 +80,9 @@ local mimiron = MosDefBossModule:new({
             end
         end
 
-        if AI.IsMage() and not AI.HasMyBuff("fire ward") and AI.CastSpell("fire ward") then
-            return true
-        end
-
-        if AI.IsHealer() then
-            local rocket = AI.FindNearbyUnitsByName("rocket strike")
-            if #rocket > 0 and rocket[1].distance <= 3 and rocket[1]:HasAura("64064") and not AI.HasMoveTo() then
-                print('evading rocket')
-                local facing = AI.GetFacingForPosition(self.centerx, self.centery)
-                local theta = facing - rad90
-                local r = 7
-                local pX, pY = AI.GetPosition("player")
-                local nX, nY = pX + r * math.cos(theta), pY + r * math.sin(theta)
-                AI.SetMoveTo(nX, nY)
-            end
-        end        
+        -- if AI.IsMage() and not AI.HasMyBuff("fire ward") and AI.CastSpell("fire ward") then
+        --     return true
+        -- end        
         return false
     end,
     plasmaTarget = nil,
@@ -95,12 +106,8 @@ function mimiron:SPELL_CAST_START(args)
     if (args.spellName == "Shock Blast" or args.spellId == 63631) and AI.IsTank() then
         if not AI.HasMoveTo() then
             print("avoiding shock blast")
-            local facing = GetPlayerFacing() + math.pi
-            local r = 20
-            local x, y = r * math.cos(facing), math.sin(facing)
-            local cX, cY, cZ = AI.GetPosition()
-            local nX, nY = cX + x, cY + y
-            AI.SetMoveTo(nX, nY, cZ, 0.5, function()
+            local p = AI.PathFinding.FindSafeSpotOnBoundary("target", 20)            
+            AI.SetMoveTo(p.x, p.y, p.z, 0.5, function()
                 AI.SetFacingUnit("target")
             end)
         end
@@ -126,14 +133,19 @@ function mimiron:SPELL_CAST_SUCCESS(args)
             local pi2 = math.pi * 2
             local target = GetObjectInfo("target")
             if target.facing ~= nil then
-                local angleBehind = target.facing + math.pi
-                angleBehind = normalizeAngle(angleBehind)
-                local r = 2
+                local angleBehind = normalizeAngle(target.facing + math.pi)
+                local r = 3
                 local x, y = r * math.cos(angleBehind), r * math.sin(angleBehind)
                 local nX, nY = target.x + x, target.y + y
                 AI.SetMoveTo(nX, nY)
             end
         end
+    end
+end
+
+function mimiron:SMSG_SPELL_CAST_GO2(args)
+    if args.spellId == 64064 then
+        print("Rocket Strike is coming!")
     end
 end
 

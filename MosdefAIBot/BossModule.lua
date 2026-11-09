@@ -44,50 +44,50 @@ local bossTrainingDummyModule = MosDefBossModule:new({
 --- DUNGEON BOSSES
 local oldPriorityTargetFn = nil
 
-local heraldVolazjModule = MosDefBossModule:new({
-    name = "Herald Volazj",
-    creatureId = {29311},
-    onStart = function()
-        AI.do_PriorityTarget = function()
-            if not AI.IsValidOffensiveUnit() then
-                TargetNearestEnemy()
-            end
-        end
-        -- AI.toggleAutoDps(true)
-    end,
-    onStop = function()
-    end,
-    onUpdate = function()
-    end
-})
+-- local heraldVolazjModule = MosDefBossModule:new({
+--     name = "Herald Volazj",
+--     creatureId = {29311},
+--     onStart = function()
+--         AI.do_PriorityTarget = function()
+--             if not AI.IsValidOffensiveUnit() then
+--                 TargetNearestEnemy()
+--             end
+--         end
+--         -- AI.toggleAutoDps(true)
+--     end,
+--     onStop = function()
+--     end,
+--     onUpdate = function()
+--     end
+-- })
 
-AI.RegisterBossModule(heraldVolazjModule)
+-- AI.RegisterBossModule(heraldVolazjModule)
 
--- Ichoron
-local ichoron = MosDefBossModule:new({
-    name = "ichoron",
-    onStart = function()
-        AI.Print("Engaging ichoron")
-        oldPriorityTargetFn = AI.do_PriorityTarget
-        AI.do_PriorityTarget = function()
-            if not AI.IsTank() then
-                AI.DoTargetChain("Ichor Globule")
-                return AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 20
-            end
-            return false
-        end
-    end,
-    onStop = function()
-        if oldPriorityTargetFn ~= nil then
-            AI.do_PriorityTarget = oldPriorityTargetFn
-        end
-    end,
-    onUpdate = function()
-        return false
-    end
-})
+-- -- Ichoron
+-- local ichoron = MosDefBossModule:new({
+--     name = "ichoron",
+--     onStart = function()
+--         AI.Print("Engaging ichoron")
+--         oldPriorityTargetFn = AI.do_PriorityTarget
+--         AI.do_PriorityTarget = function()
+--             if not AI.IsTank() then
+--                 AI.DoTargetChain("Ichor Globule")
+--                 return AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") <= 20
+--             end
+--             return false
+--         end
+--     end,
+--     onStop = function()
+--         if oldPriorityTargetFn ~= nil then
+--             AI.do_PriorityTarget = oldPriorityTargetFn
+--         end
+--     end,
+--     onUpdate = function()
+--         return false
+--     end
+-- })
 
-AI.RegisterBossModule(ichoron)
+-- AI.RegisterBossModule(ichoron)
 
 -- Keristrasza
 local Keristrasza = MosDefBossModule:new({
@@ -237,23 +237,30 @@ local prophetTharon = MosDefBossModule:new({
         AI.FocusUnit("The Prophet Tharon'Ja")
     end,
     onUpdate = function(self)
-        if AI.HasDebuff("Gift of Tharon'ja") then
+        if AI.HasDebuff("Gift of Tharon'ja") or AI.HasDebuff(52509) then
             if not AI.IsValidOffensiveUnit() then
-                TargetUnit("the prophet")
+                TargetUnit("focus")
             end
-            if AI.IsTank() and not AI.IsTanking("player", "target") and AI.CastSpell("taunt", "target") then
+            if AI.IsTank() and not AI.IsTanking("player", "focus") and AI.CastSpell("taunt", "focus") then
                 return true
             end
-            if AI.IsTanking("player", "target") and not AI.HasAura("bone armor") and AI.CastSpell("bone armor") then
+            if AI.IsTanking("player", "focus") and not AI.HasAura("bone armor") and AI.CastSpell("bone armor") then
                 return true
             end
-            if AI.CastSpell("touch of life", "target") or AI.CastSpell("slaying strike") then
+            if AI.CastSpell("touch of life", "focus") or AI.CastSpell("slaying strike") then
                 return true
             end
         end
         return false
     end
 })
+
+function prophetTharon:SMSG_SPELL_CAST_GO2(args)
+    if strcontains(args.spellName, "gift of tharon'ja") and args.target == UnitName("player") then
+        print("i'm cursed w/ gift of tharon'ja")
+    end
+
+end
 
 AI.RegisterBossModule(prophetTharon)
 

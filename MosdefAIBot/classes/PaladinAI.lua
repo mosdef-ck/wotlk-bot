@@ -120,9 +120,9 @@ local function doOnUpdate_ProtPaladin()
         if not AI.HasBuff("righteous fury") and AI.CastSpell("righteous fury") then
             return
         end
-        if not AI.HasBuff("greater blessing of sanctuary") and AI.CastSpell('greater blessing of sanctuary', "player") then
-            return
-        end
+        -- if not AI.HasBuff("greater blessing of sanctuary") and AI.CastSpell('greater blessing of sanctuary', "player") then
+        --     return
+        -- end
     end
 
     -- if AI.IsInCombat() and AI.GetUnitHealthPct() <= panicPct then

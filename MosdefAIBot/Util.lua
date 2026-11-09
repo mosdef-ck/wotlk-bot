@@ -180,7 +180,7 @@ function MalowUtils_ShowNearbyObjects(distanceFilter, ...)
                     if o.name and not strcontains(o.name, "dark rune") and not strcontains(o.name, "invisible") then
                         s = s .. "t:" .. o.objectType .. " id:" .. o.objectEntry .. " n: " .. strpad(o.name, 20) ..
                                 " x:" .. o.x .. " y:" .. o.y .. " z:" .. o.z .. "\n"
-                                -- " targetGUID: ".. (o.targetGUID or "") .. "\n"
+                        -- " targetGUID: ".. (o.targetGUID or "") .. "\n"
                     end
                     if o.objectType == 6 then
                         s = s .. "spellName:" .. o.spellName .. " spellId " .. o.spellId .. " r " .. o.radius ..
@@ -346,7 +346,8 @@ function splitstr3(text, sep)
 end
 function splitstr4(text, sep)
     local nsep = sep or ","
-    local pattern = "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)"
+    local pattern = "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep .. "]+)," .. "([^" .. nsep ..
+                        "]+)"
     local v1, v2, v3, v4 = string.match(text, pattern)
     return v1, v2, v3, v4
 end
@@ -397,7 +398,56 @@ function normalizeObstacleRadius(radius)
     -- local boundingRadius = plrInfo.boundingRadius or 0.5
     local scale = 1.1
     if plrInfo.objectScale and plrInfo.objectScale > scale then
-        scale = plrInfo.objectScale    
+        scale = plrInfo.objectScale
     end
     return (radius * scale)
+end
+
+
+
+-- Helper: Euclidean distance between two positions {x, y, z}
+local function dist(p1, p2)
+    local dx = p1.x - p2.x
+    local dy = p1.y - p2.y
+    local dz = p1.z - p2.z
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+-- Nearest Neighbor heuristic: fast, simple, good approximation of the shortest path
+-- Returns a table of the objects in the order they should be visited (after the start)
+-- Time: O(n²) where n = #objects — works great even for hundreds of points
+function findShortestPath(start, objects)
+    if #objects == 0 then
+        return {}
+    end
+
+    -- Make a copy of the objects so we can remove them as we visit
+    local unvisited = {}
+    for i, obj in ipairs(objects) do
+        unvisited[i] = obj
+    end
+
+    local path = {}          -- will hold the visit order
+    local current = start
+
+    while #unvisited > 0 do
+        local minDist = math.huge
+        local nearestIdx = 1
+
+        -- Find the closest unvisited object
+        for i = 1, #unvisited do
+            local d = dist(current, unvisited[i])
+            if d < minDist then
+                minDist = d
+                nearestIdx = i
+            end
+        end
+
+        -- Visit it
+        local nextObj = table.remove(unvisited, nearestIdx)
+        table.insert(path, nextObj)
+        current = nextObj
+    end
+
+    return path
 end

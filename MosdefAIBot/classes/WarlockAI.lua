@@ -32,7 +32,7 @@ local SoCFn = coroutine.create(function()
 end)
 
 local function applyWeaponEnchant()
-    if AI.IsInCombat() or not AI.IsInDungeonOrRaid() then
+    if AI.IsInCombat() or not AI.IsInDungeonOrRaid() or AI.IsMoving() then
         return false
     end
 
@@ -134,7 +134,7 @@ local function doBuffs()
         if AI.GetBuffDuration("fel armor") < 60 and AI.CastSpell("fel armor") then
             return true
         end
-        if not AI.HasMyBuff("life tap") and not AI.HasBuff("teleport momentum") and AI.CastSpell("life tap(rank 1)") then
+        if not AI.Config.disableLifetapBuff and not AI.HasMyBuff("life tap") and not AI.HasBuff("teleport momentum") and AI.CastSpell("life tap(rank 1)") then
             return true
         end
     end
@@ -197,9 +197,9 @@ local function doUpdate_Warlock()
         local isDoom = strcontains(AI.Config.curseToUse, "curse of doom")
         local spell = (isDoom and UnitHealth("target") >= 1000000) and "curse of doom" or AI.Config.curseToUse
         if isDoom and UnitHealth("target") < 1000000 then
-            spell = "curse of agony"
+            spell = nil
         end
-        if AI.DoCastSpellChain("target", spell) then
+        if spell and AI.DoCastSpellChain("target", spell) then
             return
         end
     end

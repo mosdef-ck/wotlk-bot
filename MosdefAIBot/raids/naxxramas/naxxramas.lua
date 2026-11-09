@@ -7,6 +7,7 @@ local noth = MosDefBossModule:new({
     onStart = function(self)
         AI.FocusUnit("noth the")
         AI.AUTO_TAUNT = false
+        AI.AUTO_CLEANSE = true
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             -- return AI.DoTargetChain("plagued conqueror")
@@ -16,7 +17,7 @@ local noth = MosDefBossModule:new({
             --     local threat = AI.GetThreatPct("target")
             --     return threat > 90        
             -- end
-            if AI.IsDps() and GetTime() < self.lastBlinkTime + 5 then
+            if AI.IsDps() and GetTime() < self.lastBlinkTime + 7 then
                 return true
             end
             return false
@@ -60,6 +61,28 @@ function noth:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     if strcontains(s, "teleport") then
         AI.FocusUnit("noth the")
     end
+end
+
+function noth:SPELL_AURA_APPLIED(args)
+    -- if (args.spellName == "curse of the plaguebringer" or args.spellId == 54835) and AI.IsMage() then
+    --     AI.RegisterOneShotAction(function(self)
+    --         local teamMembers = AI.GetRaidOrPartyMemberUnits()
+    --         local affected = {}
+    --         for i, o in ipairs(teamMembers) do
+    --             if AI.HasDebuff("curse of the plaguebringer", o) or AI.HasDebuff(54835, o) then
+    --                 table.insert(affected, o)
+    --             end
+    --         end
+    --         print((#affected) .. " players affected by curse of the plaguebringer")
+    --         if #affected > 0 then
+    --             table.remove(affected, #affected)
+    --             for i, o in ipairs(affected) do
+    --                 print("Removing curse from " .. UnitName(o))
+    --                 AI.MustCastSpell("remove curse", o)
+    --             end
+    --         end
+    --     end, 1, "CLEANSE_ALL_BUT_ONE")
+    -- end
 end
 
 AI.RegisterBossModule(noth)
@@ -107,14 +130,8 @@ local anubRehkan = MosDefBossModule:new({
 function anubRehkan:SPELL_CAST_START(args)
     if strcontains(args.spellName:lower(), "locust swarm") then
         print("locust swarm coming")
-        if not AI.IsTank() then
+        if not AI.IsTank() and (not AI.IsHealer() or not AI.HasDebuff("healer shirt aura")) then
             AI.SetMoveTo(self.centerP.x, self.centerP.y)
-            AI.RegisterPendingAction(function(self)
-                AI.SetObjectAvoidance({
-                    guids = {UnitGUID("focus")},
-                    r = 35
-                })
-            end, 5)
         end
     end
 end
@@ -176,7 +193,7 @@ local grobbulusBossMod = MosDefBossModule:new({
         AI.FocusUnit("grobbulus")
         if AI.IsHealer() then
             AI.AUTO_CLEANSE = false
-        end
+        end        
         AI.Config.judgementToUse = nil
         if AI.IsWarlock() and not AI.HasBuff("demonic circle: summon") then
             AI.MustCastSpell("demonic circle: summon")
@@ -210,7 +227,7 @@ function grobbulusBossMod:SPELL_AURA_APPLIED(args)
             end
             AI.RegisterPendingAction(function(self)
                 local duration = AI.GetDebuffDuration("mutating injection")
-                local speed = 7
+                local speed = AI.GetRunSpeed()
                 if duration > dist / speed and not AI.IsHealer() then
                     return false
                 end
@@ -499,33 +516,51 @@ local gluth = MosDefBossModule:new({
     name = "Gluth",
     creatureId = {15932},
     kiteP = AI.PathFinding.Vector3.new(3256.8796386719, -3182.6652832031, 297.80291748047),
-    dpsP = AI.PathFinding.Vector3.new(3291.9213867188, -3127.4636230469, 297.55905151367),
+    -- dpsP = AI.PathFinding.Vector3.new(3302.2416992188, -3118.4150390625, 297.4822082519),
+    dpsP = AI.PathFinding.Vector3.new(3296.2082519531, -3125.3305664063, 303.55062866211),
     healerP = AI.PathFinding.Vector3.new(3323.5234375, -3099.8308105469, 297.75787353516),
-    tankP = AI.PathFinding.Vector3.new(3341.0397949219, -3105.1442871094, 297.77069091797),
+    healer2P = AI.PathFinding.Vector3.new(3296.0249023438, -3127.4533691406, 296.71640014648),
+    tankP = AI.PathFinding.Vector3.new(3332.5458984375, -3098.9260253906, 297.81625366211),
+    altP = AI.PathFinding.Vector3.new(3296.2082519531, -3125.3305664063, 303.55062866211),
     kiterPosition = 0,
     kiter = nil,
     decimateTime = 0,
     kiteDebuff = 200623,
     onStart = function(self)
         AI.FocusUnit("gluth")
+        AI.SetRunSpeed(10)
         -- print("moving to battle formations")
-        if AI.IsTank() then
-            AI.SetMoveToPosition(self.tankP.x, self.tankP.y)
+        if AI.IsTank() then            
+            AI.SetMoveToPosition(self.tankP.x, self.tankP.y, self.tankP.z, 0, function(self)
+                AI.toggleAutoDps(true)
+            end)
             AI.RegisterOneShotAction(function(self)
                 AI.MustCastSpell("hand of salvation", AI.GetPrimaryHealer())
             end, 5)
         elseif AI.IsHealer() then
-            AI.SetMoveToPosition(self.healerP.x, self.healerP.y)
+            if not AI.IsHeroicRaidOrDungeon() then
+                AI.SetMoveToPosition(self.healerP.x, self.healerP.y, self.healerP.z)
+            else
+                AI.SetMoveToPosition(self.dpsP.x, self.dpsP.y, self.dpsP.z, 0, function(self)
+                    AI.LevitateFor(2)
+                end)
+            end
         elseif AI.IsDps() and not AI.IsDpsPosition(self.kiterPosition) then
             AI.SetMoveToPosition(self.dpsP.x, self.dpsP.y, self.dpsP.z, 0, function(self)
-                AI.toggleAutoDps(true)
+                if AI.IsWarlock() and not AI.HasBuff("demonic circle: summon") then
+                    AI.MustCastSpell("demonic circle: summon")
+                end
+                AI.LevitateFor(1)
+                -- AI.toggleAutoDps(true)
             end)
         elseif AI.IsDpsPosition(self.kiterPosition) then
             if not AI.IsHeroicRaidOrDungeon() then
-                AI.SetMoveToPosition(self.kiteP.x, self.kiteP.y)
+                AI.SetMoveToPosition(self.kiteP.x, self.kiteP.y, self.kiteP.z, 0, function(self)
+                    AI.LevitateFor(1)
+                end)
             else
-                AI.SetMoveToPosition(self.dpsP.x, self.dpsP.y, self.dpsP.z, 0, function(self)
-                    AI.toggleAutoDps(true)
+                AI.SetMoveToPosition(self.altP.x, self.altP.y, self.altP.z, 0, function(self)
+                    AI.LevitateFor(1)
                 end)
             end
             AI.SendAddonMessage("i-am-kiter")
@@ -538,17 +573,19 @@ local gluth = MosDefBossModule:new({
             if AI.IsTank() then
                 TargetUnit("focus")
                 return true
-            elseif not AI.IsDpsPosition(self.kiterPosition) then
-                if GetTime() <= self.decimateTime + 10 then
-                    AssistUnit(self.kiter)
-                    if not AI.IsValidOffensiveUnit() or
-                        (UnitGUID("target") ~= UnitGUID("focus") and AI.GetUnitHealthPct("target") > 10) then
-                        TargetUnit("focus")
+            else
+                if AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "chow") and
+                    AI.GetUnitHealthPct("target") <= 10 then
+                    return true
+                end
+                local chows = AI.FindNearbyUnitsByName(16360)
+                for i, o in ipairs(chows) do
+                    if not o.isDead and (o.health / o.maxHealth) * 100 <= 10 then
+                        o:Target()
                         return true
                     end
-                else
-                    AssistUnit(AI.GetPrimaryTank())
                 end
+                AssistUnit(AI.GetPrimaryTank())
             end
             return true
         end
@@ -570,56 +607,64 @@ local gluth = MosDefBossModule:new({
         end
     end,
     onStop = function(self)
+        AI.StopLevitating()
+        AI.toggleAutoDps(false)
     end,
     onUpdate = function(self)
         if AI.IsTank() and AI.HasBuff("enrage", "focus") and AI.CastSpell("Hand of Reckoning", "focus") then
             return true
         end
-        if AI.IsDps() and AI.HasDebuff(self.kiteDebuff, "player") and self.kiter ~= UnitName("player") then
-            self.kiter = UnitName("player")
-            AI.SendAddonMessage("i-am-kiter")
-        end
-
+        -- if AI.IsDps() and AI.HasDebuff(self.kiteDebuff, "player") and self.kiter ~= UnitName("player") then
+        --     self.kiter = UnitName("player")
+        --     AI.SendAddonMessage("i-am-kiter")
+        -- end
     end
 })
 
 function gluth:SMSG_SPELL_CAST_GO2(args)
     if strcontains(args.spellName, "decimate") then
-        print("decimated")
-        self.decimateTime = GetTime()
+        AI.RegisterOneShotAction(function(self)
+            print("decimated")
+            self.decimateTime = GetTime()
+            if AI.HasMoveTo() then
+                AI.ResetMoveTo()
+            end
+            -- if AI.IsHealer() then
+            --     AI.MustCastSpell("earthbind totem")
+            -- end
+        end, 0.5, "DECIMATE_PROC")
     end
 
     if (args.spellId == self.kiteDebuff or strcontains(args.spellName, "smartest person in naxxramas")) then
         print("Kiter debuff applied to " .. args.target)
-        if args.targetGUID == UnitGUID("player") or args.casterGUID == UnitGUID("player") then
+        -- print(table2str(args))
+        if self.kiter == UnitName("player") and not strcontains(args.target, self.kiter) then
+            -- AI.StopLevitating()
+            AI.RegisterPendingAction(function()
+                if not AI.IsValidOffensiveUnit() or not UnitName("target") == "Zombie Chow" then
+                    AI.SetMoveToPosition(self.dpsP.x, self.dpsP.y, self.dpsP.z)
+                    print("i'm no longer kiter, moving dps pos")
+                    return true
+                end
+            end)
+
+        end
+        if args.target == UnitName("player") or args.targetGUID == UnitGUID("player") or args.casterGUID ==
+            UnitGUID("player") then
             self.kiter = UnitName("player")
             AI.SendAddonMessage("i-am-kiter")
-        end
-    end
-end
-
-function gluth:SPELL_AURA_APPLIED(args)
-    if args.spellId == self.kiteDebuff and args.targetGUID == UnitGUID("player") then
-        self.kiter = args.caster
-        AI.SendAddonMessage("i-am-kiter")
-    end
-end
-
-function gluth:SPELL_AURA_REMOVED(args)
-    if args.spellId == self.kiteDebuff then
-        self.kiter = nil
-        if args.targetGUID == UnitGUID("player") then
-            AI.SetMoveTo(self.dpsP.x, self.dpsP.y, self.dpsP.z, 0, function(self)
-                AI.toggleAutoDps(true)
-            end)
+            -- SetFollowTarget(UnitGUID(AI.GetPrimaryHealer()))
+            -- AI.LevitateFor(1)
         end
     end
 end
 
 function gluth:ON_ADDON_MESSAGE(from, cmd, params)
     if cmd == "i-am-kiter" then
-        print("Kiter is " .. from)
         self.kiter = from
+        -- if AI.IsPriest() and AI.IsUnitValidFriendlyTarget(from, "levitate") then
+        --     AI.MustCastSpell("levitate", from)
+        -- end
     end
 end
 
@@ -635,7 +680,7 @@ local heigan = MosDefBossModule:new({
         end
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
-        end
+        end        
     end,
     onStop = function()
         AI.ALLOW_AUTO_REFACE = true
@@ -668,14 +713,17 @@ AI.RegisterBossModule(heigan)
 local loatheb = MosDefBossModule:new({
     name = "Loatheb",
     creatureId = {16011},
-    onStart = function()
+    onStart = function(self)
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
-        end
+        end        
         -- AI.Config.startHealOverrideThreshold = 90
         oldPriorityTargetFn = AI.do_PriorityTarget
         AI.do_PriorityTarget = function()
             if not AI.IsTank() then
+                if AI.IsValidOffensiveUnit() and UnitName("target") == "Spore" then
+                    return true
+                end
                 return AI.DoTargetChain("plagued mushroom-men")
             end
         end
@@ -695,10 +743,10 @@ local loatheb = MosDefBossModule:new({
         end
         AI.Config.judgementToUse = nil
     end,
-    onStop = function()
-        AI.ALLOW_AUTO_REFACE = true
+    onStop = function(self)
+        AI.ALLOW_AUTO_REFACE = true        
     end,
-    onUpdate = function()
+    onUpdate = function(self)
         if AI.IsTank() then
             if AI.GetUnitHealthPct("player") < 50 then
                 AI.UseInventorySlot(13)
@@ -722,7 +770,7 @@ local loatheb = MosDefBossModule:new({
                     local tankPct = AI.GetUnitHealthPct(AI.GetPrimaryTank())
                     if neuroticDuration == 0 and AI.CastSpell("healing wave", AI.GetPrimaryTank()) then
                         return true
-                    end                    
+                    end
                 end
             end
         end
@@ -756,7 +804,7 @@ end
 
 function loatheb:SMSG_SPELL_CAST_START2(args)
     if strcontains(args.spellName, "acid explosion") then
-        print("acid explosion coming")
+        -- print("acid explosion coming")
     end
 end
 
@@ -767,7 +815,7 @@ local fourHorsemen = MosDefBossModule:new({
     name = "Baron Rivendare",
     creatureId = {16065, 16064, 30549, 16063},
     onStart = function(self)
-        AI.DISABLE_THREAT_MANAGEMENT = true
+        AI.DISABLE_THREAT_MANAGEMENT = true        
         if AI.IsTank() then
             AI.SetMoveTo(self.tankP.x, self.tankP.y)
         elseif AI.IsHealer() then
@@ -971,8 +1019,9 @@ local thaddius = MosDefBossModule:new({
     onStart = function(self)
     end,
     onStop = function(self)
+        AI.ResetHacks()
     end,
-    onUpdate = function(self)
+    onUpdate = function(self)        
         if not AI.IsTank() then
             local plr = AI.GetObjectInfo("player")
             if plr:HasAura("positive charge") and AI.GetDistanceTo(self.positiveP.x, self.positiveP.y) > 3 and
@@ -985,8 +1034,53 @@ local thaddius = MosDefBossModule:new({
         end
     end,
     positiveP = AI.PathFinding.Vector3.new(3538.6037597656, -2938.5766601563, 303.43368530273),
-    negativeP = AI.PathFinding.Vector3.new(3518.4663085938, -2954.6059570313, 303.35333251953)
+    negativeP = AI.PathFinding.Vector3.new(3518.4663085938, -2954.6059570313, 303.35333251953),
+    positiveChargeNpcId = 9000614,
+    negativeChargeNpcId = 9000615,
+    positiveChargeAura = 200624,
+    negativeChargeAura = 200620,
+    polarityShiftId = 200635
 })
+
+function thaddius:SMSG_SPELL_CAST_GO2(args)
+    -- if strcontains(args.caster, "thaddius") then
+    --     print(table2str(args))
+    -- end
+
+    if args.spellId == self.polarityShiftId and AI.IsDps() then
+        print("thaddius polarity shift")
+        AI.RegisterOneShotAction(function(self)
+            if AI.HasDebuff("positive lightning speed") or AI.HasDebuff(self.positiveChargeAura) or
+                AI.HasDebuff("negative lightning speed") or AI.HasDebuff(self.negativeChargeAura) then
+                AI.SayRaid("I am charged, going after charges")
+                local chargeNpcId =
+                    (AI.HasDebuff("positive lightning speed") or AI.HasDebuff(self.positiveChargeAura)) and
+                        self.positiveChargeNpcId or self.negativeChargeNpcId
+                local playerInfo = AI.GetObjectInfo("player")                
+                AI.SetFlySpeed(playerInfo.runSpeed)                
+                AI.LevitateFor(0.5, function(self)
+                    local charges = AI.FindNearbyUnitsByName(chargeNpcId)
+                    local combatReach = AI.GetObjectInfo("player").combatReach
+                    -- local x,y,z = AI.GetPosition("player")
+                    if #charges > 0 then
+                        local path = {}
+                        for i, o in ipairs(charges) do
+                            table.insert(path, AI.PathFinding.Vector3.new(o.x, o.y, o.z + combatReach))
+                        end
+                        if #path > 0 then
+                            print("navigating to charges")
+                            AI.SetMoveToPath(path, 0, function(self, oldWp, newWp, finished)
+                                if finished then
+                                    -- AI.StopLevitating()
+                                end
+                            end)
+                        end
+                    end
+                end)
+            end
+        end, 0.1, "CHECK_FOR_CHARGE_AURA")
+    end
+end
 
 AI.RegisterBossModule(thaddius)
 
@@ -1095,7 +1189,7 @@ local kelthuzad = MosDefBossModule:new({
                         end
                         print("CC'ing MC victim")
                         local result = AI.CastSpell(spell, mcUnit)
-                        self.mcCooldown = GetTime()                        
+                        self.mcCooldown = GetTime()
                         return result
                     end, delay, "CC_MC_UNIT")
                 end

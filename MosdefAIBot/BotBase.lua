@@ -60,6 +60,7 @@ local registeredPendingActions = {}
 local desiredPlayerFacing = nil
 local desiredVehicleAimAngle = nil
 local desiredFollowTarget = nil
+local desiredFollowTargetDistance = nil
 local focusedTarget = nil
 
 local lastPosCheckTime = 0
@@ -98,7 +99,7 @@ local function onUpdate()
     -- execute pending action before boss updates
     AI.IS_DOING_ONUPDATE = true
     for i, action in ipairs(registeredPendingActions) do
-        if now >= action.when and not action.executed and (action.f(bossMod) or action.oneshot) then
+        if now >= action.when and not action.executed and (action.f(bossMod) ~= false or action.oneshot) then
             action.executed = true
         end
     end
@@ -123,7 +124,8 @@ local function onUpdate()
     end
     AI.IS_DOING_ONUPDATE = false
     -- do auto-dps towards the end
-    if AI.AUTO_DPS and type(AI.doAutoDps) == "function" and (not AI.HasMoveTo() or AI.GetDistanceTo(AI.GetMoveToFinalDestination()) < 1) then
+    if AI.AUTO_DPS and type(AI.doAutoDps) == "function" and
+        (not AI.HasMoveTo() or AI.GetDistanceTo(AI.GetMoveToFinalDestination()) < 1) then
         if type(AI.PRE_DO_DPS) ~= "function" or not AI.PRE_DO_DPS(AI.AUTO_AOE) then
             AI.doAutoDps()
         end
@@ -302,6 +304,7 @@ SlashCmdList["AIBotCOMMAND"] = function(msg)
     end
 
     if MaloWUtils_StrStartsWith(msg, 'follow-me') then
+        print("follow me")
         AI.SendAddonMessage("follow-me")
         return true
     end
@@ -405,7 +408,7 @@ local function onAddOnChatMessage(from, message)
     elseif cmd == "shadow-fury" then
         if AI.IsWarlock() then
             AssistUnit(from)
-            print("got shadowfury request from "..from)
+            print("got shadowfury request from " .. from)
             AI.RegisterPendingAction(function()
                 if not AI.IsValidOffensiveUnit("target") then
                     return true
@@ -446,6 +449,7 @@ local function onAddOnChatMessage(from, message)
         -- RunMacroText("/use honeymint tea")
         -- RunMacroText("/use Mead Basted Caribou")
     elseif strcontains(cmd, "rdf-teleport") then
+        AI.ResetHacks()
         RunMacroText("/run LFGTeleport(IsInLFGDungeon())")
         -- if IsInLFGDungeon() then
         --     RunMacroText("/run LFGTeleport(IsInLFGDungeon())")
@@ -454,7 +458,7 @@ local function onAddOnChatMessage(from, message)
         --     RunMacroText("/click LFDDungeonReadyDialogEnterDungeonButton")
         -- end
     elseif cmd == "use-trinkets" then
-        if from ~= UnitName("player") and AI.IsDps() then
+        if AI.IsDps() then
             -- print("received use-trinkets from " .. from)
             AI.RegisterPendingAction(function()
                 return AI.UseInventorySlot(13)
@@ -520,6 +524,34 @@ local function onAddOnChatMessage(from, message)
                 door:SetGoState(1)
             end
         end
+    elseif cmd == "set-run-speed" then
+        print("setting runspeed to " .. params)
+        AI.SetRunSpeed(tonumber(params))
+    elseif cmd == "set-fly-speed" then
+        print("setting flyspeed to " .. params)
+        AI.SetFlySpeed(tonumber(params))
+    elseif cmd == "start-flying" then
+        print("starting to fly")
+        AI.LevitateFor(1)
+    elseif cmd == "reset-hax" then
+        local runSpeed = AI.GetRunSpeed()
+        if runSpeed > 7 then
+            AI.SetRunSpeed(7)
+        end
+        local flySpeed = AI.GetFlySpeed()
+        if flySpeed > 7 then
+            AI.SetFlySpeed(7)
+        end
+        AI.ResetHacks()
+        print("re-setting hax")
+    elseif cmd == "move-to-healer" then
+        if AI.IsDps() and AI.IsUnitValidFriendlyTarget(AI.GetPrimaryHealer()) then
+            print("moving to healer pos")
+            AI.SetMoveTo(AI.GetPosition(AI.GetPrimaryHealer()))
+        end
+    elseif cmd == "toggle-speed-hacks" then
+        AI.Config.enableSpeedHacks = not AI.Config.enableSpeedHacks
+        print("enableSpeedHacks set to " .. tostring(AI.Config.enableSpeedHacks))
     else
         local bossMod = findEnabledBossModule()
         if bossMod and type(bossMod.ON_ADDON_MESSAGE) == 'function' then
@@ -571,6 +603,17 @@ local function onEvent(self, event, ...)
         AI.ResetMoveToPosition()
         AI.Config.startHealOverrideThreshold = 100
         registeredPendingActions = {}
+        if UnitIsDeadOrGhost("player") then
+            local runSpeed = AI.GetRunSpeed()
+            if runSpeed > 7 then
+                AI.SetRunSpeed(7)
+            end
+            local flySpeed = AI.GetFlySpeed()
+            if flySpeed > 7 then
+                AI.SetFlySpeed(7)
+            end
+            AI.ResetHacks()
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         lastPlayerEnterWorld = GetTime()
         AI.ResetMoveToPosition()
@@ -673,7 +716,7 @@ local function onEvent(self, event, ...)
                 AI.ClearObjectAvoidance()
             end
             -- print("unit died/destroyed "..arg6.. " ".. arg7)
-            if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
+            if bossMod and type(bossMod[arg2]) == "function" then
                 bossMod[arg2](bossMod, unitName)
             end
             return
@@ -695,7 +738,7 @@ local function onEvent(self, event, ...)
                 arg3 = extraArg3 or "n/a"
             }
             -- print(arg2 .. " ".. MaloWUtils_ConvertTableToString(args))
-            if bossMod and bossMod[arg2] and type(bossMod[arg2]) == "function" then
+            if bossMod and type(bossMod[arg2]) == "function" then
                 bossMod[arg2](bossMod, args)
             end
             for i in pairs(registeredClassEventHandlers) do
@@ -708,7 +751,7 @@ local function onEvent(self, event, ...)
         end
     end
 
-    if bossMod and bossMod[event] and type(bossMod[event]) == "function" then
+    if bossMod and type(bossMod[event]) == "function" then
         -- print("invoking "..event .. " on boss mod ".. bossMod.name)
         bossMod[event](bossMod, ...)
     end
@@ -961,6 +1004,10 @@ function AI.ClearObjectAvoidanceTarget()
     end
 end
 
+function AI.GetMaxObservedSpeed()
+    return maxSpeedObserved
+end
+
 local objectAvoidancePathGenerator = coroutine.create(function()
     while true do
         if objectAvoidance then
@@ -1060,7 +1107,7 @@ local function doAutoMovementUpdate()
 
     local ctmX, ctmY, ctmZ = GetClickToMove();
     local dist = AI.GetDistanceTo(wp.x, wp.y)
-    local speed = AI.GetSpeed()
+    local speed = AI.GetObjectInfo("player").runSpeed
     if speed > 0 then
         maxSpeedObserved = speed
     end
@@ -1088,7 +1135,7 @@ local function doAutoMovementUpdate()
             if type(wp.onArrival) == "function" then
                 wp.onArrival(bossMod, nil, wp, true)
             else
-                if AI.IsDps() and UnitExists("target") then
+                if AI.IsDps() and AI.IsValidOffensiveUnit() then
                     AI.SetFacingUnit("target")
                 end
             end
@@ -1153,9 +1200,9 @@ function AI.doOnUpdate_BotBase()
 
     if desiredFollowTarget and desiredFollowTarget ~= UnitName("player") then
         local calcDist = AI.GetDistanceTo(AI.GetPosition(desiredFollowTarget))
-        local distToFollow = 3
+        local distToFollow = desiredFollowTargetDistance or 3
         if AI.IsInVehicle() then
-            distToFollow = 7
+            distToFollow = desiredFollowTargetDistance or 7
         end
         if calcDist >= distToFollow then
             SetFollowTarget(UnitGUID(desiredFollowTarget))
@@ -1300,13 +1347,13 @@ end
 function AI.MustCastSpell(spell, target)
     local tick = GetTime()
     local cd = GetSpellCooldown(spell)
-    if cd == nil or cd == 0 or (tick - cd) < 5 then
+    if cd == nil or cd == 0 or (tick - cd) <= 3 then
         AI.RegisterPendingAction(function()
             if AI.CanCastSpell(spell, target, true) then
                 AI.StopCasting()
             end
             return AI.CastSpell(spell, target)
-        end, nil, spell)
+        end, nil, spell .. (target or ""))
     end
 end
 
@@ -1326,27 +1373,28 @@ end
 function AI.DO_MOUNT(flyMount)
     if flyMount then
         if AI.IsPaladin() then
-            RunMacroText("/use snowy gryphon")
+            RunMacroText("/use blue wind rider")
         elseif AI.IsHealer() then
-            RunMacroText("/use tawny wind rider")
+            RunMacroText("/use blue wind rider")
         elseif AI.IsPriest() then
-            RunMacroText("/use snowy gryphon")
+            RunMacroText("/use blue wind rider")
         elseif AI.IsWarlock() then
-            RunMacroText("/use tawny wind rider")
-        elseif AI.IsMage() then
-            RunMacroText("/use tawny wind rider")
+            RunMacroText("/use blue wind rider")
+        elseif AI.IsMage() or AI.IsShaman()  then
+            RunMacroText("/use blue wind rider")
         end
     else
+        -- RunMacroText("/use armored brown bear")
         if AI.IsPaladin() then
-            RunMacroText("/use charger")
+            RunMacroText("/use summon charger")
         elseif AI.IsHealer() then
-            RunMacroText("/use great white kodo")
+            RunMacroText("/use brown kodo")
         elseif AI.IsPriest() then
-            RunMacroText("/use swift palomino")
+            RunMacroText("/use black skeletal horse")
         elseif AI.IsWarlock() then
             RunMacroText("/use dreadsteed")
-        elseif AI.IsMage() then
-            RunMacroText("/use swift blue raptor")
+        elseif AI.IsMage() or AI.IsShaman() then
+            RunMacroText("/use emerald raptor")
         end
     end
 end
@@ -1543,4 +1591,23 @@ RegisterCustomEventHandler("smsg_spell_cast_start", function(spellId, spellName,
         zone:SMSG_SPELL_CAST_START2(args)
     end
     -- print("smsg_spell_cast_start", spellId, spellName, casterGuid, targetGuid, table2str(src), table2str(dest))
+end)
+
+RegisterCustomEventHandler("csmg_on_rooted", function()
+    local bossMod = findEnabledBossModule()
+    if bossMod and bossMod["ON_ROOTED"] and type(bossMod["ON_ROOTED"]) == "function" then
+        bossMod["ON_ROOTED"](bossMod)
+    end
+end)
+RegisterCustomEventHandler("csmg_on_unrooted", function()
+    local bossMod = findEnabledBossModule()
+    if bossMod and bossMod["ON_UNROOTED"] and type(bossMod["ON_UNROOTED"]) == "function" then
+        bossMod["ON_UNROOTED"](bossMod)
+    end
+end)
+RegisterCustomEventHandler("csmg_on_knockback", function()
+    local bossMod = findEnabledBossModule()
+    if bossMod and bossMod["ON_KNOCKBACK"] and type(bossMod["ON_KNOCKBACK"]) == "function" then
+        bossMod["ON_KNOCKBACK"](bossMod)
+    end
 end)

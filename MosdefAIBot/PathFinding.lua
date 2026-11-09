@@ -101,9 +101,9 @@ function AI.PathFinding.MoveSafelyTo(target, obstacles, onArrive)
     end
     local dest = AI.PathFinding.Vector3.new(x, y, z)
     local dist = AI.GetDistanceTo(x, y)
-    local gridSize = 3.5
+    local gridSize = 3
     if dist <= 10 then
-        gridSize = 0.5
+        gridSize = 1
     end
     local mapId = GetCurrentMapID()
     local iterations = 300
@@ -114,6 +114,7 @@ function AI.PathFinding.MoveSafelyTo(target, obstacles, onArrive)
         -- print("successfully MoveSafelyTo  target")
         return true
     end
+    print("AI.PathFinding.MoveSafelyTo failed")
     return false
 end
 
@@ -164,7 +165,7 @@ function AI.PathFinding.FindSafeSpotInCircle(center, radius, obstacles, safeDist
     return pos
 end
 
-function AI.PathFinding.FindSafeSpotOnBoundary(center, radius, obstacles, safeDistance )
+function AI.PathFinding.FindSafeSpotOnBoundary(center, radius, obstacles, safeDistance)
     local mapId = GetCurrentMapID()
     if type(center) == "string" then
         local x, y, z = AI.GetPosition(center)
@@ -184,7 +185,8 @@ function AI.PathFinding.FindSafeSpotOnBoundary(center, radius, obstacles, safeDi
     return pos
 end
 
-function AI.PathFinding.FindSafeSpotWithinRadiusCorridor(center, startRadius, endRadius, obstacles, safeDistance, stepSize)
+function AI.PathFinding.FindSafeSpotWithinRadiusCorridor(center, startRadius, endRadius, obstacles, safeDistance,
+    stepSize)
     local mapId = GetCurrentMapID()
     if type(center) == "string" then
         local x, y, z = AI.GetPosition(center)
@@ -196,12 +198,14 @@ function AI.PathFinding.FindSafeSpotWithinRadiusCorridor(center, startRadius, en
             y = y,
             z = z
         }
-    elseif type(center) == "table" then
-        center = AI.PathFinding.Vector3.new(center.x, center.y, center.z)
     end
-    local pos = FindSafeSpotWithinRadiusCorridor(mapId, AI.PathFinding.Vector3.new(AI.GetPosition()),
-        center or AI.PathFinding.Vector3.new(AI.GetPosition()), startRadius, endRadius, stepSize or 1,
-        safeDistance or 0.0, obstacles or {})
+    local startp = AI.PathFinding.Vector3.new(AI.GetPosition())
+    stepSize = stepSize or 1
+    safeDistance = safeDistance or 0.0
+    obstacles = obstacles or {}
+    -- print("FindSafeSpotWithinRadiusCorridor args center: "..table2str(center).. " startp " .. table2str(startp) .. " startRadius: "..tostring(startRadius).. " endRadius: "..tostring(endRadius).. " safeDistance: "..tostring(safeDistance).. " stepSize: "..tostring(stepSize).. " obstacles: "..table2str(obstacles))
+    local pos = FindSafeSpotWithinRadiusCorridor(mapId, startp, center or startp, startRadius, endRadius, stepSize,
+        safeDistance, obstacles)
     return pos
 end
 
@@ -260,4 +264,103 @@ function AI.PathFinding.computeCentroid(polygon)
     x = x / size
     y = y / size
     return x, y
+end
+
+-- Calculates the coordinates the player must move to in order to intercept an orb,
+-- but ONLY if the orb is heading in the player's general direction.
+-- @param playerPos: Table {x=num, y=num, z=num}
+-- @param runSpeed: Player's movement speed (number)
+-- @param orbPos: Table {x=num, y=num, z=num}
+-- @param currentSpeed: Orb's movement speed (number)
+-- @param facing: Orb's direction of travel in radians (number)
+-- @param leadTime: How many seconds *ahead* of the orb the player should arrive (number, e.g., 0.75)
+-- @return Intercept coordinate table {x=num, y=num, z=num} or nil if impossible/heading away
+function AI.PathFinding.getInterceptPoint(playerPos, runSpeed, orbPos, currentSpeed, facing, leadTime, maxAngleDegrees)
+    -- 1. Calculate Orb Direction Vector (Already normalized since it's pure cos/sin)
+    local orbDirX = math.cos(facing)
+    local orbDirY = math.sin(facing)
+
+    maxAngleDegrees = maxAngleDegrees or 90
+
+    -- 2. Calculate Vector from Orb to Player
+    local toPlayerX = playerPos.x - orbPos.x
+    local toPlayerY = playerPos.y - orbPos.y
+
+    -- 3. Normalize the Orb-to-Player Vector
+    local distanceToPlayer = math.sqrt((toPlayerX * toPlayerX) + (toPlayerY * toPlayerY))
+
+    local minDistance = 2
+
+    -- Prevent division by zero if the player is standing exactly on the orb
+    if distanceToPlayer < minDistance then
+        return nil
+    end
+
+    local toPlayerNormX = toPlayerX / distanceToPlayer
+    local toPlayerNormY = toPlayerY / distanceToPlayer
+
+    -- 4. Calculate Normalized Dot Product (gives the cosine of the angle between vectors)
+    local cosAngle = (orbDirX * toPlayerNormX) + (orbDirY * toPlayerNormY)
+
+    -- 5. Configurable Cone Verification
+    -- Convert user's threshold angle to its cosine equivalent
+    local minCosThreshold = math.cos(math.rad(maxAngleDegrees))
+
+    -- If cosAngle is lower than the threshold, the angle deviation is too wide
+    if cosAngle < minCosThreshold then
+        return nil
+    end
+
+    -- 6. Calculate actual Orb Velocity Vector
+    local v_ox = currentSpeed * orbDirX
+    local v_oy = currentSpeed * orbDirY
+
+    -- 7. Apply Time Buffer (Shift the orb's starting position forward in time)
+    local shifted_xo = orbPos.x + (v_ox * leadTime)
+    local shifted_yo = orbPos.y + (v_oy * leadTime)
+
+    -- 8. Calculate Relative Distance Components for Interception Path
+    local dx = shifted_xo - playerPos.x
+    local dy = shifted_yo - playerPos.y
+
+    -- 9. Set up Quadratic Coefficients (At^2 + Bt + C = 0)
+    local A = (v_ox * v_ox) + (v_oy * v_oy) - (runSpeed * runSpeed)
+    local B = 2 * ((dx * v_ox) + (dy * v_oy))
+    local C = (dx * dx) + (dy * dy)
+
+    local t = nil
+
+    -- 10. Solve for Time (t)
+    if math.abs(A) < 0.0001 then
+        if math.abs(B) > 0.0001 then
+            t = -C / B
+        end
+    else
+        local discriminant = (B * B) - (4 * A * C)
+
+        if discriminant >= 0 then
+            local sqrt_disc = math.sqrt(discriminant)
+            local t1 = (-B - sqrt_disc) / (2 * A)
+            local t2 = (-B + sqrt_disc) / (2 * A)
+
+            if t1 > 0 and t2 > 0 then
+                t = math.min(t1, t2)
+            elseif t1 > 0 then
+                t = t1
+            elseif t2 > 0 then
+                t = t2
+            end
+        end
+    end
+
+    -- 11. Return the target coordinate table if interception is valid
+    if t and t >= 0 then
+        return {
+            x = shifted_xo + (v_ox * t),
+            y = shifted_yo + (v_oy * t),
+            z = playerPos.z
+        }
+    else
+        return nil
+    end
 end

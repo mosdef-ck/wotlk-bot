@@ -64,10 +64,10 @@ local function useHealthStone()
 end
 
 local function getProcTier()
-    if AI.HasBuff("bloodlust") or AI.HasBuff("flame of the heavens") or AI.HasBuff("dying curse") then
+    if AI.HasBuff("wild magic") or AI.HasBuff("flame of the heavens") or AI.HasBuff("dying curse") then
         return 1
     end
-    if AI.HasBuff("bloodlust") and (AI.HasBuff("flame of the heavens") and AI.HasBuff("dying curse")) then
+    if AI.HasBuff("wild magic") and (AI.HasBuff("flame of the heavens") and AI.HasBuff("dying curse")) then
         return 2
     end
     return 0
@@ -204,9 +204,9 @@ local function doAutoDps()
             return
         end
 
-        -- if AI.CanCastSpell("shadow word: death", "target", true) then
-        --     RunMacro("mindblast-swd")
-        -- end
+        if AI.Config.useSWD and AI.CanCastSpell("shadow word: death", "target", true) then
+            RunMacro("mindblast-swd")
+        end
 
         if AI.Config.useMindBlast and AI.DoCastSpellChain("target", "mind blast") then
             return
@@ -270,9 +270,9 @@ local function doDps(isAoE)
             return
         end
 
-        -- if AI.CanCastSpell("shadow word: death", "target", true) then
-        --     RunMacro("mindblast-swd")
-        -- end
+        if AI.Config.useSWD and AI.CanCastSpell("shadow word: death", "target", true) then
+            RunMacro("mindblast-swd")
+        end
 
         if AI.Config.useMindBlast and AI.DoCastSpellChain("target", "mind blast") then
             return

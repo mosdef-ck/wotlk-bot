@@ -30,7 +30,7 @@ AI.ObjectTypeFlag = {
 setfenv(1, AI.Config)
 -- the main tank to pay close attention to
 --tank = "mosdefptank"
-tank= {"yahiko", "modefptank"}
+tank= {"yahiko", "mosdefptank"}
 
 healers = { "mosdefrsham", "mosdefrdruid", "kakuzu" }
 
@@ -63,8 +63,8 @@ startHealOverrideThreshold = 100
 useHealingWaveOnToons = false
 
 
---focusMagicTarget = "mosdeflocka"
-focusMagicTarget = "nagato"
+focusMagicTarget = "mosdeflocka"
+-- focusMagicTarget = "nagato"
 -- focusMagicTarget = "mosdefswp"
 
 -- curseToUse = "curse of the elements"
@@ -73,5 +73,16 @@ curseToUse = "curse of doom"
 starFormationRadius = 15
 
 judgementToUse = "judgement of wisdom"
+-- judgementToUse = "judgement of light"
 
 useMindBlast = true
+
+useSWD = true
+
+enableSpeedHacks = true
+
+targetSpeed = 14
+
+enableSpellSteal = true
+
+disableLifetapBuff = true

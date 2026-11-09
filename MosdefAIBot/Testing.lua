@@ -314,3 +314,9 @@ function AI.TestBloodQueenPathing()
     local nextKiteIdx = 1
     AI.SetMoveToPath(flameKiteWp3)
 end
+
+function AI.TestFlyUp()
+    local x,y,z = AI.GetPosition("player")
+    --set fly
+    AI.SetMoveTo(x,y, z + 50)    
+end

@@ -33,9 +33,8 @@ local marrowGar = MosDefBossModule:new({
     name = "Marrowgar",
     creatureId = {36612},
     onStart = function(self)
-        TargetUnit("lord")
-        FocusUnit("target")
-        -- AI.Config.startHealOverrideThreshold = 95
+        AI.FocusUnit("marrowgar")        
+        AI.Config.startHealOverrideThreshold = 90
         AI.Config.starFormationRadius = 12
         AI.Config.manaTideThreshold = 20
         AI.DISABLE_DRAIN = true
@@ -47,8 +46,8 @@ local marrowGar = MosDefBossModule:new({
         AI.PRE_DO_DPS = function()
             RunMacroText("/petattack [@bone spike]")
             if AI.IsDps() and AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "bone spike") and
-                AI.GetDistanceToUnit("target") > 35 then
-                local p = AI.PathFinding.FindSafeSpotInCircle("target", 35, self:GetObstacles(), 1)
+                AI.GetDistanceToUnit("target") > 37 then
+                local p = AI.PathFinding.FindSafeSpotInCircle("target", 35, self:GetObstacles(), 3)
                 if p and not AI.HasMoveTo() then
                     AI.SetMoveTo(p.x, p.y)
                 end
@@ -79,11 +78,12 @@ local marrowGar = MosDefBossModule:new({
         if not AI.IsTank() and not AI.HasMoveTo() and (AI.IsDps() or not AI.IsCasting()) then
             local obstacles = self:GetObstacles()
             local playerP = AI.PathFinding.Vector3.new(AI.GetPosition())
-            if not self:IsSpotSafeFromColdFlame(playerP) then
+            local boss = AI.GetObjectInfo("focus")
+            if not self:IsSpotSafeFromColdFlame(playerP) and boss.currentSpeed <= 0 then
                 -- AI.PathFinding.MoveToSafeLocationWithinPolygon(self.polygon, obstacles, 0.5)
                 local delay = AI.HasBuff("bone storm", "focus") and AI.GetDistanceToUnit("focus") < 2 and 0.5 or 0
                 AI.RegisterOneShotAction(function(self)
-                    local p = AI.PathFinding.FindSafeSpotInCircle(self.tankP, self.tankR, obstacles, 1)
+                    local p = AI.PathFinding.FindSafeSpotInCircle(self.tankP, self.tankR, obstacles, 3)
                     if p and AI.GetDistanceTo(p.x, p.y) > 3 then
                         AI.SetMoveTo(p.x, p.y)
                     end
@@ -115,7 +115,7 @@ local marrowGar = MosDefBossModule:new({
     dps1P = AI.PathFinding.Vector3.new(-366.29782104492, 2199.7543945313, 41.614604949951),
     dps2P = AI.PathFinding.Vector3.new(-364.75579833984, 2225.65234375, 41.758007049561),
     dps3P = AI.PathFinding.Vector3.new(-349.06317138672, 2229.1171875, 42.534591674805),
-    centerP = AI.PathFinding.Vector3.new(-388.21759033203, 2212.9926757813, 41.993892669678),
+    centerP = AI.PathFinding.Vector3.new(-401.36999511719, 2211.1398925781, 41.993946075439),
     tankP = AI.PathFinding.Vector3.new(-362.99185180664, 2210.7692871094, 42.216464996338),
     tP = AI.PathFinding.Vector3.new(-340.50619506836, 2214.0368652344, 42.563850402832),
     tankR = 20,
@@ -172,10 +172,10 @@ function marrowGar:GetObstacles()
     for i, o in ipairs(coldFlame) do
         o.radius = normalizeObstacleRadius(6)
     end
-    local allies = AI.GetAlliesAsObstacles(3)
-    for i, o in ipairs(allies) do
-        table.insert(coldFlame, o)
-    end
+    -- local allies = AI.GetAlliesAsObstacles(3)
+    -- for i, o in ipairs(allies) do
+    --     table.insert(coldFlame, o)
+    -- end
     -- if not AI.HasBuff("bone storm", "focus") then
     local marrowGar = AI.GetObjectInfo("focus")
     marrowGar.radius = 5
@@ -196,6 +196,7 @@ end
 
 function marrowGar:SMSG_SPELL_CAST_GO(spellId, spellName, casterGuid, targetGuid, src, dest)
     if (strcontains(spellName, "bone spike") or strcontains(spellName, "impaled")) and AI.IsDps() then
+        print("bone spike!")
         AI.StopCasting()
         AI.DoTargetChain("bone spike", "marrowgar")
     end
@@ -212,8 +213,10 @@ local ladyDeath = MosDefBossModule:new({
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
         end
-        -- AI.Config.startHealOverrideThreshold = 95
+        -- AI.Config.startHealOverrideThreshold = 90
+        AI.Config.useHealingWaveOnToons = true
         AI.Config.starFormationRadius = 15
+        AI.DISABLE_THREAT_MANAGEMENT = true
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
             AI.UseContainerItem("lesser flask of resistance")
         end
@@ -410,6 +413,13 @@ function ladyDeath:IsSpotSafeFromDeathAndDecay(p)
     return true
 end
 
+function ladyDeath:CHAT_MSG_MONSTER_YELL(s, t)
+    if strcontains(s, "enough!") then
+        print("p2 started")
+        AI.DISABLE_THREAT_MANAGEMENT = false
+    end
+end
+
 AI.RegisterBossModule(ladyDeath)
 
 local rottingGiant = MosDefBossModule:new({
@@ -417,12 +427,37 @@ local rottingGiant = MosDefBossModule:new({
     creatureId = {38490},
     onStart = function(self)
         AI.Config.starFormationRadius = 12
+        AI.FocusUnit("rotting frost giant")
     end,
     onStop = function(self)
     end,
     onUpdate = function(self)
+        if AI.GetRunSpeed() < AI.Config.targetSpeed then
+            AI.SetRunSpeed(AI.Config.targetSpeed)
+        end
+        -- if not AI.IsTank() and AI.GetDistanceToUnit("focus") > 15 and not AI.HasMoveTo() then
+        --     local p = AI.PathFinding.FindSafeSpotInCircle("focus", 15, {}, 0)
+        --     if p then
+        --         AI.SetMoveTo(p.x, p.y)
+        --     end
+        -- end
     end
 })
+
+function rottingGiant:SMSG_SPELL_CAST_GO2(args)
+    -- if strcontains(args.spellName, "arctic breath") and AI.IsDps() then
+    --     print("breath now")
+    --     AI.DoStaggeredInterrupt()
+    -- end
+    if strcontains(args.spellName, "stomp") and not AI.IsTank() then
+        AI.RegisterOneShotAction(function(self)
+            local p = AI.PathFinding.FindSafeSpotInCircle("focus", 5, {}, 0)
+            if p then
+                AI.SetMoveTo(p.x, p.y)
+            end
+        end, 1, "DODGE_STOMP")
+    end
+end
 
 AI.RegisterBossModule(rottingGiant)
 
@@ -435,14 +470,26 @@ local gunship = MosDefBossModule:new({
             AI.ALLOW_AUTO_REFACE = false
         end
         AI.Config.starFormationRadius = 15
+        AI.Config.startHealOverrideThreshold = 95
+        local ships = AI.FindNearbyGameObjects(201580, 201812)
+        if #ships > 0 then
+            self.isSkyBreaker = ships[1].objectEntry == 201580
+            print("detected ship: " .. (self.isSkyBreaker and "skybreaker" or "ogrimm's hammer"))
+        end
+
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("flask of the frost wyrm") and not AI.IsTank() then
             AI.UseContainerItem("flask of the frost wyrm")
         end
         AI.do_PriorityTarget = function()
+            if AI.IsDps() and not AI.IsPossessing() and self.channelingSorcerer and UnitGUID("target") ==
+                self.channelingSorcerer then
+                return true
+            end
             if AI.IsDps() and not AI.IsPossessing() and self.channelingSorcerer and UnitGUID("target") ~=
                 self.channelingSorcerer then
                 local sorcerer = AI.GetObjectInfoByGUID(self.channelingSorcerer)
-                if sorcerer and not sorcerer.isDead and sorcerer.distance <= 35 then
+                if sorcerer and not sorcerer.isDead and sorcerer.distance <= 50 then
+                    print("targeting channeling sorcerer: " .. self.channelingSorcerer)
                     sorcerer:Target()
                     return true
                 end
@@ -451,8 +498,7 @@ local gunship = MosDefBossModule:new({
                 end
             end
             if AI.IsDps() and AI.IsPossessing() then
-                return AI.DoTargetChain("skybreaker sergeant", "skybreaker mortar soldier", "skybreaker rifleman",
-                    "skybreaker sorcerer")
+                return AI.DoTargetChain(self:GetGunnerTargets())
             end
         end
         AI.PRE_DO_DPS = function(isAoE)
@@ -468,14 +514,18 @@ local gunship = MosDefBossModule:new({
 
         if AI.IsTank() then
             AI.RegisterOneShotAction(function(self)
+                if not self then
+                    return
+                end
                 local guns = AI.FindNearbyUnitsByName("gunship cannon")
                 if #guns == 2 and guns[1].distance <= 50 then
-                    guns[1]:Target()
-                    SetRaidTarget("target", 1)
-                    guns[2]:Target()
-                    SetRaidTarget("target", 2)
-                    AI.SendAddonMessage("go-to-cannon", self.gunner1, guns[1].guid)
-                    AI.SendAddonMessage("go-to-cannon", self.gunner2, guns[2].guid)
+                    guns[1]:Focus()
+                    SetRaidTarget("focus", 1)
+                    guns[2]:Focus()
+                    SetRaidTarget("focus", 2)
+                    AI.SendAddonMessage("go-to-cannon", AI.GetDpsPositionName(self.gunner1Pos), guns[1].guid)
+                    AI.SendAddonMessage("go-to-cannon", AI.GetDpsPositionName(self.gunner2Pos), guns[2].guid)
+                    ClearFocus()
                 end
             end, 1)
 
@@ -486,15 +536,17 @@ local gunship = MosDefBossModule:new({
     end,
     onUpdate = function(self)
         local tick = GetTime()
+        if AI.Config.enableSpeedHacks and AI.GetRunSpeed() < AI.Config.targetSpeed then
+            AI.SetRunSpeed(AI.Config.targetSpeed)
+        end
         if self:IsGunnerCrew() then
             if AI.IsPossessing() then
-                local angle = ternary(strcontains(UnitName("player"), self.gunner1), self.gunner1Angle,
-                    self.gunner2Angle)
+                local angle = ternary(AI.IsDpsPosition(self.gunner1Pos), self.gunner1Angle, self.gunner2Angle)
                 AI.do_PriorityTarget()
                 VehicleAimRequestNormAngle(angle)
                 -- AI.SetFacingUnit("target")
                 if AI.IsValidOffensiveUnit() and
-                    ((UnitPower("playerpet") >= 90 and AI.CastVehicleSpellOnDestination("incinerating blast", "target")) or
+                    ((UnitPower("playerpet") >= 70 and AI.CastVehicleSpellOnDestination("incinerating blast", "target")) or
                         AI.CastVehicleSpellOnDestination("cannon blast", "target")) then
                     return true
                 end
@@ -505,7 +557,7 @@ local gunship = MosDefBossModule:new({
                 if cannon then
                     if AI.GetDistanceToUnit(cannon) > 5 and GetFollowTarget() ~= cannon.guid then
                         SetFollowTarget(cannon.guid)
-                    elseif AI.GetDistanceToUnit(cannon) <= 4 then
+                    elseif AI.GetDistanceToUnit(cannon) <= 5 then
                         AI.ResetMoveTo()
                         if AI.IsMoving() then
                             AI.StopMoving()
@@ -518,18 +570,20 @@ local gunship = MosDefBossModule:new({
         end
 
         if AI.IsTank() and self.cannonsFrozen then
-            local portal = AI.FindNearbyUnitsByName("aliance ship teleport")
+            local portal = AI.FindNearbyUnitsByName(self:GetInvadePortalName())
             if #portal > 0 and portal[1].distance <= 5 then
                 portal[1]:InteractWith()
                 AI.RegisterOneShotAction(function(self)
                     AI.SendAddonMessage("take-attack-portal")
-                    local sorcerers = AI.FindNearbyUnitsByName("skybreaker sorcerer")
+                    local sorcerers = AI.FindNearbyUnitsByName(self:GetMageToTarget())
                     for i, o in ipairs(sorcerers) do
-                        if not o.isDead and o.channelingSpellId == 69705 then
-                            o:Target()
+                        -- if not o.isDead and o.channelingSpellId == 69705 then
+                        if not o.isDead and o:IsChanneling() then
+                            o:Focus()
                             self.channelingSorcerer = o.guid
                             AI.SendAddonMessage("set-channeler-target", o.guid)
-                            SetRaidTarget("target", 8) -- Set a raid marker for the channeling sorcerer
+                            SetRaidTarget("focus", 8) -- Set a raid marker for the channeling sorcerer
+                            print("set channeling sorcerer target: " .. o.guid)
                         end
                     end
                 end, 1, "BOARD_GUNSHIP")
@@ -538,9 +592,10 @@ local gunship = MosDefBossModule:new({
 
         if not AI.IsTank() and not AI.IsPossessing() and not AI.HasMoveTo() and
             not self:IsSafeFromArtillery(AI.PathFinding.Vector3.new(AI.GetPosition())) then
-            local artillery = AI.FindNearbyDynamicObjects("artillery")
-            local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 25, artillery, 5)
+            local artillery = AI.FindNearbyDynamicObjects("Rocket Artillery")
+            local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 30, artillery, 5)
             if p then
+                AI.StopMoving()
                 print('dodging incoming artillery')
                 AI.SetMoveTo(p.x, p.y)
             end
@@ -555,6 +610,8 @@ local gunship = MosDefBossModule:new({
         end
     end,
     gunner1 = "Mosdefswp",
+    gunner1Pos = 1,
+    gunner2Pos = 3,
     gunner2 = "Mosdeffmage",
     cannonToUse = nil,
     gunner1Angle = 0.35966,
@@ -565,8 +622,41 @@ local gunship = MosDefBossModule:new({
     lastMoveTime = 0,
     cannonsFrozen = false,
     artillerySpeed = 16.5,
-    inflightArtillery = {}
+    inflightArtillery = {},
+    isSkyBreaker = false
 })
+
+function gunship:GetGunnerTargets()
+    if self.isSkyBreaker then
+        return "Kor'kron Sergeant", "Kor'kron Rocketeer", "Kor'kron Axethrower"
+    else
+        return "skybreaker sergeant", "skybreaker mortar soldier", "skybreaker rifleman"
+    end
+end
+
+function gunship:GetMageToTarget()
+    if self.isSkyBreaker then
+        return "Kor'kron Battle-Mage"
+    else
+        return "skybreaker sorcerer"
+    end
+end
+
+function gunship:GetReturnPortalName()
+    if self.isSkyBreaker then
+        return 22230, "aliance ship teleport"
+    else
+        return 22229, "horde ship teleport"
+    end
+end
+
+function gunship:GetInvadePortalName()
+    if self.isSkyBreaker then
+        return 22229, "horde ship teleport"
+    else
+        return 22230, "aliance ship teleport"
+    end
+end
 
 function gunship:ON_ADDON_MESSAGE(from, cmd, args)
     if cmd == "go-to-cannon" and self:IsGunnerCrew() then
@@ -574,7 +664,7 @@ function gunship:ON_ADDON_MESSAGE(from, cmd, args)
         local gunner, gun = splitstr2(args, ",")
         if strcontains(UnitName("player"), gunner) then
             local gunInfo = AI.GetObjectInfoByGUID(gun)
-            if gunInfo and gunInfo.distance <= 50 then
+            if gunInfo and gunInfo.distance <= 35 then
                 self.cannonToUse = gun
             end
         end
@@ -583,33 +673,35 @@ function gunship:ON_ADDON_MESSAGE(from, cmd, args)
         -- print("gunship:ON_ADDON_MESSAGE", cmd, args)
         local sorcerer = AI.GetObjectInfoByGUID(args)
         if sorcerer and not sorcerer.isDead then
+            print("setting channeling sorcerer target: " .. sorcerer.guid)
             self.channelingSorcerer = sorcerer.guid
         end
     end
 
     if cmd == "take-attack-portal" and not AI.IsTank() then
         -- print("gunship:ON_ADDON_MESSAGE", cmd, args)
-        local portal = AI.FindNearbyUnitsByName("aliance ship teleport")
+        local portal = AI.FindNearbyUnitsByName(self:GetInvadePortalName())
         if #portal > 0 then
             if portal[1].distance <= 5 then
+                AI.StopMoving()
                 portal[1]:InteractWith()
             else
                 local p = AI.PathFinding.FindSafeSpotInCircle(portal[1], 4)
                 AI.SetMoveTo(p.x, p.y, p.z, 0, function()
                     portal[1]:InteractWith()
+                    AI.StopMoving()
                 end)
-                print("moving to alliance ship teleport")
+                print("moving to invasion portal")
             end
         else
-            print('no alliance ship teleport found')
+            print('no invasion portal found')
         end
     end
 
     if cmd == "return-to-ship" and not AI.IsTank() then
         -- print("gunship:ON_ADDON_MESSAGE", cmd, args)
-
-        local portal = AI.FindNearbyUnitsByName("horde ship teleport")
-        if #portal > 0 then
+        local portal = AI.FindNearbyUnitsByName(self:GetReturnPortalName())
+        if #portal > 0 and portal[1].distance <= 30 then
             if portal[1].distance <= 5 then
                 portal[1]:InteractWith()
                 if self:IsGunnerCrew() then
@@ -617,9 +709,9 @@ function gunship:ON_ADDON_MESSAGE(from, cmd, args)
                         local guns = AI.FindNearbyUnitsByName("gunship cannon")
                         if #guns == 2 then
                             for i, gun in ipairs(guns) do
-                                if gun.raidTargetIndex == 1 and strcontains(UnitName("player"), self.gunner1) then
+                                if gun.raidTargetIndex == 1 and AI.IsDpsPosition(self.gunner1Pos) then
                                     self.cannonToUse = gun.guid
-                                elseif gun.raidTargetIndex == 2 and strcontains(UnitName("player"), self.gunner2) then
+                                elseif gun.raidTargetIndex == 2 and AI.IsDpsPosition(self.gunner2Pos) then
                                     self.cannonToUse = gun.guid
                                 end
                             end
@@ -635,9 +727,9 @@ function gunship:ON_ADDON_MESSAGE(from, cmd, args)
                             local guns = AI.FindNearbyUnitsByName("gunship cannon")
                             if #guns == 2 then
                                 for i, gun in ipairs(guns) do
-                                    if gun.raidTargetIndex == 1 and strcontains(UnitName("player"), self.gunner1) then
+                                    if gun.raidTargetIndex == 1 and AI.IsDpsPosition(self.gunner1Pos) then
                                         self.cannonToUse = gun.guid
-                                    elseif gun.raidTargetIndex == 2 and strcontains(UnitName("player"), self.gunner2) then
+                                    elseif gun.raidTargetIndex == 2 and AI.IsDpsPosition(self.gunner2Pos) then
                                         self.cannonToUse = gun.guid
                                     end
                                 end
@@ -647,7 +739,7 @@ function gunship:ON_ADDON_MESSAGE(from, cmd, args)
                 end)
             end
         else
-            print('no horde ship teleport found')
+            print('no return portal found')
         end
     end
 end
@@ -687,25 +779,26 @@ function gunship:CHAT_MSG_MONSTER_YELL(s, t)
             end)
         end
     end
+    if strcontains(s, "warn ya") or strcontains(s, "on to the lich") then
+        self.enabled = false
+        self:onStop()
+    end
 end
 
 function gunship:IsGunnerCrew()
     local plrName = UnitName("player")
-    return strcontains(plrName, self.gunner1) or strcontains(plrName, self.gunner2)
+    return AI.IsDpsPosition(self.gunner1Pos) or AI.IsDpsPosition(self.gunner2Pos)
 end
 
 function gunship:UNIT_DIED(unit)
-    if strcontains(unit, "skybreaker sorcerer") then
+    if strcontains(unit, self:GetMageToTarget()) then
+        self.channelingSorcerer = nil
         self.cannonsFrozen = false
-        -- print("Skybreaker Sorcerer dead, cannons unfrozen")
+        print("sorcer/mage killed, cannons unfrozen")
         if AI.IsTank() then
             AI.SendAddonMessage('return-to-ship')
         end
     end
-    -- if strcontains(unit, "skybreaker sergeant") then
-    --     if AI.IsTank() then
-    --     end
-    -- end
 end
 
 function gunship:SPELL_CAST_START(args)
@@ -714,21 +807,15 @@ function gunship:SPELL_CAST_START(args)
         -- print("skybreaker Sorcerer casting below zero, exiting")
         if self:IsGunnerCrew() and AI.IsPossessing() then
             VehicleExit()
+            AI.RegisterOneShotAction(function(self)
+                local x, y = AI.GetPosition(AI.GetPrimaryHealer())
+                AI.SetMoveTo(x, y)
+            end, 0.5)
         end
         if self.cannonToUse then
             self.cannonToUse = nil
         end
     end
-end
-
-function gunship:GetDangerousRiflemen()
-    local riflemen = AI.FindNearbyUnitsByName("skybreaker rifleman")
-    for i, rifleman in ipairs(riflemen) do
-        if not rifleman.isDead and (rifleman:HasAura("veteran") or rifleman:HasAura("elite")) then
-            return rifleman
-        end
-    end
-    return nil
 end
 
 AI.RegisterBossModule(gunship)
@@ -745,7 +832,7 @@ local deathbringer = MosDefBossModule:new({
         end
         AI.do_PriorityTarget = function()
             if AI.GetUnitHealthPct("focus") > 7 and UnitPower("focus") <= 70 then
-                return AI.DoTargetChain("blood beast")
+                -- return AI.DoTargetChain("blood beast")
             end
         end
         AI.PRE_DO_DPS = nil
@@ -771,6 +858,12 @@ local deathbringer = MosDefBossModule:new({
                 return true
             end, duration, "STUN_CHAIN")
         end
+
+        if AI.IsDps() and AI.GetUnitHealthPct("focus") <= 95 then
+            AI.UseInventorySlot(10)
+            AI.UseInventorySlot(13)
+            AI.UseInventorySlot(14)
+        end
     end
 })
 
@@ -780,7 +873,7 @@ function deathbringer:SPELL_AURA_APPLIED(args)
             AI.RegisterPendingAction(function(self)
                 if AI.HasDebuff("rune of blood", args.target) then
                     local spell = AI.IsHealer() and "cleanse spirit" or "cleanse"
-                    return AI.CleanseFriendly(spell, args.target)
+                    return AI.CleanseFriendly(spell, args.target, "disease")
                 end
                 return true
             end)
@@ -847,40 +940,38 @@ local rotface = MosDefBossModule:new({
                 local theta = AI.CalcFacing(self.centerP.x, self.centerP.y, hx, hy)
                 local r = 11
                 if AI.IsHealer() then
-                    AI.SetMoveTo(hx + r * math.cos(theta), hy + r * math.sin(theta))
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
                 end
                 if AI.IsDpsPosition(1) then
                     theta = theta + rad90 * 1
-                    AI.SetMoveTo(hx + r * math.cos(theta), hy + r * math.sin(theta))
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
                 end
                 if AI.IsDpsPosition(2) then
                     theta = theta + rad90 * 2
-                    AI.SetMoveTo(hx + r * math.cos(theta), hy + r * math.sin(theta))
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
                 end
                 if AI.IsDpsPosition(3) then
                     theta = theta + rad90 * 3
-                    AI.SetMoveTo(hx + r * math.cos(theta), hy + r * math.sin(theta))
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
                 end
-            end, 5)
+            end, 2)
         end
     end,
     onStop = function(self)
     end,
     onUpdate = function(self)
-        if (AI.IsHealer() or AI.IsPaladin()) and self.infectedPlr then
+        if AI.IsPaladin() and AI.IsUnitValidFriendlyTarget(self.infectedPlr) then
             local infectedPlr = AI.GetObjectInfo(self.infectedPlr)
             local littleOoze = AI.FindNearbyUnitsByName("little ooze")
             local bigOoze = AI.FindNearbyUnitsByName("big ooze")
             if #littleOoze > 0 then
-                local spell = AI.IsHealer() and "cleanse spirit" or "cleanse"
-                if AI.CastSpell(spell, infectedPlr) then
+                if AI.CleanseFriendly("cleanse", self.infectedPlr, "disease") then
                     print('little oozes r close -cleansing mutated infection from: ' .. self.infectedPlr)
                     return true
                 end
             end
-            if #bigOoze > 0 and AI.CalcDistance(bigOoze[1].x, bigOoze[1].y, infectedPlr.x, infectedPlr.y) <= 3 then
-                local spell = AI.IsHealer() and "cleanse spirit" or "cleanse"
-                if AI.CastSpell(spell, self.infectedPlr) then
+            if #bigOoze > 0 and AI.CalcDistance(bigOoze[1].x, bigOoze[1].y, infectedPlr.x, infectedPlr.y) <= 8 then
+                if AI.CleanseFriendly("cleanse", self.infectedPlr, "disease") then
                     print('close to Big-Ooze cleansing mutated infection from: ' .. self.infectedPlr)
                     return true
                 end
@@ -921,8 +1012,7 @@ local festergut = MosDefBossModule:new({
     name = "Festergut",
     creatureId = {36626},
     onStart = function(self)
-        TargetUnit("festergut")
-        FocusUnit("target")
+        AI.FocusUnit("festergut")
         AI.Config.starFormationRadius = 12
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("flask of the frost wyrm") and not AI.IsTank() then
             AI.UseContainerItem("flask of the frost wyrm")
@@ -935,19 +1025,42 @@ local festergut = MosDefBossModule:new({
         --         AI.MustCastSpell("hand of salvation", AI.GetPrimaryHealer())
         --     end, 1)
         -- end
+        if not AI.IsTank() then
+            AI.RegisterOneShotAction(function(self)
+                local hx, hy = AI.GetPosition(AI.GetPrimaryHealer())
+                local theta = AI.CalcFacing(self.centerP.x, self.centerP.y, hx, hy)
+                local r = 12
+                if AI.IsHealer() then
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
+                end
+                if AI.IsDpsPosition(1) then
+                    theta = theta + rad90 * 1
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
+                end
+                if AI.IsDpsPosition(2) then
+                    theta = theta + rad90 * 2
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
+                end
+                if AI.IsDpsPosition(3) then
+                    theta = theta + rad90 * 3
+                    AI.SetMoveTo(self.centerP.x + r * math.cos(theta), self.centerP.y + r * math.sin(theta))
+                end
+            end, 1)
+        end
     end,
     onStop = function(self)
+        ClearFocus()
     end,
     onUpdate = function(self)
-        if self.gasSporeTarget then
+        if self.gasSporeTarget and AI.GetUnitHealthPct("focus") > 10 then
             local duration = AI.GetDebuffDuration("gas spore", self.gasSporeTarget)
-            if AI.IsDps() and duration <= 4 and AI.GetDebuffCount("inoculated") < 2 and not AI.HasMoveTo() then
-                local tarToMoveTo =
-                    AI.GetDebuffCount("inoculated", AI.GetPrimaryHealer()) >= 2 and self.gasSporeTarget or
-                        AI.GetPrimaryHealer()
-                local p = AI.PathFinding.FindSafeSpotInCircle(tarToMoveTo, 3)
+            local tarToMoveTo = AI.GetDebuffCount("inoculated", AI.GetPrimaryHealer()) >= 2 and self.gasSporeTarget or
+                                    AI.GetPrimaryHealer()
+            local travelTime = AI.GetRunTravelTimeTo(AI.GetPosition(tarToMoveTo))
+            if AI.IsDps() and AI.GetDebuffCount("inoculated") < 2 and not AI.HasMoveTo() and duration <= travelTime then
+                local p = AI.PathFinding.FindSafeSpotInCircle(tarToMoveTo, 0)
                 if GetTime() <= self.gooImpactTime then
-                    self.gooImpactTarget.radius = 7
+                    self.gooImpactTarget.radius = 6
                     AI.PathFinding.MoveSafelyTo(p, {self.gooImpactTarget})
                 else
                     AI.SetMoveTo(p.x, p.y)
@@ -968,8 +1081,14 @@ local festergut = MosDefBossModule:new({
                 end
             end
         end
+
+        if AI.GetUnitHealthPct("focus") <= 90 then
+            AI.UseInventorySlot(10)
+            AI.UseInventorySlot(13)
+            AI.UseInventorySlot(14)
+        end
     end,
-    centerP = AI.PathFinding.Vector3.new(4268.5571289063, 3137.4516601563, 360.38549804688),
+    centerP = AI.PathFinding.Vector3.new(4267.919921875, 3137.2600097656, 360.3864440918),
     gasSporeTarget = nil,
     gooImpactTime = 0,
     gooImpactTarget = nil
@@ -979,15 +1098,18 @@ function festergut:SPELL_AURA_APPLIED(args)
     if strcontains(args.spellName, "gas spore") then
         self.gasSporeTarget = args.target
     end
+    if strcontains(args.spellName, "vile gas") and UnitName("player") == args.target and AI.Config.enableSpeedHacks then
+        AI.ResetHacks()
+    end
 end
 function festergut:SPELL_AURA_REMOVED(args)
     if strcontains(args.spellName, "gas spore") then
         self.gasSporeTarget = nil
-        if AI.IsDps() then
+        if AI.IsDps() and AI.HasDebuff("blighted spores") then
             AI.RegisterPendingAction(function(self)
                 local hX, hY = AI.GetPosition(AI.GetPrimaryHealer())
                 local theta = AI.CalcFacing(self.centerP.x, self.centerP.y, hX, hY)
-                local r = 13
+                local r = 12
                 local x, y
                 if AI.IsDpsPosition(1) then
                     theta = theta + rad90 * 1
@@ -1012,7 +1134,7 @@ function festergut:SPELL_AURA_REMOVED(args)
                 end
             end)
         end
-    end
+    end    
 end
 
 function festergut:SMSG_SPELL_CAST_GO(spellId, spellName, casterGUID, targetGUID, src, dest)
@@ -1036,6 +1158,7 @@ local frostWingHalls = MosdefZoneModule:new({
         if AI.IsTank() then
             local sister = AI.FindNearbyUnitsByName("Sister Svalna")
             if #sister > 0 and not sister[1].isDead and sister[1].distance <= 200 then
+                sister[1]:Focus()
                 -- print("Sister Svalna found, loading module")
                 AI.SendAddonMessage("load-boss-module", sister[1].objectEntry)
             end
@@ -1072,16 +1195,16 @@ function sisterSvalna:SPELL_AURA_APPLIED(args)
     if strcontains(args.spellName, "impaling spear") then
         self.impaledTarget = args.target
         if AI.IsTank() then
-            local dps = {"Mosdefswp", "Mosdeffmage", "Mosdeflocka"}
+            local dps = {AI.GetDpsPositionName(1), AI.GetDpsPositionName(2), AI.GetDpsPositionName(3)}
             for i = #dps, 1, -1 do
-                if AI.HasDebuff("impaling spear", dps[i]) then
+                if AI.HasDebuff("impaling spear", dps[i]) or not AI.IsUnitValidFriendlyTarget(dps[i]) then
                     table.remove(dps, i)
                 end
             end
             local rand = math.random(1, #dps)
             local selected = dps[rand]
             AI.SendAddonMessage("free-impaled-target", selected)
-            -- print(selected .. " is selected to free impaled target: " .. self.impaledTarget)
+            print(selected .. " is selected to free impaled target: " .. self.impaledTarget)
         end
     end
     if strcontains(args.spellName, "aether shield") then
@@ -1128,10 +1251,10 @@ local sindragosa = MosDefBossModule:new({
     name = "Sindragosa",
     creatureId = {36853},
     onStart = function(self)
-        TargetUnit("sindragosa")
-        FocusUnit("target")
+        AI.FocusUnit("sindragosa")
 
         AI.Config.judgementToUse = "judgement of light"
+        AI.Config.startHealOverrideThreshold = 90
 
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
             AI.UseContainerItem("lesser flask of resistance")
@@ -1140,17 +1263,20 @@ local sindragosa = MosDefBossModule:new({
         -- AI.DISABLE_PET_AA = true
 
         AI.PRE_DO_DPS = function(isAoE)
-            local maxCount = not self.p2 and 7 or 3
+            local maxCount = not self.p2 and 5 or 3
+            if strcontains(UnitName("target"), "ice tomb") then
+                maxCount = 10
+            end
             if AI.IsDps() and AI.GetDebuffCount("instability") >= maxCount then
                 return true
             end
             if AI.IsDps() and AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "ice tomb") then
                 if AI.IsPriest() then
-                    AI.DoCastSpellChain("target", "mind blast", "mind flay")
+                    AI.DoCastSpellChain("target", "mind blast", "devouring plague", "mind flay")
                     return true
                 end
                 if AI.IsWarlock() then
-                    AI.DoCastSpellChain("target", "chaos bolt", "immolate", "conflagrate", "incinerate")
+                    AI.DoCastSpellChain("target", "immolate", "conflagrate", "chaos bolt", "incinerate")
                     return true
                 end
             end
@@ -1163,16 +1289,6 @@ local sindragosa = MosDefBossModule:new({
         end
         AI.DISABLE_DRAIN = true
 
-        if AI.IsHealer() then
-            AI.doPost_Update = function()
-                if AI.GetDistanceTo(self.p2DodgeSpot.x, self.p2DodgeSpot.y) <= 2 and AI.CanCast() and self.tombedPlayer then
-                    local healTar, missingHp, secondTar = AI.GetMostDamagedFriendly("chain heal")
-                    local finalTar = UnitName(healTar) ~= UnitName(AI.GetPrimaryTank()) and healTar or secondTar
-                    AI.CastSpell("chain heal", finalTar)
-                end
-            end
-        end
-
         AI.do_PriorityTarget = function()
             return strcontains(UnitName("target"), "ice tomb")
         end
@@ -1180,8 +1296,11 @@ local sindragosa = MosDefBossModule:new({
     onStop = function(self)
     end,
     onUpdate = function(self)
+        if AI.Config.enableSpeedHacks and AI.GetRunSpeed() < AI.Config.targetSpeed then
+            AI.SetRunSpeed(AI.Config.targetSpeed)
+        end
         if self.p2 then
-            if #AI.FindNearbyUnitsByName("ice tomb") > 0 then
+            if (#AI.FindNearbyUnitsByName("ice tomb")) > 0 then
                 RunMacroText("/petattack [@ice tomb]")
             else
                 RunMacroText("/petattack [target=target]")
@@ -1201,24 +1320,39 @@ local sindragosa = MosDefBossModule:new({
                 AI.SetMoveTo(self.frostBeaconSpot2.x, self.frostBeaconSpot2.y)
             end
         end
+        if AI.IsHealer() and self.p2 and AI.GetDistanceTo(self.p2DodgeSpot.x, self.p2DodgeSpot.y) <= 2 and
+            self.tombedPlayer then
+            local healTar, missingHp, secondTar, missingHp, thirdTar = AI.GetMostDamagedFriendly("healing wave")
+            local targets = {healTar, secondTar, thirdTar}
+            for i, tar in ipairs(targets) do
+                if tar and UnitName(tar) ~= self.tombedPlayer and UnitName(tar) ~= UnitName(AI.GetPrimaryTank()) then
+                    healTar = tar
+                    break
+                end
+            end
+            local spell = AI.HasBuff("tidal waves") and "healing wave" or "chain heal"
+            -- print("healing ", healTar, " while behind tomb")
+            return AI.CastSpell(spell, healTar or "player")
+        end
     end,
     p2 = false,
     bombsLeft = 4,
-    frostBeaconSpot1 = AI.PathFinding.Vector3.new(4360.185546875, 2490.3149414063, 203.38278198242),
-    frostBeaconSpot2 = AI.PathFinding.Vector3.new(4360.5068359375, 2478.8703613281, 203.38368225098),
+    frostBeaconSpot1 = AI.PathFinding.Vector3.new(4362.6826171875, 2491.138671875, 203.38369750977),
+    frostBeaconSpot2 = AI.PathFinding.Vector3.new(4362.681640625, 2478.4370117188, 203.38265991211),
     airphaseStairs = AI.PathFinding.Vector3.new(4348.1020507813, 2484.1149902344, 205.68493652344),
-    p2TombSpot = AI.PathFinding.Vector3.new(4372.0361328125, 2471.6411132813, 203.38279724121),
-    p2DodgeSpot = AI.PathFinding.Vector3.new(4366.5654296875, 2468.8442382813, 203.38331604004),
+    p2TombSpot = AI.PathFinding.Vector3.new(4371.07421875, 2468.5043945313, 203.3833770752),
+    p2DodgeSpot = AI.PathFinding.Vector3.new(4366.3227539063, 2467.5615234375, 203.38438415527),
     p2BattleSpot = AI.PathFinding.Vector3.new(4368.4213867188, 2484.0700683594, 203.38238525391),
     p2UnchainedMagicSpot = AI.PathFinding.Vector3.new(4366.7416992188, 2506.2348632813, 203.38284301758),
     beaconCount = 0,
     myBeaconSpot = nil,
-    tombedPlayer = nil
+    tombedPlayer = nil,
+    nextMysticBuffetTime = nil
 })
 
 function sindragosa:CHAT_MSG_MONSTER_YELL(s, t)
     if strcontains(s, "incursion") then
-        SetMinDistToStartFollow(0.5)
+        SetMinDistToStartFollow(0.1)
         -- print('air phase incoming')
         self.bombsLeft = 4
         self.beaconCount = 0
@@ -1227,7 +1361,7 @@ function sindragosa:CHAT_MSG_MONSTER_YELL(s, t)
         AI.toggleAutoDps(false)
     end
     if strcontains(s, "limitless") then
-        print('phase 2 incoming')
+        -- print('phase 2 incoming')
         self.p2 = true
         if not AI.IsTank() then
             AI.SetMoveTo(self.p2BattleSpot.x, self.p2BattleSpot.y)
@@ -1242,7 +1376,7 @@ function sindragosa:SMSG_SPELL_CAST_GO(spellId, spellName, casterGuid, targetGui
     if spellId == 70117 or strcontains(spellName, "icy grip") then -- icy grip, right before blistering cold
         AI.RegisterOneShotAction(function(self)
             local dragon = AI.GetObjectInfo("focus")
-            dragon.radius = normalizeObstacleRadius(25)
+            dragon.radius = normalizeObstacleRadius(27)
             local p = AI.PathFinding.FindSafeSpotInCircle(dragon, 35, {dragon}, 1)
             AI.SetMoveTo(p.x, p.y)
             print('dodging blistering cold')
@@ -1262,6 +1396,10 @@ function sindragosa:SMSG_SPELL_CAST_GO(spellId, spellName, casterGuid, targetGui
     --         print("ice tomb applied on: " .. target.name)
     --     end        
     -- end
+    if strcontains(spellName, "mystic buffet") then
+        print("mystic buffet applied on: " .. AI.GetObjectInfoByGUID(targetGuid).name, "spellId:", spellId)
+        self.nextMysticBuffetTime = GetTime() + 6
+    end
 end
 
 function sindragosa:SPELL_AURA_APPLIED(args)
@@ -1292,51 +1430,62 @@ function sindragosa:SPELL_AURA_APPLIED(args)
         if AI.IsPriest() or AI.IsHealer() then
             AI.RegisterPendingAction(function(self)
                 if AI.IsPriest() then
-                    if not AI.HasDebuff("weaked soul", args.target) and
-                        AI.CanCastSpell("power word: shield", args.target, true) then
-                        if AI.IsCasting() then
-                            AI.StopCasting()
-                        end
-                        return AI.CastSpell("power word: shield", args.target)
-                    end
+                    AI.MustCastSpell("power word: shield", args.target)
                 end
-                if AI.IsHealer() and AI.CanCastSpell("riptide", args.target, true) then
-                    if AI.IsCasting() then
-                        AI.StopCasting()
-                    end
-                    return AI.CastSpell("riptide", args.target)
+                if AI.IsHealer() then
+                    AI.MustCastSpell("riptide", args.target)
                 end
-            end, 5, "PROTECT_TOMBED_PLAYER")
+            end, 6, "PROTECT_TOMBED_PLAYER")
         end
     end
     if strcontains(args.spellName, "ice tomb") and self.p2 then
-        print("ice tomb applied to: " .. args.target)
+        -- print("ice tomb applied to: " .. args.target)
         self.tombedPlayer = args.target
         if not AI.IsTank() and UnitName("player") ~= args.target then
-            if AI.IsWarlock() then
-                AI.FindNearbyUnitsByName("ice tomb")[1]:Focus()
-                AI.MustCastSpell("curse of agony", "focus")
+            if AI.IsWarlock() or AI.IsPriest() then
+                AI.RegisterOneShotAction(function(self)
+                    AI.FocusUnit("ice tomb")
+                    local spell = AI.IsWarlock() and "corruption" or "devouring plague"
+                    AI.MustCastSpell(spell, "focus")
+                end, 0.5)
             end
             AI.RegisterPendingAction(function(self)
                 local count = AI.GetDebuffCount("mystic buffet")
-                local duration = AI.GetDebuffDuration("mystic buffet")
-                if (not AI.IsHealer() or count >= 5) and duration <= 4 and self.tombedPlayer then
+                local duration = math.max(0, AI.GetDebuffDuration("mystic buffet") - 2) -- its reapplied every 6s(duration is 8)
+                local nextBuffetTime = self.nextMysticBuffetTime and self.nextMysticBuffetTime or 0
+                local travelTime = AI.GetRunTravelTimeTo(self.p2DodgeSpot.x, self.p2DodgeSpot.y, self.p2DodgeSpot.z)
+                if self.tombedPlayer and (not AI.IsHealer() or count >= 5) and duration <= travelTime then
                     print("moving to p2 mystic buffet dodge spot")
                     AI.SetMoveTo(self.p2DodgeSpot.x, self.p2DodgeSpot.y)
                     AI.DoTargetChain("ice tomb", "sindragosa")
                     return true
                 end
-            end, 0.1, "MOVE_TO_P2_BATTLE_SPOT")
+                return false
+            end, 0.1, "MOVE_TO_DODGE_SPOT")
         end
     end
+end
+
+function sindragosa:SPELL_AURA_APPLIED_DOSE(args)
+    -- if args.target == UnitName("player") then
+    --     print("aura applied dose stack increased on me: " .. args.arg2, "spellId:", args.spellId, "spellName:",
+    --         args.spellName)
+    --     -- self.nextMysticBuffetTime = GetTime() + 6
+    -- end
 end
 
 function sindragosa:SPELL_AURA_REMOVED(args)
     if strcontains(args.spellName, "ice tomb") and self.p2 then
         self.tombedPlayer = nil
-        print("ice tomb removed from: " .. args.target)
+        -- print("ice tomb removed from: " .. args.target)
         if UnitName("player") == args.target then
+            print("moving back to battlespot due to ice tomb removal")
             AI.SetMoveTo(self.p2BattleSpot.x, self.p2BattleSpot.y)
+        elseif not AI.IsTank() and AI.GetDistanceTo(self.p2BattleSpot.x, self.p2BattleSpot.y) > 1 and
+            (not AI.IsHealer() or AI.GetUnitHealthPct(AI.GetPrimaryTank()) > 70) then
+            print("moving back to battlespot due to ice tomb removal")
+            AI.SetMoveTo(self.p2BattleSpot.x, self.p2BattleSpot.y)
+            AI.DoTargetChain("sindragosa")
         end
     end
 
@@ -1344,15 +1493,6 @@ function sindragosa:SPELL_AURA_REMOVED(args)
         if AI.IsDps() and self.tombedPlayer then
             print("mystic buffet expired from me, targetting tomb ")
             AI.DoTargetChain("ice tomb", "sindragosa")
-        end
-        if not AI.IsTank() and AI.GetDistanceTo(self.p2BattleSpot.x, self.p2BattleSpot.y) > 1 then
-            AI.RegisterPendingAction(function(self)
-                if not self.tombedPlayer and (not AI.IsHealer() or AI.GetUnitHealthPct(AI.GetPrimaryTank()) > 70) then
-                    print("moving back to battlespot due to ice tomb removal")
-                    AI.SetMoveTo(self.p2BattleSpot.x, self.p2BattleSpot.y)
-                    return true
-                end
-            end, 0.1, "MOVE_TO_P2_BATTLE_SPOT")
         end
     end
 end
@@ -1381,11 +1521,23 @@ local bloodCouncil = MosDefBossModule:new({
     creatureId = {37972, 37970, 37973},
     onStart = function(self)
         AI.do_PriorityTarget = function()
+            if AI.IsTank() and AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "dark nucleus") then
+                local plr = AI.GetObjectInfo("player")
+                if AI.GetDebuffCount("shadow resonance") < 3 and not plr:HasAuraBy(71822, UnitGUID("target")) then
+                    -- print('still no aura by nucleus')
+                    return true
+                else
+                    ClearTarget()
+                end
+            end
             if AI.IsValidOffensiveUnit() and AI.HasBuff("invocation of blood", "target") then
+                if self.invocationTarget ~= UnitGUID("target") then
+                    self.invocationTarget = UnitGUID("target")                    
+                end
                 return true
             elseif self.invocationTarget then
                 local target = AI.GetObjectInfoByGUID(self.invocationTarget)
-                if target then
+                if target and not target.isDead then
                     target:Target()
                     return true
                 end
@@ -1412,8 +1564,13 @@ local bloodCouncil = MosDefBossModule:new({
         end
     end,
     onStop = function(self)
+        AI.AUTO_CLEANSE = true
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
+        if AI.Config.enableSpeedHacks and AI.GetRunSpeed() < AI.Config.targetSpeed then
+            AI.SetRunSpeed(AI.Config.targetSpeed)
+        end
         if (AI.IsWarlock() or AI.IsMage()) and self.kineticTarget then
             local kTarget = AI.GetObjectInfoByGUID(self.kineticTarget)
             if kTarget and not kTarget.isDead and UnitGUID("focus") ~= kTarget.guid then
@@ -1424,6 +1581,7 @@ local bloodCouncil = MosDefBossModule:new({
                 RunMacroText("/petattack [target=focus]")
             elseif AI.IsValidOffensiveUnit() then
                 RunMacroText("/petattack [target=target]")
+                -- PetFollow()
             else
                 PetFollow()
             end
@@ -1431,7 +1589,7 @@ local bloodCouncil = MosDefBossModule:new({
 
         if AI.IsHealer() then
             local obstacles = self:GetObstacles()
-            local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 40, obstacles, 5)
+            local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 35, obstacles, 5)
             if p and AI.GetDistanceTo(p.x, p.y) > 1 and not AI.HasMoveTo() then
                 print("moving closer to tank")
                 -- AI.PathFinding.MoveSafelyTo(p, self:GetObstacles())
@@ -1449,7 +1607,7 @@ local bloodCouncil = MosDefBossModule:new({
             return true
         end
 
-        if AI.IsPaladin() and AI.HasDebuff("glittering sparks") and AI.CleanseSelf("cleanse", "magic") then
+        if AI.IsPaladin() and AI.CleanseRaid("cleanse", "magic") then
             -- print("cleansing self")
             return true
         end
@@ -1462,14 +1620,16 @@ local bloodCouncil = MosDefBossModule:new({
         --         return true
         --     end
         -- end
-        if AI.IsTank() then
+        if AI.IsTank() and AI.GetDebuffCount("shadow resonance") < 3 then
+            local plr = AI.GetObjectInfo("player")
             local nucleus = AI.FindNearbyUnitsByName("dark nucleus")
             for i, o in ipairs(nucleus) do
-                if not o.isDead and not o:IsChanneling() and AI.CanCastSpell("avenger's shield", "target", true) then
-                    o:Focus()
-                    if AI.CastSpell("avenger's shield", "focus") then
-                        return true
-                    end
+                if not o.isDead and o.distance <= 7 and not plr:HasAuraBy(71822, o.guid) then
+                    o:Target()
+                    -- print("don't have aura by "..o.guid)
+                    -- if AI.CastSpell("avenger's shield", "focus") then
+                    --     return true
+                    -- end
                     return false
                 end
             end
@@ -1545,14 +1705,16 @@ function bloodCouncil:CHAT_MSG_MONSTER_YELL(s, t)
     if strcontains(s, "runneth over") and AI.IsTank() then
         print("kinetic bomb spawned")
         AI.RegisterOneShotAction(function(self)
-            local bomb = AI.FindNearbyUnitsByName(38454)
-            if #bomb > 0 and self.kineticTarget ~= bomb[1].guid then
+            local bomb = AI.FindNearbyUnitsByName(38454, 'kinetic bomb')
+            if #bomb > 0 then
                 self.kineticTarget = bomb[1].guid
                 bomb[1]:Focus()
                 SetRaidTarget("focus", 1)
                 AI.SendAddonMessage("set-kinetic-target", self.kineticTarget)
+                AI.MustCastSpell("hand of reckoning", "focus")
+                AI.MustCastSpell("avenger's shield", "focus")
             end
-        end, 2, "SET_KINETIC_TARGET")
+        end, 1, "SET_KINETIC_TARGET")
     end
 end
 
@@ -1610,10 +1772,16 @@ local bloodQueen = MosDefBossModule:new({
     creatureId = {37955},
     onStart = function(self)
 
+        AI.Config.judgementToUse = "judgement of light"
+
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
             AI.UseContainerItem("lesser flask of resistance")
         end
-        if AI.IsDps() then
+        if AI.IsDpsPosition(1) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(2) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(3) then
             AI.SetMoveTo(self.centerP.x, self.centerP.y)
         end
         if AI.IsHealer() then
@@ -1622,54 +1790,85 @@ local bloodQueen = MosDefBossModule:new({
         AI.PRE_DO_DPS = function(isAoE)
             return AI.HasDebuff("frenzied bloodthirst")
         end
+        AI.FocusUnit("blood-queen")
+        AI.Config.startHealOverrideThreshold = 95
+        AI.Config.useHealingWaveOnToons = true
     end,
     onStop = function(self)
     end,
     onUpdate = function(self)
+        if AI.IsDps() and AI.IsValidOffensiveUnit() then
+            local tank = AI.GetObjectInfo(AI.GetPrimaryTank())
+            local boss = AI.GetObjectInfo("target")
+            if AI.CalcDistance(boss.x, boss.y, self.centerP.x, self.centerP.y) <
+                AI.CalcDistance(tank.x, tank.y, boss.x, boss.y) and not AI.HasMoveTo() and GetTime() >
+                self.lastInciteTerrorTime + 30 and AI.GetDistanceTo(self.centerP.x, self.centerP.y) > 1 and GetTime() >
+                self.lastBiteTime + 5 then
+                print("moving to center for incite terror")
+                AI.SetMoveTo(self.centerP.x, self.centerP.y)
+            end
+        end
+        if AI.IsDps() and AI.HasBuff("essence of the blood queen") and not AI.HasMoveTo() then
+            AI.UseInventorySlot(10)
+            AI.UseInventorySlot(13)
+            AI.UseInventorySlot(14)
+        end
         if AI.IsPriest() and AI.CastSpell("fear ward", "player") then
             return true
         end
         if (AI.HasDebuff("frenzied bloodthirst") or AI.HasDebuff(70877)) and not AI.HasMoveTo() then
-            local allies = AI.GetRaidOrPartyMemberUnits()
+            local allies = {AI.GetDpsPositionName(2), AI.GetDpsPositionName(3), AI.GetDpsPositionName(1),
+                            AI.GetPrimaryTank(), AI.GetPrimaryHealer()}
             local victim = nil
             -- remove healer and tank by default
             table_removeif(allies, function(o)
                 local name = UnitName(o)
-                return strcontains(name, AI.GetPrimaryTank()) or strcontains(name, AI.GetPrimaryHealer()) and
-                           strcontains(name, UnitName("player"))
+                return strcontains(name, UnitName("player"))
             end)
-            for i, o in ipairs(allies) do
-                if not AI.HasBuff("essence of the blood queen", o) and not AI.HasDebuff("uncontrollable frenzy", o) then
-                    victim = o
+            for i, ally in ipairs(allies) do
+                if AI.IsUnitValidFriendlyTarget(ally) and not AI.HasDebuff("essence of the blood queen", ally) and
+                    not AI.HasDebuff("uncontrollable frenzy", ally) then
+                    print("picked victim " .. UnitName(ally))
+                    victim = UnitName(ally)
                     break
                 end
             end
-            if not victim then
-                victim =
-                    not AI.HasBuff("essence of the blood queen", AI.GetPrimaryHealer()) and AI.GetPrimaryHealer() or
-                        AI.GetPrimaryTank()
-                if AI.HasBuff("essence of the blood queen", victim) then
-                    victim = nil
-                end
-            end
-            if victim then
+            if victim and AI.IsUnitValidFriendlyTarget(victim) then
                 FocusUnit(victim)
+                AI.StopMoving()
                 AI.SetFacingUnit("focus")
                 if AI.GetDistanceToUnit("focus") > 5 then
-                    local p = AI.PathFinding.FindSafeSpotInCircle("focus", 4.5)
+                    local p = AI.PathFinding.FindSafeSpotInCircle("focus", 3)
                     AI.SetMoveTo(p.x, p.y, p.z, 0, function()
                         AI.RegisterPendingAction(function(self)
-                            return AI.CastSpell("vampiric bite", "focus") or
-                                       AI.CastVehicleSpellOnTarget("vampiric bite", "focus")
+                            local result = AI.CastSpell("vampiric bite", "focus") or
+                                               AI.CastVehicleSpellOnTarget("vampiric bite", "focus")
                             -- print('casting vampiric bite on ' .. UnitName("focus"))
                             -- try to cast vampiric bite on focus
-                            -- if we are in vehicle, use vehicle spell                       
+                            -- if we are in vehicle, use vehicle spell
+                            if result then
+                                if AI.IsDpsPosition(1) then
+                                    AI.SetMoveTo(self.centerP.x, self.centerP.y)
+                                elseif AI.IsDpsPosition(2) then
+                                    AI.SetMoveTo(self.centerP.x, self.centerP.y)
+                                elseif AI.IsDpsPosition(3) then
+                                    AI.SetMoveTo(self.centerP.x, self.centerP.y)
+                                end
+                            end
+                            return result;
                         end, 0, "VAMPIRIC_BITE")
                     end)
                 else
                     if (AI.CastSpell("vampiric bite", "focus") or AI.CastVehicleSpellOnTarget("vampiric bite", "focus")) then
                         local name = UnitName("focus")
                         AI.SayRaid("I bit " .. name)
+                        if AI.IsDpsPosition(1) then
+                            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+                        elseif AI.IsDpsPosition(2) then
+                            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+                        elseif AI.IsDpsPosition(3) then
+                            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+                        end
                         return true
                     end
                 end
@@ -1699,19 +1898,53 @@ local bloodQueen = MosDefBossModule:new({
                     AI.PathFinding.Vector3.new(4600.1879882813, 2750.86328125, 400.13714599609),
                     AI.PathFinding.Vector3.new(4600.0249023438, 2750.5217285156, 400.13711547852),
                     AI.PathFinding.Vector3.new(4594.3720703125, 2755.861328125, 400.13711547852)},
-    nextKiteIdx = 1
+    nextKiteIdx = 1,
+    dps1P = AI.PathFinding.Vector3.new(4589.603515625, 2776.5407714844, 400.13681030273),
+    dps2P = AI.PathFinding.Vector3.new(4589.8930664063, 2763.5070800781, 400.13681030273),
+    dps3P = AI.PathFinding.Vector3.new(4600.2504882813, 2776.765625, 400.13690185547),
+    lastInciteTerrorTime = 0,
+    lastBiteTime = 0
 })
 
-function bloodQueen:SMSG_SPELL_CAST_GO(spellId, spellName, casterGuid, targetGuid, src, dest)
-    if spellId == 71264 then
-        local target = AI.GetObjectInfoByGUID(targetGuid)
-        local name = target and target.name or targetGuid
+function bloodQueen:SMSG_SPELL_CAST_GO2(args)
+    if strcontains(args.caster, "blood-queen") then
+        -- print("blood queen casted ", args.spellName)
+        -- print("CAST_GO: ", args.spellId, args.spellName, args.target, table2str(args.src), table2str(args.dest))
+    end
+    if strcontains(args.spellName, "vampiric bite") then
+        print("vampiric bite coming")
+        self.lastBiteTime = GetTime()
+    end
+
+    if args.spellId == 71264 then
+        local target = AI.GetObjectInfoByGUID(args.targetGuid)
+        local name = target and target.name or args.targetGuid
         -- print('bloodqueen casting swarming shadows on ' .. name)
         if AI.IsPriest() and not AI.HasDebuff("weakened soul", name) then
             AI.MustCastSpell("power word: shield", name)
         end
+        if AI.IsHealer() then
+            AI.MustCastSpell("riptide", name)
+        end
+
+        -- if AI.IsPaladin() then
+        --     AI.RegisterOneShotAction(function(self)
+        --         if AI.CanCastSpell("hand of protection", nil, true) and AI.HasDebuff("swarming shadows", name) then
+        --             AI.MustCastSpell("hand of protection", name)
+        --         end
+        --     end, 2)
+        -- end
 
         if target and strcontains(UnitName("player"), name) then
+            if AI.IsMage() and AI.CanCastSpell("ice block", nil, true) and
+                (AI.HasBuff("bloodlust") or AI.HasDebuff("essence of the blood queen")) then
+                print("casting ice block for swarming shadows")
+                AI.MustCastSpell("ice block")
+                AI.RegisterOneShotAction(function(self)
+                    CancelUnitBuff("player", "ice block")
+                end, 2, "CANCEL_ICE_BLOCK")
+                return
+            end
             if self.nextKiteIdx == 1 then
                 AI.SetMoveToPath(self.flameKiteWp1)
             elseif self.nextKiteIdx == 2 then
@@ -1726,41 +1959,82 @@ function bloodQueen:SMSG_SPELL_CAST_GO(spellId, spellName, casterGuid, targetGui
             AI.SendAddonMessage("set-kite-idx", nextIdx)
         end
     end
+    if strcontains(args.spellName, "incite terror") then
+        self.lastInciteTerrorTime = GetTime()
+    end
 
-    if strcontains(spellName, "incite terror") and AI.IsPriest() then
+    if strcontains(args.spellName, "incite terror") and AI.IsPriest() then
         print("incite terror applied, will try to mass dispel")
         AI.RegisterPendingAction(function(self)
             if not AI.HasDebuff("incite terror", AI.GetPrimaryHealer()) then
                 return true
             end
-            if not AI.HasDebuff("incite terror") and AI.CastAOESpell("mass dispel", AI.GetPrimaryHealer()) then
+            if not AI.HasDebuff("incite terror") and AI.CastAOESpell("mass dispel", self.centerP) then
                 return true
             end
         end, 0.1, "CLEANSE_INCITE_TERROR")
     end
-
-    -- if spellId == 70877 then
-    --     local caster = AI.GetObjectInfoByGUID(casterGuid)
-    --     local name = caster and caster.name or casterGuid
-    --     print("frenzied bloodthirst on " .. name)
-    -- end
 end
 
 function bloodQueen:SPELL_AURA_APPLIED(args)
+
+    -- if args.spellId == 71340 and args.target == UnitName("player") then
+    --     AI.RegisterOneShotAction(function(self)
+    --         local allies = AI.GetRaidOrPartyMemberUnits()
+    --         table_removeif(allies, function(o)
+    --             local name = UnitName(o)
+    --             return not AI.HasDebuff("Pact of the Darkfallen", name) or strcontains(name, UnitName("player"))
+    --         end)
+    --         if #allies > 0 then
+    --             AI.StopCasting()
+    --             -- print("pact dissolving by moving to " .. UnitName(allies[1]))
+    --             SetFollowTarget(UnitGUID(allies[1]))
+    --         end
+    --     end, 0.5)
+    -- end
+
+    if strcontains(args.spellName, "essence of the blood queen") and args.target == UnitName("player") and AI.IsPriest() then
+        print("refreshing shadow word: pain for essence of the blood queen")
+        AI.MustCastSpell("shadow word: pain", "target")
+    end
 end
 
 function bloodQueen:SPELL_AURA_REMOVED(args)
     if args.spellId == 71265 and UnitName("player") == args.target and AI.IsDps() then
-        print("swarming shadows expired, moving back to dps position")
-        AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        -- print("swarming shadows expired, moving back to dps position")
+        if AI.IsDpsPosition(1) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(2) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(3) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        end
     end
     if strcontains(args.spellName, "incite terror") and not AI.IsTank() and args.target == UnitName("player") then
         print("incite terror removed, moving back")
-        if AI.IsDps() then
-            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        if AI.IsDpsPosition(1) then
+            AI.SetMoveTo(self.dps1P.x, self.dps1P.y)
+        elseif AI.IsDpsPosition(2) then
+            AI.SetMoveTo(self.dps2P.x, self.dps2P.y)
+        elseif AI.IsDpsPosition(3) then
+            AI.SetMoveTo(self.dps3P.x, self.dps3P.y)
         end
         if AI.IsHealer() then
             AI.SetMoveTo(self.healerP.x, self.healerP.y)
+        end        
+    end
+    if strcontains(args.spellName, "bloodbolt whirl") and AI.IsDps() then
+        print("bloodbolt whirl removed, moving back to center")
+        AI.SetMoveTo(self.centerP.x, self.centerP.y)
+    end
+    if args.spellId == 71340 and args.target == UnitName("player") then
+        AI.StopMoving()
+        if AI.IsDpsPosition(1) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(2) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
+        elseif AI.IsDpsPosition(3) then
+            AI.SetMoveTo(self.centerP.x, self.centerP.y)
         end
     end
 end

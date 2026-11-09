@@ -12,7 +12,7 @@ local stoneWarder = MosDefBossModule:new({
     creatureId = {32353}
 })
 
-function stoneWarder:SPELL_AURA_APPLIED(args)    
+function stoneWarder:SPELL_AURA_APPLIED(args)
     if not AI.IsTank() and args.spellName:lower() == "rock shower" and args.target == UnitName("player") then
         local allies = AI.GetRaidOrPartyMemberUnits()
         for i, a in ipairs(allies) do
@@ -45,7 +45,7 @@ local archavon = MosDefBossModule:new({
         end
         if AI.IsTank() and AI.HasBuff("enrage", "target") and AI.CastSpell("Hand of Reckoning", "target") then
             return true
-        end        
+        end
         return false
     end
 })
@@ -69,7 +69,7 @@ function archavon:CHAT_MSG_MONSTER_EMOTE(s, t)
 
         if strcontains(match, UnitName("player")) then
             if AI.IsMage() then
-            AI.MustCastSpell("ice block")                       
+                AI.MustCastSpell("ice block")
             end
             if AI.IsPriest() then
                 AI.MustCastSpell("dispersion")
@@ -107,7 +107,7 @@ local emalon = MosDefBossModule:new({
         -- AI.DISABLE_DRAIN = true
         if UnitName("target") ~= "Emalon the Storm Watcher" then
             TargetUnit("emalon")
-        end         
+        end
     end,
     onStop = function(self)
         AI.toggleAutoDps(false)
@@ -160,12 +160,12 @@ local koralon = MosDefBossModule:new({
         AI.Config.startHealOverrideThreshold = 95
         if not AI.IsValidOffensiveUnit() then
             TargetUnit("koralon")
-        end        
-        if AI.IsTank() then
-            AI.RegisterOneShotAction(function(self)
-                AI.MustCastSpell("hand of salvation", AI.GetPrimaryHealer())
-            end, 1)
-        end        
+        end
+        -- if AI.IsTank() then
+        --     AI.RegisterOneShotAction(function(self)
+        --         AI.MustCastSpell("hand of salvation", AI.GetPrimaryHealer())
+        --     end, 1)
+        -- end
     end,
     onStop = function(self)
         AI.toggleAutoDps(false)
@@ -181,20 +181,40 @@ local koralon = MosDefBossModule:new({
     end
 })
 
-function koralon:findSafeSpot()
+function koralon:findSafeSpot(targetPos)
     local tankX, tankY = AI.GetPosition(AI.GetPrimaryTank())
     local cinders = AI.FindNearbyDynamicObjects("flaming cinder")
+    local combatReach = AI.GetObjectInfo("player").combatReach
     -- print(table2str(cinders))
     for i, c in ipairs(cinders) do
-        c.radius = c.radius * 2
+        c.radius = 8.5
     end
     if not AI.IsHealer() then
         local healer = AI.GetObjectInfo(AI.GetPrimaryHealer())
-        healer.radius = 6
+        healer.radius = 8.5
         table.insert(cinders, healer)
+    end
+    if targetPos then
+        local obj = AI.PathFinding.Vector3.new(targetPos)
+        obj.radius = 8.5
+        table.insert(cinders, obj)
     end
     local p = AI.PathFinding.FindSafeSpotInCircle(AI.GetPrimaryTank(), 11, cinders)
     return p;
+end
+
+function koralon:SMSG_SPELL_CAST_GO2(args)
+    if args.spellId == 66682 and not AI.IsTank() then
+        local combatReach = AI.GetObjectInfo("player").combatReach
+        -- print("Flaming Cinder inc")
+        if AI.GetDistanceTo(args.dest.x, args.dest.y) < 8.5 then
+            print("Cinders near me, moving!")
+            local p = self:findSafeSpot(args.dest)
+            if p then
+                AI.SetMoveTo(p.x, p.y)
+            end
+        end
+    end
 end
 
 function koralon:SPELL_AURA_APPLIED(args)
@@ -242,11 +262,28 @@ local toravon = MosDefBossModule:new({
     onStart = function(self)
         if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
             AI.UseContainerItem("lesser flask of resistance")
-        end        
+        end
+        AI.FocusUnit("toravon")
+        TargetUnit("toravon")
         AI.Config.startHealOverrideThreshold = 95
+        AI.Config.useHealingWaveOnToons = true
+        AI.do_PriorityTarget = function()
+            -- if AI.IsDpsPosition(3) then
+            --     return AI.DoTargetChain("frozen orb")
+            -- end
+        end
+        if AI.IsTank() then
+            AI.SendAddonMessage("form-star")
+            if AI.Config.enableSpeedHacks then
+                AI.RegisterOneShotAction(function(self)
+                    AI.SendAddonMessage("start-flying")
+                end, 3)
+            end
+        end
     end,
     onStop = function(self)
         AI.do_PriorityTarget = nil
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
         if AI.IsPriest() then
@@ -254,6 +291,16 @@ local toravon = MosDefBossModule:new({
                 not AI.HasDebuff("weakened soul", AI.Config.tank) and AI.CastSpell("power word: shield", AI.Config.tank) then
                 return true
             end
+        end
+        if AI.Config.enableSpeedHacks and AI.GetRunSpeed() < AI.Config.targetSpeed then
+            AI.SetRunSpeed(AI.Config.targetSpeed)
+            AI.SetFlySpeed(AI.Config.targetSpeed)
+        end
+
+        if AI.IsDps() and AI.IsValidOffensiveUnit() and AI.GetUnitHealthPct("target") <= 95 then
+            AI.UseInventorySlot(13)
+            AI.UseInventorySlot(14)
+            AI.UseInventorySlot(10)
         end
     end
 })

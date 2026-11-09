@@ -139,6 +139,9 @@ end
 
 function AI.IsValidOffensiveUnit(nunit, requireCombat)
     local unit = nunit or "target"
+    if unit == "player" then 
+        return false
+    end
     if not UnitExists(unit) then
         return false
     end

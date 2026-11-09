@@ -15,13 +15,12 @@ local gormok = MosDefBossModule:new({
     name = "Gormok the Impaler",
     creatureId = {34796},
     onStart = function(self)
-        AI.Config.startHealOverrideThreshold = 95
-        TargetUnit("gormok")
-        FocusUnit("target")
+        AI.Config.startHealOverrideThreshold = 90
+        AI.FocusUnit("gormok")
         AI.Config.manaTideThreshold = 20
         AI.do_PriorityTarget = function()
-            if AI.IsDps() then
-                return AI.DoTargetChain("snobold", "gormok")
+            if AI.IsDps() and self:IsSnobolled() then
+                return AI.DoTargetChain("gormok")
             end
             return false
         end
@@ -32,22 +31,7 @@ local gormok = MosDefBossModule:new({
                 end
 
                 if self:IsSnobolled() then
-                    if AI.IsValidOffensiveUnit("target") and not AI.HasMoveTo() then
-                        AI.SetFacingUnit("target")
-                        if AI.IsWarlock() and
-                            AI.DoCastSpellChain("target", "corruption", "curse of agony", "drain life") then
-                            return true
-                        end
-                        if AI.IsPriest() and
-                            AI.DoCastSpellChain("target", "shadow word: pain", "devouring plague", "mind flay") then
-                            return true
-                        end
-                        if AI.IsMage() and
-                            AI.DoCastSpellChain("target", "living bomb", "fire blast", "dragon's breath",
-                                "cone of cold", "ice lance") then
-                            return true
-                        end
-                    end
+                    TargetUnit("focus")
                 end
 
                 if AI.IsValidOffensiveUnit("target") and AI.GetDistanceToUnit("target") > 35 and not AI.HasMoveTo() then
@@ -79,6 +63,10 @@ local gormok = MosDefBossModule:new({
                 end
             end
         end
+        if AI.IsHeroicRaidOrDungeon() and AI.IsTank() and AI.Config.enableSpeedHacks then
+            AI.GetObjectInfo("player"):SetFlying(1)
+            AI.SetFlySpeed(10)
+        end
 
     end,
     onStop = function(self)
@@ -91,8 +79,7 @@ local gormok = MosDefBossModule:new({
                 return true;
             end
             if not strcontains(UnitName("focus"), "gormok") then
-                TargetUnit("gormok")
-                FocusUnit("target")
+                AI.FocusUnit("gormok")
             end
 
             if AI.IsValidOffensiveUnit("focus") then
@@ -147,8 +134,8 @@ local gormok = MosDefBossModule:new({
 function gormok:UNIT_DIED(unit)
     if strcontains(unit, "gormok") then
         print("gormok is dead, ending module")
-        self:onStop()
         self.enabled = false
+        self:onStop()
     end
 end
 
@@ -160,7 +147,7 @@ function gormok:GetFirebombs(ignoreGormok)
     --     end
     -- end
     for i, o in ipairs(obstacles) do
-        o.radius = 8.5
+        o.radius = 9
     end
     if not ignoreGormok then
         local gormork = AI.GetObjectInfo("focus")
@@ -182,16 +169,16 @@ function gormok:FindSafeSpot(includeStartPosition)
     if includeStartPosition then
         local x, y, z = AI.GetPosition("player")
         local p = AI.PathFinding.Vector3.new(x, y, z)
-        p.radius = 8.5
+        p.radius = 9
         table.insert(obstacles, p)
     end
     local p
     if self:IsSnobolled() then
-        p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 1, 7, self:GetFirebombs(true), 2)
+        p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 1, 10, self:GetFirebombs(true), 1)
     else
-        p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 17, 20, obstacles, 2)
+        p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 10, 25, obstacles, 1)
         if not p then
-            p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 17, 20, obstacles, 2)
+            p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 10, 25, obstacles, 1)
         end
     end
     return p
@@ -202,7 +189,7 @@ function gormok:SPELL_DAMAGE(args)
         AI.StopMoving()
     end
     if not AI.IsTank() and strcontains(args.spellName, "fire bomb") and self:IsSnobolled() and not AI.HasMoveTo() then
-        local p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 1, 10, self:GetFirebombs(true), 2)
+        local p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 1, 10, self:GetFirebombs(true), 1)
         if p then
             AI.SetMoveTo(p.x, p.y)
         end
@@ -228,7 +215,7 @@ function gormok:SPELL_AURA_APPLIED(args)
         not AI.HasMoveTo() then
         -- print("fire bomb on me")
         local fireBomb = self:GetClosestFireBomb()
-        if fireBomb and fireBomb.distance <= 8.5 then
+        if fireBomb and fireBomb.distance <= 9 then
             local p = self:FindSafeSpot()
             if p then
                 AI.SetMoveTo(p.x, p.y)
@@ -242,7 +229,7 @@ function gormok:SMSG_SPELL_CAST_START(spellId, spellName, casterGuid, targetGuid
         -- print("casting fire bomb")
         AI.RegisterOneShotAction(function(self)
             local fireBomb = self:GetClosestFireBomb()
-            if fireBomb and fireBomb.distance <= 8.5 then
+            if fireBomb and fireBomb.distance <= 9 then
                 print("fire bomb incoming")
                 local p = self:FindSafeSpot(true)
                 if p then
@@ -255,7 +242,7 @@ function gormok:SMSG_SPELL_CAST_START(spellId, spellName, casterGuid, targetGuid
         -- AI.SendAddonMessage("move-to", p.x, p.y, p.z)
     end
     if strcontains(spellName, "staggering stomp") then
-        -- print("gormok is casting staggering stomp")
+        print("gormok is casting staggering stomp")
         self.stompTime = GetTime()
         if not AI.IsTank() then
             if AI.HasMoveTo() then
@@ -301,28 +288,22 @@ local acidmaw = MosDefBossModule:new({
     onStart = function(self)
         AI.Config.manaTideThreshold = 20
         AI.do_PriorityTarget = function()
-            if AI.IsDps() then
-                return AI.DoTargetChain("acidmaw")
-            end
+            -- if AI.IsDps() then
+            --     return AI.DoTargetChain("acidmaw")
+            -- end
             return false
         end
+        AI.PRE_DO_DPS = nil
         -- if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
         --     AI.UseContainerItem("lesser flask of resistance")
-        -- end
-        AI.RegisterOneShotAction(function()
-            if AI.IsDps() then
-                local obstacles = AI.GetAlliesAsObstacles(15)
-                local p = AI.PathFinding.FindSafeSpotInCircle(
-                    AI.PathFinding.Vector3.new(AI.GetPosition(AI.GetPrimaryHealer())), 30, obstacles, 1)
-                if p then
-                    AI.SetMoveTo(p.x, p.y)
-                end
-            end
-        end, 1)
+        -- end       
+        print('starting acidmaw module')
     end,
     onStop = function(self)
         AI.do_PriorityTarget = nil
-    end
+    end,
+    acidMawDead = false,
+    dreadScaleDead = false
 })
 
 function acidmaw:SPELL_AURA_APPLIED(args)
@@ -345,10 +326,21 @@ function acidmaw:SPELL_AURA_APPLIED(args)
 end
 
 function acidmaw:UNIT_DIED(unit)
+    if strcontains(unit, "acidmaw") then
+        self.acidMawDead = true
+    end
     if strcontains(unit, "dreadscale") then
-        -- print("Dreadscale is dead, ending module")
+        self.dreadScaleDead = true
+    end
+    if self.acidMawDead and self.dreadScaleDead then
+        print("both acidmaw and dreadscale are dead, ending module")
         self:onStop()
         self.enabled = false
+        local spotA = AI.PathFinding.Vector3.new(511.69815063477, 124.03265380859, 395.1955871582)
+        if not AI.IsTank() then
+            print("moving to icehowl engage spot")
+            AI.SetMoveTo(spotA.x, spotA.y)
+        end
     end
 end
 
@@ -372,6 +364,7 @@ local iceHowl = MosDefBossModule:new({
             end
         end
         AI.Config.manaTideThreshold = 20
+        print("starting Icehowl module")
     end,
     onUpdate = function(self)
     end,
@@ -384,7 +377,7 @@ local iceHowl = MosDefBossModule:new({
 
 function iceHowl:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     if strcontains(s, "glares at") and not AI.IsTank() then
-        -- print("icehowl gaze emote received, moving to safe spot")
+        print("icehowl gaze emote received, moving to safe spot")
         AI.RegisterOneShotAction(function()
             local boss = AI.GetObjectInfo("focus")
             if boss then
@@ -426,18 +419,18 @@ local jaraxxus = MosDefBossModule:new({
     name = "Lord Jaraxxus",
     creatureId = {34780},
     onStart = function(self)
-        TargetUnit("lord jaraxxus")
-        FocusUnit("target")
+        AI.FocusUnit("lord jaraxxus")
+        AI.Config.judgementToUse = "judgement of light"
         AI.Config.starFormationRadius = 15
-        AI.Config.startHealOverrideThreshold = 90
+        AI.Config.startHealOverrideThreshold = 95
+        AI.Config.useHealingWaveOnToons = true
+        AI.Config.enableSpellSteal = false
         AI.do_PriorityTarget = function()
-            if AI.GetUnitHealthPct("focus") > 10 then
-                if AI.IsDps() then
-                    return AI.DoTargetChain("nether portal", "mistress", "infernal volcano")
-                elseif AI.IsTank() then
-                    return AI.DoTargetChain("mistress", "felflame infernal")
-                end
-            end
+            -- if AI.GetUnitHealthPct("focus") > 10 then
+            --     if AI.IsDps() then
+            --         return AI.DoTargetChain("nether portal", "mistress", "infernal volcano")               
+            --     end
+            -- end
             return false
         end
         AI.PRE_DO_DPS = function(isAoE)
@@ -448,36 +441,59 @@ local jaraxxus = MosDefBossModule:new({
                     AI.SetMoveTo(p.x, p.y)
                 end
             end
+            -- if AI.IsDps() and AI.IsPriest() and AI.IsValidOffensiveUnit() and strcontains(UnitName("target"), "nether portal") then
+            --     return AI.DoCastSpellChain("target", "devouring plague", "mind blast", "shadow word: death", "mind flay")
+            -- end
             return false
         end
 
-        -- if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
-        --     AI.UseContainerItem("lesser flask of resistance")
-        -- end
+        if AI.IsHeroicRaidOrDungeon() and not AI.HasBuff("lesser flask of resistance") and not AI.IsTank() then
+            AI.UseContainerItem("lesser flask of resistance")
+        end
         if AI.IsHealer() then
             AI.AUTO_CLEANSE = false
+            -- AI.doPost_Update = function()
+            --     print("do_PostUpdate")
+            --     if AI.IsHealer() and AI.IsUnitValidFriendlyTarget(self.incinerateTarget) then
+            --         if UnitHealth(AI.GetPrimaryTank()) >= 20000 and
+            --             (AI.HasBuff("tidal waves") and AI.CastSpell("healing wave", self.incinerateTarget)) or
+            --             AI.CastSpell("chain heal", self.incinerateTarget) then
+            --             return true
+            --         end
+            --     end
+            -- end
         end
         AI.AUTO_PURGE = false
         AI.DISABLE_CDS = true
+        AI.DISABLE_DRAIN = true
     end,
     onStop = function(self)
         AI.do_PriorityTarget = nil
         AI.PRE_DO_DPS = nil
         AI.doPost_Update = nil
         AI.AUTO_PURGE = true
+        AI.SetRunSpeed(7)
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
-        if AI.IsHealer() and self.incinerateTarget then
-            if UnitHealth(AI.GetPrimaryTank()) > 20000 and
-                ((AI.HasBuff("tidal waves") and AI.CastSpell("healing wave", self.incinerateTarget)) or
-                    AI.CastSpell("chain heal", self.incinerateTarget)) then
+        if AI.Config.enableSpeedHacks then
+            if AI.GetRunSpeed() < 8 then
+                AI.SetRunSpeed(8)
+            end
+        end
+
+        if AI.IsHealer() and AI.IsUnitValidFriendlyTarget(self.incinerateTarget) then
+            local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("chain heal")
+            if UnitHealth(AI.GetPrimaryTank()) >= 20000 and (not healTar or UnitHealth(healTar) >= 10000) and
+                (AI.HasBuff("tidal waves") and AI.CastSpell("healing wave", self.incinerateTarget)) or
+                AI.CastSpell("chain heal", self.incinerateTarget) then
                 return true
             end
         end
-        if AI.IsHealer() and UnitHealth(AI.GetPrimaryTank()) > 30000 and
-            AI.CleanseFriendly("cleanse spirit", AI.GetPrimaryTank(), "magic") then
-            return true
-        end
+        -- if AI.IsHealer() and UnitHealth(AI.GetPrimaryTank()) >= 25000 and
+        --     AI.CleanseFriendly("cleanse spirit", AI.GetPrimaryTank(), "magic") then
+        --     return true
+        -- end
     end,
     centerP = AI.PathFinding.Vector3.new(563.57653808594, 139.72964477539, 393.90853881836),
     legionFlameKiteRadius = {35, 30, 25},
@@ -487,13 +503,16 @@ local jaraxxus = MosDefBossModule:new({
 
 function jaraxxus:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     if strcontains(s, "nether portal") then
-        AI.RegisterOneShotAction(function()
+        if AI.IsDps() then
+            AI.StopCasting()
+        end
+        AI.RegisterOneShotAction(function(self)
             TargetUnit("nether portal")
-            if AI.IsDps() then
-                AI.UseInventorySlot(10)
-                -- AI.UseInventorySlot(13)
-                -- AI.UseInventorySlot(14)
-            end
+            -- if AI.IsDps() then
+            --     AI.UseInventorySlot(10)
+            --     AI.UseInventorySlot(13)
+            --     AI.UseInventorySlot(14)
+            -- end
             if AI.IsDps() and AI.GetDistanceToUnit("target") <= 10 then
                 local portal = AI.GetObjectInfo("target")
                 portal.radius = 5
@@ -502,9 +521,12 @@ function jaraxxus:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                     AI.SetMoveTo(p.x, p.y)
                 end
             end
-        end, 0.5, "REACT_TO_PORTAL")
+        end, 0.2, "REACT_TO_PORTAL")
     end
     if strcontains(s, "volcano") then
+        if AI.IsDps() then
+            AI.StopCasting()
+        end
         AI.RegisterOneShotAction(function()
             TargetUnit("infernal volcano")
             if AI.IsDps() then
@@ -522,14 +544,13 @@ function jaraxxus:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
                     end
                 end
             end
-        end, 0.5, "REACT_TO_VOLCANO")
+        end, 0.2, "REACT_TO_VOLCANO")
     end
 end
 
 function jaraxxus:SPELL_CAST_START(args)
     if strcontains(args.spellName, "fel fireball") and not AI.IsHealer() then
-        TargetUnit("lord jaraxxus")
-        FocusUnit("target")
+        AI.FocusUnit("lord jaraxxus")
         AI.DoStaggeredInterrupt()
     end
 end
@@ -550,77 +571,29 @@ function jaraxxus:SPELL_AURA_APPLIED(args)
     end
 
     if strcontains(args.spellName, "fel fireball") then
-        if AI.IsPriest() then
-            AI.MustCastSpell("dispel magic", args.target)
+        if AI.IsPriest() or AI.IsPaladin() then
+            local spell = AI.IsPriest() and "dispel magic" or "cleanse"
+            AI.MustCastSpell(spell, args.target)
         end
     end
-
-    if strcontains(args.spellName, "legion flame") and AI.IsDps() and GetTime() > self.lastFlameApplyTime + 5 then
-        self.lastFlameApplyTime = GetTime()
-        if AI.IsPriest() then
-            AI.MustCastSpell("power word: shield", args.target)
-        end
-        if AI.IsPaladin() then
-            AI.MustCastSpell("sacred shield", args.target)
-        end
-        if AI.IsHealer() then
-            AI.MustCastSpell("riptide", args.target)
-        end
-        if args.target == UnitName("player") then
-            if AI.IsMage() and AI.CanCastSpell("ice block", nil, true) then
-                AI.MustCastSpell("ice block", nil)
-                AI.RegisterOneShotAction(function()
-                    CancelUnitBuff("player", "ice block")
-                end, 1)
-                return
-            end
-            local delay = strcontains(UnitName("target"), "volcano") and 2 or 1
-            AI.RegisterOneShotAction(function(self)
-                local x, y, z = AI.GetPosition()
-                local facing = AI.CalcFacing(self.centerP.x, self.centerP.y, x, y)
-                local r = self.legionFlameKiteRadius[self.nextLegionFlameKiteRadiusIdx]
-                print("current legion flame kite radius: " .. r .. " idx: " .. self.nextLegionFlameKiteRadiusIdx)
-                local numPoints = 16
-                local stepSize = pi2 / numPoints
-                local path = {}
-                for i = 1, numPoints, 1 do
-                    local nfacing = normalizeAngle(facing)
-                    local px = self.centerP.x + r * math.cos(nfacing)
-                    local py = self.centerP.y + r * math.sin(nfacing)
-                    local pz = z
-                    table.insert(path, AI.PathFinding.Vector3.new(px, py, pz))
-                    if self.nextLegionFlameKiteRadiusIdx % 2 == 0 then
-                        facing = facing - stepSize
-                    else
-                        facing = facing + stepSize
-                    end
-                end
-                -- print("kiting legion flame")
-                -- print("path is :"..table2str(path))
-                AI.SetMoveToPath(path)
-                if AI.IsWarlock() then
-                    AI.MustCastSpell("shadow ward")
-                end
-                if AI.IsMage() then
-                    AI.MustCastSpell("fire ward")
-                end
-                if self.nextLegionFlameKiteRadiusIdx + 1 > #self.legionFlameKiteRadius then
-                    self.nextLegionFlameKiteRadiusIdx = 1
+    if strcontains(args.spellName, "nether power") and strcontains(args.target, "jaraxxus") and AI.IsMage() then
+        local count = AI.GetBuffCount("nether power")
+        local duration = AI.GetBuffDuration("nether power")
+        if count < 5 or duration < 20 then
+            AI.RegisterPendingAction(function(self)
+                local count = AI.GetBuffCount("nether power")
+                local duration = AI.GetBuffDuration("nether power")
+                if count < 5 or duration < 20 then
+                    AI.CastSpell("spellsteal", "target")
+                    return false
                 else
-                    self.nextLegionFlameKiteRadiusIdx = self.nextLegionFlameKiteRadiusIdx + 1
+                    AI.SendAddonMessage("dispel-nether-power")
+                    return true
                 end
-                AI.SendAddonMessage("set-next-kite-radius", self.nextLegionFlameKiteRadiusIdx)
-            end, delay, "REACT_TO_LEGION_FLAME")
+            end, 0.1, "CHECK_BUFF_STACKS")
         else
-            local info = AI.GetObjectInfo(args.target)
-            info.radius = 5
-            AI.SetObjectAvoidance({
-                guids = {info},
-                safeDistance = 3,
-                polygon = AI.PathFinding.createCircularPolygon(self.centerP, 40)
-            })
+            AI.SendAddonMessage("dispel-nether-power")
         end
-        -- print('next legion flame kite radius idx: ' .. self.nextLegionFlameKiteRadiusIdx)
     end
 end
 
@@ -648,7 +621,7 @@ function jaraxxus:SPELL_AURA_REMOVED(args)
         -- print("legion flame removed, clearing avoidance")
         if args.target == UnitName("player") then
             local delay = (AI.HasBuff("ice block") or AI.HasBuff("hand of protection")) and 0.5 or 7
-            AI.RegisterOneShotAction(function()
+            AI.RegisterOneShotAction(function(self)
                 local obstacles = AI.GetAlliesAsObstacles(10)
                 local p = AI.PathFinding.FindSafeSpotWithinRadiusCorridor(self.centerP, 12, 17, obstacles, 5)
                 if p then
@@ -672,6 +645,66 @@ function jaraxxus:ON_ADDON_MESSAGE(from, cmd, params)
             print("invalid legion flame kite radius index received: " .. params)
         end
     end
+    if cmd == "dispel-nether-power" and AI.IsTank() and AI.IsValidOffensiveUnit("focus") and
+        AI.HasBuff("nether power", "focus") then
+        print("dispeling nether power from jaraxxus")
+        AI.MustCastSpell("hand of reckoning", "focus")
+    end
+end
+
+function jaraxxus:SMSG_SPELL_CAST_GO2(args)
+    if strcontains(args.caster, "jaraxxus") then
+        -- print("cast go2: " .. args.spellName, args.spellId, args.target)
+    end
+    --- legion flame
+    if strcontains(args.caster, "jaraxxus") and strcontains(args.spellName, "legion flame") and args.target ==
+        UnitName("player") then
+        print("legion flame on me")
+        if AI.IsMage() and AI.CanCastSpell("ice block", nil, true) then
+            AI.MustCastSpell("ice block")
+            AI.RegisterOneShotAction(function()
+                CancelUnitBuff("player", "ice block")
+            end, 1)
+            return
+        end
+        local delay = strcontains(UnitName("target"), "volcano") and 2 or 1
+        AI.RegisterOneShotAction(function(self)
+            local x, y, z = AI.GetPosition()
+            local facing = AI.CalcFacing(self.centerP.x, self.centerP.y, x, y)
+            local r = self.legionFlameKiteRadius[self.nextLegionFlameKiteRadiusIdx]
+            print("current legion flame kite radius: " .. r .. " idx: " .. self.nextLegionFlameKiteRadiusIdx)
+            local numPoints = 16
+            local stepSize = pi2 / numPoints
+            local path = {}
+            for i = 1, numPoints, 1 do
+                local nfacing = normalizeAngle(facing)
+                local px = self.centerP.x + r * math.cos(nfacing)
+                local py = self.centerP.y + r * math.sin(nfacing)
+                local pz = z
+                table.insert(path, AI.PathFinding.Vector3.new(px, py, pz))
+                if self.nextLegionFlameKiteRadiusIdx % 2 == 0 then
+                    facing = facing - stepSize
+                else
+                    facing = facing + stepSize
+                end
+            end
+            -- print("kiting legion flame")
+            -- print("path is :"..table2str(path))
+            AI.SetMoveToPath(path)
+            if AI.IsWarlock() then
+                AI.MustCastSpell("shadow ward")
+            end
+            if AI.IsMage() then
+                AI.MustCastSpell("fire ward")
+            end
+            if self.nextLegionFlameKiteRadiusIdx + 1 > #self.legionFlameKiteRadius then
+                self.nextLegionFlameKiteRadiusIdx = 1
+            else
+                self.nextLegionFlameKiteRadiusIdx = self.nextLegionFlameKiteRadiusIdx + 1
+            end
+            AI.SendAddonMessage("set-next-kite-radius", self.nextLegionFlameKiteRadiusIdx)
+        end, delay, "REACT_TO_LEGION_FLAME")
+    end
 end
 
 AI.RegisterBossModule(jaraxxus)
@@ -680,10 +713,11 @@ local factionsChampions = MosDefBossModule:new({
     name = "Factions Champions",
     creatureId = {34461, 34460, 34469, 34467, 34468, 34465, 34471, 34466, 34473, 34472, 34463, 34470, 34474, 34475},
     onStart = function(self)
-        AI.Config.startHealOverrideThreshold = 95
+        AI.Config.startHealOverrideThreshold = 90
         -- if AI.IsHealer() then
         AI.AUTO_CLEANSE = false
         AI.AUTO_PURGE = false
+        AI.Config.useHealingWaveOnToons = true
         -- end
 
         AI.do_PriorityTarget = function()
@@ -703,12 +737,12 @@ local factionsChampions = MosDefBossModule:new({
             --         AI.SetMoveTo(p.x, p.y)
             --     end
             -- end
-            if AI.IsDps() and AI.IsValidOffensiveUnit() and self:IsMeleeTarget(UnitName("target")) then
-                local threat = AI.GetThreatPct("target")
-                if threat > 90 or AI.IsTanking("player", "target") then
-                    return true
-                end
-            end
+            -- if AI.IsDps() and AI.IsValidOffensiveUnit() and self:IsMeleeTarget(UnitName("target")) then
+            --     local threat = AI.GetThreatPct("target")
+            --     if threat > 90 or AI.IsTanking("player", "target") then
+            --         return true
+            --     end
+            -- end
             return false
         end
 
@@ -743,6 +777,7 @@ local factionsChampions = MosDefBossModule:new({
     onStop = function(self)
         AI.do_PriorityTarget = nil
         AI.PRE_DO_DPS = nil
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
         if self.ccTarget then
@@ -786,7 +821,7 @@ local factionsChampions = MosDefBossModule:new({
 
         -- if AI.IsPriest() and AI.CleanseRaid("dispel magic", "magic") and GetTime() > self.lastCleanseTime + 5 then
         --     self.lastCleanseTime = GetTime()
-        --     return true
+        --     return true21
         -- end
 
         -- if (AI.IsHealer() or AI.IsPriest()) and AI.IsUnitCC(AI.GetPrimaryTank()) then
@@ -795,11 +830,16 @@ local factionsChampions = MosDefBossModule:new({
         --     return AI.CleanseFriendly(spell, AI.GetPrimaryTank(), "magic")
         -- end
 
-        if AI.IsMage() and AI.GetUnitHealthPct() < 20 and AI.CastSpell("ice block") then
+        if AI.IsMage() and AI.GetUnitHealthPct() <= 20 and AI.CastSpell("ice block") then
             return true
         end
 
         if AI.IsPriest() and AI.GetDistanceToUnit("target") <= 9 and AI.CastSpell("psychic scream") then
+            return true
+        end
+        if AI.IsTank() and AI.GetUnitHealthPct(AI.GetPrimaryHealer()) <= 30 and
+            AI.CastSpell("hand of protection", AI.GetPrimaryHealer()) then
+            print("bopping healer")
             return true
         end
 
@@ -856,20 +896,21 @@ end
 
 function factionsChampions:SPELL_AURA_APPLIED(args)
     if (strcontains(args.spellName, "heroism") or strcontains(args.spellName, "hand of protection") or
-        strcontains(args.spellName, "divine shield") or strcontains(args.spellName, "ice block")) and
-        not strcontains(args.target, "mosdef") and AI.IsPriest() then
+        strcontains(args.spellName, "divine shield") or strcontains(args.spellName, "ice block") or
+        strcontains(args.spellName, "dispersion")) and AI.IsValidOffensiveUnit(args.target) and AI.IsPriest() then
+            print("spell applied that we want to dispel: "..args.spellName.." on "..args.target)
         AI.RegisterPendingAction(function()
-            -- print("heroism or hand of protection cast on champions, dispelling")
-            TargetUnit(args.target)
-            return AI.CastAOESpell("mass dispel", "target")
-        end, 0, "mass_dispel_" .. args.spellName)
+            print("will dispell "..args.spellName.." from "..args.target)
+            AI.FocusUnit(args.target)
+            -- TargetUnit(args.target)
+            return AI.CastAOESpell("mass dispel", "focus")
+        end, 0.2, "mass_dispel_" .. args.spellName)
     end
 
     if (strcontains(args.spellName, "polymorph") or strcontains(args.spellName, "fear") or
-        strcontains(args.spellName, "hammer of justice") or strcontains(args.spellName, "silence") or
-        strcontains(args.spellName, "unstable affliction") or strcontains(args.spellName, "repentance")) and
-        strcontains(args.target, "mosdef") then
-        -- print(args.spellName .. " applied on " .. args.target)
+        strcontains(args.spellName, "hammer of justice") or strcontains(args.spellName, "silence") -- or strcontains(args.spellName, "unstable affliction") 
+    or strcontains(args.spellName, "repentance") or strcontains(args.spellName, "strangulate")) and AI.IsUnitValidFriendlyTarget(args.target) then
+        print(args.spellName .. " applied on " .. args.target)
         if not strcontains(args.target, UnitName("player")) and (AI.IsPriest() or AI.IsHealer() or AI.IsPaladin()) then
             AI.RegisterPendingAction(function()
                 local spell
@@ -879,15 +920,18 @@ function factionsChampions:SPELL_AURA_APPLIED(args)
                     spell = "dispel magic"
                 else
                     spell = "cleanse"
+                end                
+                local result = AI.CleanseFriendly(spell, args.target, "magic")
+                if result then
+                    print("cleansing " .. args.target)
                 end
-                -- print("cleansing " .. args.target)
-                return AI.CleanseFriendly(spell, args.target, "magic")
-            end, 0, "cleanse_" .. args.spellName)
+                return result
+            end, 0.2, "cleanse_" .. args.spellName)
         end
     end
 
     if (strcontains(args.spellName, "fear") or strcontains(args.spellName, "polymorph")) and
-        not strcontains(args.target, "mosdef") and args.caster == UnitName("player") then
+        not AI.IsUnitValidFriendlyTarget(args.target) and args.caster == UnitName("player") then
         self.ccCount = self.ccCount + 1
         print("CC count increased to " .. self.ccCount)
 
@@ -910,7 +954,7 @@ local twinValk = MosDefBossModule:new({
             AI.ALLOW_AUTO_REFACE = false
         end
         if not AI.IsTank() then
-            print('will move to essence')        
+            print('will move to essence')
             AI.RegisterOneShotAction(function()
                 local darkEssence = AI.FindNearbyUnitsByName("dark essence")
                 local lightEssence = AI.FindNearbyUnitsByName("light essence")
@@ -923,12 +967,14 @@ local twinValk = MosDefBossModule:new({
                 end
             end, 5)
         end
+        self.startTime = GetTime()
     end,
     onStop = function(self)
         AI.do_PriorityTarget = nil
         AI.PRE_DO_DPS = nil
         AI.ALLOW_AUTO_REFACE = true
         AI.DISABLE_CDS = false
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
         if AI.IsHealer() and UnitHealth(AI.GetPrimaryTank()) > 25000 and self.touchedTarget and
@@ -942,16 +988,69 @@ local twinValk = MosDefBossModule:new({
             AI.UseInventorySlot(13)
             AI.UseInventorySlot(14)
         end
+        if AI.Config.enableSpeedHacks then
+            if AI.GetRunSpeed() < 20 then
+                AI.SetRunSpeed(20)
+            end
+        end
+
+        if GetTime() - self.startTime > 10 and GetTime() > self.lastTwinImpactTime + 10 and GetTime() >
+            self.lastVortexTime + 5 and AI.IsDps() and (GetTime() - self.lastOrbInterceptTime) > 5 and
+            (GetTime() - self.lastMoveToEssenceTime) > 5 then
+            self:DpsInterceptBallCheck()
+        end
     end,
     pactTime = 0,
-    touchedTarget = nil
+    touchedTarget = nil,
+    lastOrbInterceptTime = 0,
+    startTime = 0,
+    lastTwinImpactTime = 0,
+    lastMoveToEssenceTime = 0,
+    lastVortexTime = 0
 })
+
+function twinValk:DpsInterceptBallCheck()
+    local player = AI.GetObjectInfo("player")
+    if not player:HasAura("empowered darkness") and not player:HasAura("empowered light") and not AI.HasMoveTo() then
+        local useDarkOrbs = player:HasAura("dark essence")
+        local orbs = (useDarkOrbs and AI.FindUnitYWithinXOf(AI.GetPrimaryHealer(), 34628, 30)) or
+                         AI.FindUnitYWithinXOf(AI.GetPrimaryHealer(), 34630, 30)
+        -- print("orb count " .. #orbs)
+        if #orbs > 0 then
+            local points = {}
+            for i, o in ipairs(orbs) do
+                local interceptPoint = AI.PathFinding.getInterceptPoint(player, player.runSpeed, o, o.currentSpeed, o.facing, 1, 100)
+                if interceptPoint then
+                    table.insert(points, interceptPoint)
+                end
+            end
+            table_removeif(points, function(p)
+                return not p or AI.GetDistanceTo(p.x, p.y) > 30
+            end)
+            if #points > 0 then
+                table.sort(points, function(a, b)
+                    local da = AI.GetDistanceTo(a.x, a.y)
+                    local db = AI.GetDistanceTo(b.x, b.y)
+                    return da < db
+                end)
+                AI.SetMoveTo(points[1].x, points[1].y)
+                self.lastOrbInterceptTime = GetTime()
+                print("moving to intercept " .. (useDarkOrbs and "dark" or "light") .. " orb at: " ..
+                          table2str(points[1]))
+            end
+        else
+            print("no orbs found to intercept")
+            self.lastOrbInterceptTime = GetTime() - 3
+        end
+    end
+end
 
 function twinValk:SPELL_CAST_START(args)
     if strcontains(args.spellName, "twin's pact") then
+        self.lastTwinImpactTime = GetTime()
+        AI.FocusUnit(args.caster)
         TargetUnit(args.caster)
-        FocusUnit("target")
-        -- print("twin's pact incoming caster: " .. args.caster)
+        print("twin's pact incoming caster: " .. args.caster)
         self.pactTime = GetTime()
         local plr = AI.GetObjectInfo("player")
         if AI.IsHealer() then
@@ -996,11 +1095,13 @@ function twinValk:SPELL_CAST_START(args)
     end
 
     local plr = AI.GetObjectInfo("player")
+    if strcontains(args.spellName, "vortex") then
+        self.lastVortexTime = GetTime()
+    end
     if strcontains(args.spellName, "light vortex") and not plr:HasAura("light essence") then
-        local lightEssence = AI.FindNearbyUnitsByName("light essence")
-        local darkEssence = AI.FindNearbyUnitsByName("dark essence")
+        local lightEssence = AI.FindNearbyUnitsByName(34568, "light essence")
+        local darkEssence = AI.FindNearbyUnitsByName(34567, "dark essence")
         if AI.IsHealer() then
-            AI.SendAddonMessage("use-essence", lightEssence[1].guid, darkEssence[1].guid)
             AI.RegisterPendingAction(function()
                 if not AI.IsCasting() then
                     if lightEssence[1].distance > essenceInteractRadius then
@@ -1015,17 +1116,18 @@ function twinValk:SPELL_CAST_START(args)
                         print("got light essence, moving to dark essence position")
                         AI.SetMoveTo(darkEssence[1].x, darkEssence[1].y)
                     end
+                    AI.SendAddonMessage("use-essence", lightEssence[1].guid, darkEssence[1].guid)
                     return true
                 end
+                return false
             end)
         end
     end
 
     if strcontains(args.spellName, "dark vortex") and not plr:HasAura("dark essence") then
-        local darkEssence = AI.FindNearbyUnitsByName("dark essence")
-        local lightEssence = AI.FindNearbyUnitsByName("light essence")
+        local darkEssence = AI.FindNearbyUnitsByName(34567, "dark essence")
+        local lightEssence = AI.FindNearbyUnitsByName(34568, "light essence")
         if AI.IsHealer() then
-            AI.SendAddonMessage("use-essence", darkEssence[1].guid, lightEssence[1].guid)
             AI.RegisterPendingAction(function()
                 if not AI.IsCasting() then
                     if darkEssence[1].distance > essenceInteractRadius then
@@ -1039,8 +1141,10 @@ function twinValk:SPELL_CAST_START(args)
                         print("got dark essence, moving to light essence position")
                         AI.SetMoveTo(lightEssence[1].x, lightEssence[1].y)
                     end
+                    AI.SendAddonMessage("use-essence", darkEssence[1].guid, lightEssence[1].guid)
                     return true
                 end
+                return false
             end)
         end
     end
@@ -1049,13 +1153,21 @@ end
 function twinValk:SPELL_AURA_APPLIED(args)
     if strcontains(args.spellName, "touch of ") then
         self.touchedTarget = args.target
+        -- if AI.IsMage() then
+        --     if AI.CanCastSpell("ice block", null, true) then
+        --         print("ice-blocking to remove touch debuff")
+        --         AI.MustCastSpell("ice block")
+        --         AI.RegisterOneShotAction(function()
+        --             CancelUnitBuff("player", "ice block")
+        --         end, 1)
+        --     end
+        -- end
     end
 end
 
 function twinValk:SPELL_AURA_REMOVED(args)
     if strcontains(args.spellName, "shield of lights") or strcontains(args.spellName, "shield of darkness") then
-        TargetUnit(args.target)
-        FocusUnit("target")
+        AI.FocusUnit(args.target)
         if not AI.IsTank() then
             AI.RegisterPendingAction(function(self)
                 if self.touchedTarget == nil and (not AI.IsHealer() or not AI.IsCasting()) and UnitHealth("player") >=
@@ -1074,6 +1186,7 @@ function twinValk:SPELL_AURA_REMOVED(args)
                     print("successfully moved to next essence position")
                     return true
                 end
+                return false
             end, 1)
         end
         if not AI.IsHealer() and AI.IsCasting("focus") then
@@ -1088,6 +1201,7 @@ end
 
 function twinValk:ON_ADDON_MESSAGE(from, cmd, params)
     if cmd == "use-essence" and not AI.IsHealer() then
+        self.lastMoveToEssenceTime = GetTime()
         -- print("received command params: " .. params)
         local startEssenceGUID, nextEssenceGUID = splitstr2(params, ",")
         if startEssenceGUID == nil then
@@ -1100,6 +1214,7 @@ function twinValk:ON_ADDON_MESSAGE(from, cmd, params)
                 print("essence is close, interacting")
                 essence:InteractWith()
                 if nextEssence and AI.IsDps() then
+                    print("moving to next essence position")
                     AI.SetMoveTo(nextEssence.x, nextEssence.y)
                 end
             elseif AI.IsDps() then
@@ -1107,10 +1222,13 @@ function twinValk:ON_ADDON_MESSAGE(from, cmd, params)
                     print("switching essence")
                     essence:InteractWith()
                     if nextEssence then
+                        print("moving to next essence position")
                         AI.SetMoveTo(nextEssence.x, nextEssence.y)
                     end
                 end)
             end
+        else
+            print("requested essence not found: " .. startEssenceGUID)
         end
     end
 end
@@ -1130,7 +1248,8 @@ local anub = MosDefBossModule:new({
         AI.do_PriorityTarget = function()
             return false
         end
-        AI.Config.judgmentToUse = "judgement of light"
+        AI.LevitateFor(1)
+        AI.Config.judgmentToUse = "judgement of wisdom"
         AI.PRE_DO_DPS = function(isAoE)
             -- if not self.hasBurrowed and AI.IsDps() and AI.IsValidOffensiveUnit("target") and
             --     AI.GetDistanceToUnit("target") >= 35 and not AI.HasMoveTo() then
@@ -1144,7 +1263,7 @@ local anub = MosDefBossModule:new({
             -- end
             -- if AI.IsWarlock() then            
             -- end            
-            if AI.IsMage() then
+            if AI.IsMage() or AI.IsWarlock() then
                 local hasFrostSpheres = self:HasFrostSpheres()
 
                 if hasFrostSpheres then
@@ -1166,6 +1285,7 @@ local anub = MosDefBossModule:new({
         AI.do_PriorityTarget = nil
         AI.PRE_DO_DPS = nil
         AI.DISABLE_DRAIN = false
+        AI.ResetHacks()
     end,
     onUpdate = function(self)
         if AI.IsTank() and strcontains(UnitName("target"), "burrower") and
@@ -1186,14 +1306,22 @@ local anub = MosDefBossModule:new({
             AI.UseInventorySlot(10)
         end
         if self.hasBurrowed and not AI.IsTank() then
-            if AI.IsHealer() and AI.IsMoving() then
-                local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("riptide")
-                if healTar and missingHp > AI.GetSpellEffect("riptide") and AI.CastSpell("riptide", healTar) then
-                    return true
-                end
-            end
+            -- if AI.IsHealer() and AI.IsMoving() then
+            --     local healTar, missingHp, secondTar, secondTarHp = AI.GetMostDamagedFriendly("riptide")
+            --     if healTar and missingHp > AI.GetSpellEffect("riptide") and AI.CastSpell("riptide", healTar) then
+            --         return true
+            --     end
+            -- end
             if GetFollowTarget() ~= UnitGUID(AI.GetPrimaryTank()) then
                 SetFollowTarget(UnitGUID(AI.GetPrimaryTank()))
+            end
+        end
+        if AI.Config.enableSpeedHacks then
+            if AI.GetRunSpeed() < 14 then
+                AI.SetRunSpeed(14)
+            end
+            if AI.GetFlySpeed() < 14 then
+                AI.SetFlySpeed(14)
             end
         end
     end,
@@ -1212,7 +1340,7 @@ function anub:SPELL_CAST_START(args)
     end
     if strcontains(args.spellName, "shadow strike") then
         local caster = self:GetShadowStrikeCaster()
-        if caster and AI.IsPriest() then
+        if caster and not AI.IsTank() then
             -- print("got shadowstrike caster")
             caster:Focus()
             AI.DoStaggeredInterrupt()
@@ -1263,7 +1391,7 @@ end
 function anub:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
     if strcontains(s, "burrows into the") then
         self.hasBurrowed = true
-
+        -- AI.LevitateFor(2)
         -- print("anub'arak burrow emote received, moving to safe spot")        
     end
     if strcontains(s, "emerges from") then
@@ -1271,6 +1399,7 @@ function anub:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
         self.hasBurrowed = false
         self.hasEmerged = true
         AI.DISABLE_CDS = false
+        -- AI.StopLevitating()
     end
 end
 
