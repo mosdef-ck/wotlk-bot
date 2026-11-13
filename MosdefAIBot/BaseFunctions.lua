@@ -218,7 +218,7 @@ function AI.CastSpell(spell, target)
     if AI.CanCastSpell(spell, target) then
         if AI.IsDps() and AI.ALLOW_AUTO_REFACE and not AI.HasCTM() and AI.IsValidOffensiveUnit(target) then
             -- StopFollowing()
-            AI.SetFacingCoords(AI.GetPosition(target))
+            -- AI.SetFacingCoords(AI.GetPosition(target))
         end
         CastSpellByName(spell, target)
         local castSpellId = GetLastCastSpellId()
@@ -1785,6 +1785,10 @@ end
 
 function AI.ResetHacks()
     AI.SetFlying(false);
+    -- Stop maintaining speeds too — otherwise the update loop would immediately undo the reset.
+    if AI.ClearDesiredSpeeds then
+        AI.ClearDesiredSpeeds()
+    end
     local result = ResetHacks()
     print("hax reset")
     return result

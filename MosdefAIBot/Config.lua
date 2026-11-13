@@ -77,7 +77,7 @@ judgementToUse = "judgement of wisdom"
 
 useMindBlast = true
 
-useSWD = true
+useSWD = false
 
 enableSpeedHacks = true
 

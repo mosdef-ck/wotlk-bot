@@ -44,24 +44,25 @@ local bossTrainingDummyModule = MosDefBossModule:new({
 --- DUNGEON BOSSES
 local oldPriorityTargetFn = nil
 
--- local heraldVolazjModule = MosDefBossModule:new({
---     name = "Herald Volazj",
---     creatureId = {29311},
---     onStart = function()
---         AI.do_PriorityTarget = function()
---             if not AI.IsValidOffensiveUnit() then
---                 TargetNearestEnemy()
---             end
---         end
---         -- AI.toggleAutoDps(true)
---     end,
---     onStop = function()
---     end,
---     onUpdate = function()
---     end
--- })
+local heraldVolazjModule = MosDefBossModule:new({
+    name = "Herald Volazj",
+    creatureId = {29311},
+    onStart = function()
+        AI.do_PriorityTarget = function()
+            if not AI.IsValidOffensiveUnit() then
+                TargetNearestEnemy()
+            end
+        end
+        -- AI.toggleAutoDps(true)
+        AI.DISABLE_DRAIN = true
+    end,
+    onStop = function()
+    end,
+    onUpdate = function()
+    end
+})
 
--- AI.RegisterBossModule(heraldVolazjModule)
+AI.RegisterBossModule(heraldVolazjModule)
 
 -- -- Ichoron
 -- local ichoron = MosDefBossModule:new({
@@ -234,29 +235,30 @@ local prophetTharon = MosDefBossModule:new({
     name = "The Prophet Tharon'Ja",
     creatureId = {26632},
     onStart = function(self)
-        AI.FocusUnit("The Prophet Tharon'Ja")
+        AI.FocusUnit("The Prophet")
     end,
     onUpdate = function(self)
         if AI.HasDebuff("Gift of Tharon'ja") or AI.HasDebuff(52509) then
             if not AI.IsValidOffensiveUnit() then
                 TargetUnit("focus")
             end
-            if AI.IsTank() and not AI.IsTanking("player", "focus") and AI.CastSpell("taunt", "focus") then
+            if AI.IsTank() and not AI.IsTanking("player", "target") and AI.CastSpell("taunt", "target") then
                 return true
             end
-            if AI.IsTanking("player", "focus") and not AI.HasAura("bone armor") and AI.CastSpell("bone armor") then
+            if AI.IsTanking("player", "target") and not AI.HasBuff("bone armor") and AI.CastSpell("bone armor") then
                 return true
             end
-            if AI.CastSpell("touch of life", "focus") or AI.CastSpell("slaying strike") then
+            if AI.CastSpell("touch of life", "target") or AI.CastSpell("slaying strike") then
                 return true
             end
+            return true
         end
         return false
     end
 })
 
 function prophetTharon:SMSG_SPELL_CAST_GO2(args)
-    if strcontains(args.spellName, "gift of tharon'ja") and args.target == UnitName("player") then
+    if strcontains(args.spellName, "gift of") and args.target == UnitName("player") then
         print("i'm cursed w/ gift of tharon'ja")
     end
 
@@ -265,10 +267,11 @@ end
 AI.RegisterBossModule(prophetTharon)
 
 local vesperon = MosDefBossModule:new({
-    name = "Vesperon",
-    creatureId = {30449},
+    name = "Vesperon/Shadron",
+    creatureId = {30449, 30451},
     onStart = function(self)
         AI.FocusUnit("Vesperon")
+        AI.FocusUnit("Shadron")
         AI.do_PriorityTarget = function()
             if AI.HasDebuff("twilight shift") then
                 TargetNearestEnemy()
@@ -281,7 +284,7 @@ local vesperon = MosDefBossModule:new({
 })
 
 function vesperon:CHAT_MSG_RAID_BOSS_EMOTE(s, t)
-    if strcontains(s, "vesperon disciple appears") and AI.GetUnitHealthPct("focus") > 10 then
+    if (strcontains(s, "vesperon disciple appears") or strcontains(s, "shadron disciple appears")) and AI.GetUnitHealthPct("focus") > 10 then
         print("appears")
         if AI.IsDps() then
             print("moving to twilight portal")

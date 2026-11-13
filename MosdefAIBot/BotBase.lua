@@ -61,6 +61,10 @@ local desiredPlayerFacing = nil
 local desiredVehicleAimAngle = nil
 local desiredFollowTarget = nil
 local desiredFollowTargetDistance = nil
+-- Maintained speeds: re-applied on every update when the game drops us below them
+-- (e.g. slow debuffs). Cleared by ResetHacks; see AI.SetDesiredRunSpeed/AI.SetDesiredFlySpeed.
+local desiredRunSpeed = nil
+local desiredFlySpeed = nil
 local focusedTarget = nil
 
 local lastPosCheckTime = 0
@@ -530,6 +534,12 @@ local function onAddOnChatMessage(from, message)
     elseif cmd == "set-fly-speed" then
         print("setting flyspeed to " .. params)
         AI.SetFlySpeed(tonumber(params))
+    elseif cmd == "set-desired-run-speed" then
+        print("maintaining runspeed at " .. params)
+        AI.SetDesiredRunSpeed(tonumber(params))
+    elseif cmd == "set-desired-fly-speed" then
+        print("maintaining flyspeed at " .. params)
+        AI.SetDesiredFlySpeed(tonumber(params))
     elseif cmd == "start-flying" then
         print("starting to fly")
         AI.LevitateFor(1)
@@ -1164,8 +1174,47 @@ local function doAutoMovementUpdate()
     return false
 end
 
+-- Unlike AI.SetRunSpeed/SetFlySpeed (one-shot), these keep the speed topped back up:
+-- doOnUpdate_BotBase re-applies them whenever the game has pushed us below the desired value.
+-- Pass nil/0 to stop maintaining. Cleared by ResetHacks.
+function AI.SetDesiredRunSpeed(speed)
+    speed = tonumber(speed)
+    if not speed or speed <= 0 then
+        desiredRunSpeed = nil
+        return false
+    end
+    desiredRunSpeed = speed
+    AI.SetRunSpeed(speed) -- apply immediately, don't wait for the next update tick
+    return true
+end
+
+function AI.SetDesiredFlySpeed(speed)
+    speed = tonumber(speed)
+    if not speed or speed <= 0 then
+        desiredFlySpeed = nil
+        return false
+    end
+    desiredFlySpeed = speed
+    AI.SetFlySpeed(speed)
+    return true
+end
+
+function AI.ClearDesiredSpeeds()
+    desiredRunSpeed = nil
+    desiredFlySpeed = nil
+end
+
 function AI.doOnUpdate_BotBase()
-    --    
+    --
+    -- Maintain desired speeds: a slow/stun wearing off or a fresh debuff can drop the
+    -- current speed below what we set — bump it back up (epsilon avoids re-setting every tick).
+    if desiredRunSpeed ~= nil and AI.GetRunSpeed() < desiredRunSpeed - 0.01 then
+        AI.SetRunSpeed(desiredRunSpeed)
+    end
+    if desiredFlySpeed ~= nil and AI.GetFlySpeed() < desiredFlySpeed - 0.01 then
+        AI.SetFlySpeed(desiredFlySpeed)
+    end
+
     if desiredPlayerFacing ~= nil then
         local currentFacing = GetPlayerFacing()
         local diff = desiredPlayerFacing - currentFacing

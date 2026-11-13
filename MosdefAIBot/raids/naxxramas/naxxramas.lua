@@ -165,6 +165,9 @@ local faerlina = MosDefBossModule:new({
         if AI.IsTank() then
             AI.ALLOW_AUTO_REFACE = false
         end
+        if AI.IsHealer() then
+            AI.AUTO_CLEANSE = false
+        end
     end,
     onStop = function()
         AI.AUTO_CLEANSE = true
@@ -298,6 +301,9 @@ local maexxna = MosDefBossModule:new({
             if not AI.IsTank() then
                 return AI.DoTargetChain("web wrap", "spiderling")
             end
+        end
+        if AI.IsHealer() then
+            AI.AUTO_CLEANSE = false
         end
         AI.Config.judgementToUse = nil
 
